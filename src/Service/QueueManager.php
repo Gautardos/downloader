@@ -15,9 +15,10 @@ class QueueManager
         $this->projectDir = $projectDir;
     }
 
-    public function enqueue(array $item): void
+    public function enqueue(array $item, string $type = 'video'): void
     {
         $queue = $this->storage->get(self::QUEUE_KEY, []);
+        $item['type'] = $type;
         $queue[] = $item;
         $this->storage->set(self::QUEUE_KEY, $queue);
 

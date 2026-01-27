@@ -1,0 +1,183 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Queue Management{% endblock %}
+
+{% block body %}
+<div class="container">
+    <div class="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <div>
+            <h1 style="display: flex; align-items: center; gap: 0.75rem; margin: 0;">
+                <span style="font-size: 2.5rem;">⚙️</span>
+                Queue Management
+            </h1>
+            <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Monitor and control the download worker state.</p>
+        </div>
+        <button class="btn" style="background: var(--danger); color: white;" onclick="purgeQueue()">
+            Purge All Tasks
+        </button>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr;">
+        <!-- Active Section -->
+        <div class="card shadow-lg" style="margin-bottom: 2rem; border-left: 4px solid var(--success);">
+            <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span class="badge badge-success">NOW PROCESSING</span>
+            </h3>
+            <div id="active-task-container">
+                <p class="empty-msg">No active task.</p>
+            </div>
+        </div>
+
+        <!-- Queue Section -->
+        <div class="card shadow-lg">
+            <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                Upcoming in Queue
+                <span id="queue-count-badge" class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">0</span>
+            </h3>
+            <div class="queue-table-container" style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <tr>
+                            <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Type</th>
+                            <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Filename</th>
+                            <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Path</th>
+                            <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Added At</th>
+                            <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="queue-tbody">
+                        <!-- Dynamic -->
+                        <tr><td colspan="5" style="padding: 2rem; text-align: center; color: var(--text-secondary);">Queue is empty</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const progressRouteTemplate = "{{ path('progress', {downloadId: '000000'}) }}";
+
+async function purgeQueue() {
+    if (!confirm('This will STOP all background downloads and clear the queue. Are you sure?')) return;
+    try {
+        const res = await fetch("{{ path('queue_purge') }}", { method: 'POST' });
+        if (res.ok) {
+            window.notify('success', 'Queue purged and worker reset.');
+            refreshUI();
+        }
+    } catch (e) {
+        window.notify('error', 'Failed to purge queue.');
+    }
+}
+
+async function removeTask(index) {
+    try {
+        const res = await fetch(`{{ path('queue_remove', {index: 'IDX'}) }}`.replace('IDX', index), { method: 'POST' });
+        if (res.ok) {
+            window.notify('info', 'Task removed from queue.');
+            refreshUI();
+        }
+    } catch (e) {
+        window.notify('error', 'Failed to remove task.');
+    }
+}
+
+async function refreshUI() {
+    try {
+        const res = await fetch("{{ path('queue_status') }}");
+        const data = await res.json();
+        
+        renderActive(data.active);
+        renderQueue(data.queue || []);
+    } catch (e) {
+        console.warn("Refresh failed", e);
+    }
+}
+
+async function renderActive(active) {
+    const container = document.getElementById('active-task-container');
+    if (!active) {
+        container.innerHTML = '<p class="empty-msg">No active task.</p>';
+        return;
+    }
+
+    try {
+        const downloadId = active.download_id || active.downloadId;
+        const res = await fetch(progressRouteTemplate.replace('000000', downloadId));
+        const progress = await res.json();
+        
+        const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
+        const typeIcon = active.type === 'music' ? '🎵' : '🎥';
+        const typeLabel = active.type.toUpperCase();
+
+        container.innerHTML = `
+            <div style="display: flex; gap: 1.5rem; align-items: flex-start;">
+                <div style="font-size: 3.5rem; background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">${typeIcon}</div>
+                <div style="flex: 1;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                        <span class="badge ${active.type === 'music' ? 'badge-music' : 'badge-video'}" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">
+                            ${typeIcon} ${typeLabel}
+                        </span>
+                        <span class="badge badge-success" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">NOW PROCESSING</span>
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1.3rem; font-weight: 700;">${filename}</h4>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <span>Target: <code style="background: rgba(255,255,255,0.08); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace;">${active.path || 'Default'}</code></span>
+                        <span style="color: var(--accent); font-weight: bold; font-family: monospace; font-size: 1rem;">${progress.speed || '...'}</span>
+                    </div>
+                    <div style="height: 14px; background: rgba(255,255,255,0.05); border-radius: 7px; overflow: hidden; margin-bottom: 0.5rem; border: 1px solid rgba(255,255,255,0.03);">
+                        <div style="width: ${progress.percentage || 0}%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                        <span style="color: var(--text-secondary); font-style: italic;">${progress.status === 'downloading' ? 'Transferring data...' : 'Contacting providers...'}</span>
+                        <span style="font-weight: 800; color: var(--text-primary);">${progress.percentage || 0}%</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        console.warn("Active progress fetch failed", e);
+    }
+}
+
+function renderQueue(queue) {
+    const tbody = document.getElementById('queue-tbody');
+    const badge = document.getElementById('queue-count-badge');
+    badge.innerText = queue.length;
+
+    if (queue.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding: 2rem; text-align: center; color: var(--text-secondary);">Queue is empty</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '';
+    queue.forEach((item, index) => {
+        const typeIcon = item.type === 'music' ? '🎵' : '🎥';
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+        tr.innerHTML = `
+            <td style="padding: 1rem; font-size: 1.5rem;">${typeIcon}</td>
+            <td style="padding: 1rem;">
+                <div style="font-weight: 500; font-size: 0.9rem; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.filename}">
+                    ${item.filename}
+                </div>
+            </td>
+            <td style="padding: 1rem; font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">${item.path || '--'}</td>
+            <td style="padding: 1rem; font-size: 0.8rem; color: var(--text-secondary);">${item.date_added || '--'}</td>
+            <td style="padding: 1rem; text-align: right;">
+                <button class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2);" onclick="removeTask(${index})">
+                    Remove
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    refreshUI();
+    setInterval(refreshUI, 2000);
+});
+</script>
+{% endblock %}

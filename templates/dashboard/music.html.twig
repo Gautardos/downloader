@@ -1,0 +1,67 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Music Downloader{% endblock %}
+
+{% block body %}
+<div class="container" style="max-width: 800px;">
+    <div class="header" style="margin-bottom: 2rem;">
+        <h1 style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 2.5rem;">🎵</span>
+            Music Downloader
+        </h1>
+        <p class="text-secondary">Paste your music links below to add them to the download queue.</p>
+    </div>
+
+    <div class="card shadow-lg">
+        <div style="margin-bottom: 1.5rem;">
+            <label for="music-links">Enter Links (one per line)</label>
+            <textarea id="music-links" 
+                      placeholder="https://example.com/song1&#10;https://example.com/song2" 
+                      style="width: 100%; height: 200px; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: var(--text-primary); font-family: monospace; font-size: 0.9rem; resize: vertical; box-sizing: border-box;"></textarea>
+        </div>
+
+        <button id="btn-add-music" class="btn btn-primary btn-full" onclick="addMusicToQueue()">
+            Add to Queue
+        </button>
+    </div>
+</div>
+
+<script>
+async function addMusicToQueue() {
+    const textarea = document.getElementById('music-links');
+    const btn = document.getElementById('btn-add-music');
+    const urls = textarea.value.trim();
+
+    if (!urls) {
+        window.notify('error', 'Please enter at least one link.');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = 'Adding to Queue...';
+
+    const formData = new FormData();
+    formData.append('urls', urls);
+
+    try {
+        const res = await fetch("{{ path('music_add') }}", {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            window.notify('success', 'Music links added to queue!');
+            textarea.value = '';
+        } else {
+            window.notify('error', 'Failed to add links: ' + data.message);
+        }
+    } catch (e) {
+        window.notify('error', 'Network error while adding links.');
+    } finally {
+        btn.disabled = false;
+        btn.innerText = 'Add to Queue';
+    }
+}
+</script>
+{% endblock %}

@@ -62,25 +62,26 @@ class DownloadWorkerCommand extends Command
                 }
             }
 
-            $log('Processing: ' . ($item['filename'] ?? 'unknown'));
+            $type = $item['type'] ?? 'video';
+            $log("Processing [$type]: " . ($item['filename'] ?? 'unknown'));
             $this->queueManager->setActiveTask($item);
 
             try {
-                // The DownloadManager::downloadFile now updates its own progress JSON
-                // which acts as a heartbeat for the specific download.
-                // We'll also update the GLOBAL worker heartbeat periodically here if possible,
-                // but for now, the UI will see the progress updating.
+                if ($type === 'music') {
+                    $log('Music processing not yet implemented. Skipping.');
+                    // Future: $this->musicManager->process($item);
+                } else {
+                    $this->downloadManager->downloadFile(
+                        $item['url'],
+                        $item['filename'] ?? 'undefined',
+                        $item['path'],
+                        $item['download_id'],
+                        $item['overwrite'] ?? false,
+                        fn() => $storage->set('worker_heartbeat', time()) // Heartbeat callback
+                    );
+                }
 
-                $this->downloadManager->downloadFile(
-                    $item['url'],
-                    $item['filename'] ?? 'undefined',
-                    $item['path'],
-                    $item['download_id'],
-                    $item['overwrite'] ?? false,
-                    fn() => $storage->set('worker_heartbeat', time()) // Heartbeat callback
-                );
-
-                $log('Finished: ' . ($item['filename'] ?? 'unknown'));
+                $log("Finished [$type]: " . ($item['filename'] ?? 'unknown'));
             } catch (\Exception $e) {
                 $log('Error: ' . $e->getMessage());
             }

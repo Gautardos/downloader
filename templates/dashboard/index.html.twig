@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Dashboard{% endblock %}
+{% block title %}Video Downloader{% endblock %}
 
 {% block body %}
 <div class="container">
@@ -129,36 +129,6 @@
         </div>
     {% endif %}
 
-    <!-- Floating Tracker -->
-    <div id="download-tracker" class="tracker-container collapsed">
-        <div class="tracker-header">
-            <div class="tracker-title" onclick="toggleTracker()">
-                <span class="tracker-icon">🚀</span>
-                <strong>Downloads</strong>
-                <span id="tracker-summary" class="tracker-summary">(0 active, 0 queued)</span>
-            </div>
-            <div class="tracker-controls">
-                <button class="btn btn-secondary btn-icon" style="background: rgba(231, 76, 60, 0.1); color: #e74c3c; font-size: 0.7rem; border-color: rgba(231, 76, 60, 0.2);" onclick="purgeQueueFromServer()" title="Purge all tasks and reset worker">Purge</button>
-                <button id="tracker-toggle-btn" class="btn btn-secondary btn-icon" onclick="toggleTracker()">▼</button>
-            </div>
-        </div>
-        <div class="tracker-content">
-            <div class="tracker-section">
-                <h3>Ongoing</h3>
-                <div id="active-downloads-list" class="tracker-list">
-                    <!-- Dynamic -->
-                    <div class="empty-msg">No active downloads</div>
-                </div>
-            </div>
-            <div class="tracker-section">
-                <h3>Upcoming</h3>
-                <div id="queued-downloads-list" class="tracker-list">
-                    <!-- Dynamic -->
-                    <div class="empty-msg">Queue is empty</div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Batch Confirmation Modal -->
     <div id="batch-modal" class="modal-overlay">
@@ -194,45 +164,7 @@
 </div>
 
 <script>
-const progressRouteTemplate = "{{ path('progress', {downloadId: '000000'}) }}";
 
-// Queue State (UI only)
-let serverQueue = [];
-let serverActiveTask = null;
-
-function toggleTracker() {
-    const el = document.getElementById('download-tracker');
-    el.classList.toggle('collapsed');
-    localStorage.setItem('tracker_collapsed', el.classList.contains('collapsed'));
-    document.getElementById('tracker-toggle-btn').innerText = el.classList.contains('collapsed') ? '▲' : '▼';
-}
-
-function updateTrackerSummary() {
-    const activeCount = serverActiveTask ? 1 : 0;
-    const queuedCount = serverQueue.length;
-    document.getElementById('tracker-summary').innerText = `(${activeCount} active, ${queuedCount} queued)`;
-}
-
-function renderQueue(queue) {
-    serverQueue = queue;
-    const list = document.getElementById('queued-downloads-list');
-    list.innerHTML = '';
-    
-    if (queue.length === 0) {
-        list.innerHTML = '<div class="empty-msg">Queue is empty</div>';
-    } else {
-        queue.forEach((item, index) => {
-            const div = document.createElement('div');
-            div.className = 'queued-item';
-            div.innerHTML = `
-                <div class="item-name" title="${item.filename}">${item.filename}</div>
-                <button class="btn-remove" onclick="removeFromQueue(${index})">×</button>
-            `;
-            list.appendChild(div);
-        });
-    }
-    updateTrackerSummary();
-}
 
 async function suggestNames(packId, packName, files, btn = null) {
     let packCard = null;
@@ -299,19 +231,6 @@ async function removeFromQueue(index) {
         if (res.ok) syncWithServer();
     } catch (e) {
         console.error("Failed to remove item", e);
-    }
-}
-
-async function purgeQueueFromServer() {
-    if (!confirm('This will STOP all background downloads and clear the queue. Are you sure?')) return;
-    try {
-        const res = await fetch("{{ path('queue_purge') }}", { method: 'POST' });
-        if (res.ok) {
-            window.notify('success', 'Queue purged and worker reset.');
-            syncWithServer();
-        }
-    } catch (e) {
-        window.notify('error', 'Failed to purge queue.');
     }
 }
 
@@ -531,59 +450,6 @@ async function confirmBatchDownloads() {
         }
     }
     
-    syncWithServer();
-}
-
-
-async function syncWithServer() {
-    try {
-        const res = await fetch("{{ path('queue_status') }}");
-        const data = await res.json();
-        
-        renderQueue(data.queue || []);
-        updateActiveTaskUI(data.active);
-    } catch (e) {
-        console.warn("Sync failed", e);
-    }
-}
-
-async function updateActiveTaskUI(active) {
-    const list = document.getElementById('active-downloads-list');
-    serverActiveTask = active;
-
-    if (!active) {
-        list.innerHTML = '<div class="empty-msg">No active downloads</div>';
-        updateTrackerSummary();
-        return;
-    }
-
-    // Check progress for this specific task
-    try {
-        const downloadId = active.download_id || active.downloadId;
-        const res = await fetch(progressRouteTemplate.replace('000000', downloadId));
-        const progress = await res.json();
-        
-        const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
-
-        list.innerHTML = `
-            <div class="active-item" id="active-${downloadId}">
-                <div class="item-header">
-                    <span class="item-name" title="${filename}">${filename}</span>
-                    <span class="item-percent">${progress.percentage || 0}%</span>
-                </div>
-                <div class="item-progress">
-                    <div class="bar" style="width: ${progress.percentage || 0}%"></div>
-                </div>
-                <div class="item-footer">
-                    <span class="item-status">${progress.status === 'downloading' ? 'Downloading...' : 'Starting...'}</span>
-                    <span class="item-speed">${progress.speed || '...'}</span>
-                </div>
-            </div>
-        `;
-    } catch (e) {
-        console.warn("Progress update failed", e);
-    }
-    updateTrackerSummary();
 }
 
 function startDownload(event, packId, file) {
@@ -592,14 +458,6 @@ function startDownload(event, packId, file) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Restore collapse state
-    if (localStorage.getItem('tracker_collapsed') === 'true') {
-        document.getElementById('download-tracker').classList.add('collapsed');
-        document.getElementById('tracker-toggle-btn').innerText = '▲';
-    }
-
-    syncWithServer();
-    setInterval(syncWithServer, 2000);
 });
 </script>
 
@@ -687,152 +545,6 @@ document.addEventListener('DOMContentLoaded', () => {
     color: #ff4d4d;
 }
 
-/* Tracker Styles */
-.tracker-container {
-    position: fixed;
-    bottom: 1.5rem;
-    right: 1.5rem;
-    width: 350px;
-    background: var(--bg-secondary);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    z-index: 1000;
-    overflow: hidden;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    max-height: 80vh;
-}
-
-.tracker-container.collapsed {
-    max-height: 56px;
-    width: 250px;
-}
-
-.tracker-header {
-    background: rgba(255,255,255,0.03);
-    padding: 1rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    user-select: none;
-}
-
-.tracker-header:hover {
-    background: rgba(255,255,255,0.08);
-}
-
-.tracker-title {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    font-size: 0.9rem;
-}
-
-.tracker-summary {
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    margin-left: 0.25rem;
-}
-
-#tracker-toggle-btn {
-    font-size: 0.7rem;
-    color: var(--text-secondary);
-}
-
-.tracker-content {
-    padding: 0 1rem 1rem 1rem;
-    overflow-y: auto;
-    max-height: calc(80vh - 56px);
-}
-
-.tracker-section h3 {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-    margin: 1rem 0 0.5rem 0;
-    letter-spacing: 0.05em;
-}
-
-.tracker-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.empty-msg {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
-    padding: 0.5rem 0;
-}
-
-.active-item {
-    background: rgba(255,255,255,0.03);
-    border-radius: 8px;
-    padding: 0.75rem;
-    border-left: 3px solid var(--accent);
-}
-
-.item-header {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.85rem;
-    margin-bottom: 0.5rem;
-}
-
-.item-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    padding-right: 0.5rem;
-    flex: 1;
-}
-
-.item-progress {
-    height: 4px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 2px;
-    margin-bottom: 0.5rem;
-    overflow: hidden;
-}
-
-.item-progress .bar {
-    height: 100%;
-    background: var(--accent);
-    transition: width 0.3s ease;
-}
-
-.item-footer {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.7rem;
-    color: var(--text-secondary);
-}
-
-.queued-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(255,255,255,0.02);
-    border-radius: 6px;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8rem;
-}
-
-.btn-remove {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 1.2rem;
-    line-height: 1;
-    padding: 0 0.25rem;
-}
-
-.btn-remove:hover {
-    color: #ff4d4d;
-}
 
 .pack-card {
     position: relative;

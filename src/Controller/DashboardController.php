@@ -14,8 +14,8 @@ use Symfony\Component\Routing\Annotation\Route;
 
 class DashboardController extends AbstractController
 {
-    #[Route('/', name: 'dashboard')]
-    public function index(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage): Response
+    #[Route('/video', name: 'video')]
+    public function video(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage): Response
     {
         $packs = $alldebrid->getRecentLinksGrouped();
         $recentPaths = $storage->get('recent_paths', []);
@@ -83,7 +83,7 @@ class DashboardController extends AbstractController
             'download_id' => $downloadId,
             'overwrite' => $overwrite,
             'date_added' => date('Y-m-d H:i:s')
-        ]);
+        ], 'video');
 
         return $this->json(['success' => true, 'message' => 'Added to server queue.']);
     }
@@ -108,6 +108,43 @@ class DashboardController extends AbstractController
     public function queuePurge(QueueManager $queueManager): Response
     {
         $queueManager->purgeQueue();
+        return $this->json(['success' => true]);
+    }
+
+    #[Route('/', name: 'music')]
+    public function music(): Response
+    {
+        return $this->render('dashboard/music.html.twig');
+    }
+
+    #[Route('/queue', name: 'queue')]
+    public function queue(QueueManager $queueManager): Response
+    {
+        return $this->render('dashboard/queue.html.twig', [
+            'queue' => $queueManager->getQueue(),
+            'activeTask' => $queueManager->getActiveTask()
+        ]);
+    }
+
+    #[Route('/music-add', name: 'music_add', methods: ['POST'])]
+    public function musicAdd(Request $request, QueueManager $queueManager): Response
+    {
+        $urls = $request->request->get('urls');
+        if (!$urls) {
+            return $this->json(['success' => false, 'message' => 'No URLs provided.']);
+        }
+
+        $urlList = array_filter(array_map('trim', explode("\n", $urls)));
+        foreach ($urlList as $url) {
+            $queueManager->enqueue([
+                'url' => $url,
+                'filename' => 'Music Link',
+                'path' => '',
+                'download_id' => bin2hex(random_bytes(8)),
+                'date_added' => date('Y-m-d H:i:s')
+            ], 'music');
+        }
+
         return $this->json(['success' => true]);
     }
 
