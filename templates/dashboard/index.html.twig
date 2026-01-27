@@ -1,0 +1,1063 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block body %}
+<div class="container">
+    <h1>📥 Downloads</h1>
+
+    {% if packs is empty %}
+        <p style="text-align: center; color: var(--text-secondary); margin: 3rem 0;">
+            No recent downloads found. Configure your API key to get started.
+        </p>
+    {% else %}
+        <!-- Recent Paths Datalist -->
+        <datalist id="recent-paths-list">
+            {% for path in recent_paths %}
+                <option value="{{ path }}">
+            {% endfor %}
+        </datalist>
+
+        <div class="packs-grid">
+            {% for pack in packs %}
+                <div class="pack-card">
+                    <div class="pack-loader-overlay">
+                        <div class="spinner"></div>
+                        <span style="color: white; font-size: 0.9rem;">AI Renaming in progress...</span>
+                    </div>
+                    <div class="pack-header" onclick="togglePack('pack-{{ loop.index }}')">
+                        <div class="pack-info">
+                            <h2>
+                                <span class="pack-icon">📁</span>
+                                {{ pack.name }}
+                            </h2>
+                            <div class="pack-meta">
+                                <span>{{ pack.file_count }} file{{ pack.file_count > 1 ? 's' : '' }}</span>
+                                <span>•</span>
+                                <span>{{ (pack.total_size / 1024 / 1024 / 1024)|number_format(2) }} GB</span>
+                                <span>•</span>
+                                <span style="color: {{ pack.progress == 100 ? 'var(--success)' : 'var(--accent)' }}">{{ pack.progress }}%</span>
+                            </div>
+                            <div class="pack-progress-container" style="margin-top: 0.5rem; background: rgba(255,255,255,0.05); height: 4px; border-radius: 2px; overflow: hidden; width: 200px;">
+                                <div class="pack-progress-bar" style="width: {{ pack.progress }}%; height: 100%; background: {{ pack.progress == 100 ? 'var(--success)' : 'var(--accent)' }}; transition: width 0.3s ease;"></div>
+                            </div>
+                        </div>
+                        <div class="pack-actions" onclick="event.stopPropagation()">
+                            {% if pack.file_count > 1 %}
+                                <button class="btn btn-secondary btn-icon" onclick="suggestNames('pack-{{ loop.index }}', '{{ pack.name|e('js') }}', {{ pack.files|json_encode|e('html_attr') }})" title="AI Rename All">
+                                    ✨
+                                </button>
+                                <input type="text" class="pack-path-input" 
+                                       placeholder="Common folder (optional)" 
+                                       list="recent-paths-list"
+                                       style="font-size: 0.8rem; padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); border-radius: 6px; width: 180px;">
+                                <button class="btn btn-secondary btn-download-pack" onclick="downloadPack(event, 'pack-{{ loop.index }}', {{ pack.files|json_encode|e('html_attr') }})">
+                                    Download All
+                                </button>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div id="pack-{{ loop.index }}" class="pack-files {{ pack.file_count == 1 ? '' : 'collapsed' }}">
+                        {% for file in pack.files %}
+                            <div class="file-card" id="file-{{ pack.name|replace({'.': '_', ' ': '_', '/': '_'}) }}-{{ loop.index }}">
+                                <div class="file-info">
+                                    <div class="file-name">
+                                        {{ file.filename }}
+                                        {% if file.downloaded %}
+                                            <span class="badge badge-success">Downloaded</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="file-size">
+                                        {{ (file.size / 1024 / 1024)|number_format(2) }} MB
+                                    </div>
+                                </div>
+
+                                <div class="progress-container" style="display: none;">
+                                    <div style="background-color: var(--bg-primary); height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 0.5rem;">
+                                        <div class="progress-bar" style="background-color: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary);">
+                                        <span class="progress-status">Starting...</span>
+                                        <span class="progress-speed">0 MB/s</span>
+                                    </div>
+                                </div>
+
+                                 <form class="download-form" onsubmit="startDownload(event, 'pack-{{ loop.parent.loop.index }}', {{ file|json_encode|e('html_attr') }})">
+                                     <input type="hidden" name="url" value="{{ file.link }}">
+                                     <input type="hidden" name="filename" value="{{ file.filename }}">
+                                     
+                                     <div style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                         <input type="text" name="path" placeholder="Override path" 
+                                                list="recent-paths-list"
+                                                style="flex: 2; min-width: 150px; font-size: 0.8rem; padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); border-radius: 6px;">
+                                         <div style="flex: 3; display: flex; gap: 0.3rem; min-width: 200px;">
+                                             <input type="text" name="override_filename" placeholder="Rename to..." 
+                                                    style="flex: 1; font-size: 0.8rem; padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); border-radius: 6px;">
+                                             <button type="button" class="btn btn-secondary btn-icon" onclick="suggestNames('pack-{{ loop.parent.loop.index }}', '{{ pack.name|e('js') }}', [{filename: '{{ file.filename|e('js') }}'}], this)" title="AI Rename">
+                                                 ✨
+                                             </button>
+                                         </div>
+                                     </div>
+                                     
+                                     <button type="submit" class="btn btn-primary download-btn" style="width: 100%;">
+                                         {% if file.downloaded %}Re-Download{% else %}Download{% endif %}
+                                     </button>
+                                 </form>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <!-- Recent Paths Manager -->
+        <div class="recent-paths-manager">
+            <h3>Recent Folders</h3>
+            <div class="recent-paths-list">
+                {% if recent_paths is empty %}
+                    <p class="empty-msg">No folders saved yet.</p>
+                {% else %}
+                    {% for path in recent_paths %}
+                        <div class="recent-path-item">
+                            <span class="path-text" title="{{ path }}">{{ path }}</span>
+                            <button class="btn-remove-path" onclick="deleteRecentPath('{{ path|e('js') }}')">×</button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Floating Tracker -->
+    <div id="download-tracker" class="tracker-container collapsed">
+        <div class="tracker-header">
+            <div class="tracker-title" onclick="toggleTracker()">
+                <span class="tracker-icon">🚀</span>
+                <strong>Downloads</strong>
+                <span id="tracker-summary" class="tracker-summary">(0 active, 0 queued)</span>
+            </div>
+            <div class="tracker-controls">
+                <button class="btn btn-secondary btn-icon" style="background: rgba(231, 76, 60, 0.1); color: #e74c3c; font-size: 0.7rem; border-color: rgba(231, 76, 60, 0.2);" onclick="purgeQueueFromServer()" title="Purge all tasks and reset worker">Purge</button>
+                <button id="tracker-toggle-btn" class="btn btn-secondary btn-icon" onclick="toggleTracker()">▼</button>
+            </div>
+        </div>
+        <div class="tracker-content">
+            <div class="tracker-section">
+                <h3>Ongoing</h3>
+                <div id="active-downloads-list" class="tracker-list">
+                    <!-- Dynamic -->
+                    <div class="empty-msg">No active downloads</div>
+                </div>
+            </div>
+            <div class="tracker-section">
+                <h3>Upcoming</h3>
+                <div id="queued-downloads-list" class="tracker-list">
+                    <!-- Dynamic -->
+                    <div class="empty-msg">Queue is empty</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Confirmation Modal -->
+    <div id="batch-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>📊 Batch Download Confirmation</h2>
+                <button class="btn-close-modal" onclick="closeBatchModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="modal-loading-msg" class="empty-msg" style="display: none;">Verifying file conflicts...</div>
+                <table class="batch-table" id="batch-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-batch" checked onchange="toggleAllBatch(this)"></th>
+                            <th>Filename</th>
+                            <th>Target Destination</th>
+                            <th>Folder</th>
+                            <th>Size</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Dynamic -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeBatchModal()">Cancel</button>
+                <button class="btn btn-primary" id="btn-confirm-batch" onclick="confirmBatchDownloads()">Add to Queue</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const progressRouteTemplate = "{{ path('progress', {downloadId: '000000'}) }}";
+
+// Queue State (UI only)
+let serverQueue = [];
+let serverActiveTask = null;
+
+function toggleTracker() {
+    const el = document.getElementById('download-tracker');
+    el.classList.toggle('collapsed');
+    localStorage.setItem('tracker_collapsed', el.classList.contains('collapsed'));
+    document.getElementById('tracker-toggle-btn').innerText = el.classList.contains('collapsed') ? '▲' : '▼';
+}
+
+function updateTrackerSummary() {
+    const activeCount = serverActiveTask ? 1 : 0;
+    const queuedCount = serverQueue.length;
+    document.getElementById('tracker-summary').innerText = `(${activeCount} active, ${queuedCount} queued)`;
+}
+
+function renderQueue(queue) {
+    serverQueue = queue;
+    const list = document.getElementById('queued-downloads-list');
+    list.innerHTML = '';
+    
+    if (queue.length === 0) {
+        list.innerHTML = '<div class="empty-msg">Queue is empty</div>';
+    } else {
+        queue.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'queued-item';
+            div.innerHTML = `
+                <div class="item-name" title="${item.filename}">${item.filename}</div>
+                <button class="btn-remove" onclick="removeFromQueue(${index})">×</button>
+            `;
+            list.appendChild(div);
+        });
+    }
+    updateTrackerSummary();
+}
+
+async function suggestNames(packId, packName, files, btn = null) {
+    let packCard = null;
+    if (packId) {
+        packCard = document.getElementById(packId).closest('.pack-card');
+        packCard.classList.add('loading');
+    }
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⌛';
+    }
+    
+    const fileList = files.map(f => f.filename);
+    const formData = new FormData();
+    formData.append('packName', packName);
+    fileList.forEach(f => formData.append('files[]', f));
+
+    try {
+        const res = await fetch("{{ path('post_rename_ai') }}", {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (data.success && data.suggestions) {
+            // Expand pack if closed
+            if (packId) {
+                const content = document.getElementById(packId);
+                content.classList.remove('collapsed');
+            }
+
+            // Fill fields
+            for (const [original, suggestion] of Object.entries(data.suggestions)) {
+                if (!suggestion) continue;
+                
+                const container = packId ? document.getElementById(packId) : document;
+                const filenameInputs = container.querySelectorAll('input[name="filename"]');
+                
+                for (const input of filenameInputs) {
+                    if (input.value === original) {
+                        const form = input.closest('form');
+                        if (form) {
+                            form.querySelector('input[name="override_filename"]').value = suggestion;
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.error("AI Rename failed", e);
+    } finally {
+        if (packCard) packCard.classList.remove('loading');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = '✨';
+        }
+    }
+}
+
+async function removeFromQueue(index) {
+    try {
+        const res = await fetch(`{{ path('queue_remove', {index: 'IDX'}) }}`.replace('IDX', index), { method: 'POST' });
+        if (res.ok) syncWithServer();
+    } catch (e) {
+        console.error("Failed to remove item", e);
+    }
+}
+
+async function purgeQueueFromServer() {
+    if (!confirm('This will STOP all background downloads and clear the queue. Are you sure?')) return;
+    try {
+        const res = await fetch("{{ path('queue_purge') }}", { method: 'POST' });
+        if (res.ok) {
+            window.notify('success', 'Queue purged and worker reset.');
+            syncWithServer();
+        }
+    } catch (e) {
+        window.notify('error', 'Failed to purge queue.');
+    }
+}
+
+async function deleteRecentPath(path) {
+    if (!confirm('Remove this folder from recent list?')) return;
+    
+    const formData = new FormData();
+    formData.append('path', path);
+    
+    const res = await fetch("{{ path('delete_path') }}", {
+        method: 'POST',
+        body: formData
+    });
+    
+    if (res.ok) {
+        location.reload();
+    }
+}
+
+function togglePack(packId) {
+    const packFiles = document.getElementById(packId);
+    packFiles.classList.toggle('collapsed');
+}
+
+let pendingBatchQueue = [];
+
+function formatSize(bytes) {
+    if (bytes === null || bytes === undefined) return '0 B';
+    const s = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const e = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, e)).toFixed(2) + ' ' + s[e];
+}
+
+function closeBatchModal() {
+    document.getElementById('batch-modal').style.display = 'none';
+}
+
+function toggleAllBatch(mainCheckbox) {
+    const checkboxes = document.querySelectorAll('.batch-file-checkbox');
+    checkboxes.forEach(cb => cb.checked = mainCheckbox.checked);
+}
+
+async function downloadPack(event, packId, files) {
+    if (event) event.stopPropagation();
+    
+    // Find the pack card and inputs
+    const packContainer = document.getElementById(packId);
+    const packCard = packContainer.closest('.pack-card');
+    const packPath = packCard.querySelector('.pack-path-input')?.value || '';
+    
+    // Prepare candidate list for checking
+    const candidates = [];
+    const isSingle = !Array.isArray(files);
+    const fileList = isSingle ? [files] : files;
+
+    fileList.forEach((file, index) => {
+        // Find the specific file form. 
+        // If single mode, search the pack for this specific filename
+        // If batch mode, the index matches the grid order
+        let fileForm;
+        if (isSingle) {
+            fileForm = packContainer.querySelector(`input[name="filename"][value="${file.filename.replace(/"/g, '\\"')}"]`).closest('form');
+        } else {
+            fileForm = packContainer.querySelectorAll('.file-card')[index].querySelector('form');
+        }
+
+        const individualPath = fileForm.querySelector('input[name="path"]').value;
+        const individualRename = fileForm.querySelector('input[name="override_filename"]').value;
+        
+        candidates.push({
+            original: file,
+            path: individualPath || packPath || '',
+            filename: individualRename || file.filename
+        });
+    });
+
+    // Show loading UI
+    const modal = document.getElementById('batch-modal');
+    const tableBody = document.querySelector('#batch-table tbody');
+    const modalLoading = document.getElementById('modal-loading-msg');
+    
+    tableBody.innerHTML = '';
+    modalLoading.style.display = 'block';
+    modal.style.display = 'flex';
+
+    try {
+        const res = await fetch("{{ path('check_files') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: candidates.map(c => ({ path: c.path, filename: c.filename })) })
+        });
+        const data = await res.json();
+        
+        modalLoading.style.display = 'none';
+        
+        pendingBatchQueue = [];
+
+        candidates.forEach((c, idx) => {
+            const check = data.results[idx];
+            const row = document.createElement('tr');
+            if (check.exists) row.className = 'conflict-error';
+
+            let statusHtml = '<span style="color: var(--success)">✓ Ready</span>';
+            if (check.exists) {
+                const sameSize = check.currentSize === c.original.size;
+                statusHtml = `
+                    <div class="conflict-warning" title="${check.fullPath}">
+                        ⚠️ Existing (${formatSize(check.currentSize)})
+                        ${sameSize ? '<span class="badge badge-success">Same size</span>' : '<span class="badge badge-warning">Diff size</span>'}
+                    </div>
+                `;
+            }
+
+            let folderHtml = check.folderExists 
+                ? '<span style="color: var(--success)">✓ Exists</span>' 
+                : `<button class="btn btn-secondary btn-icon" style="width: auto; padding: 0 0.5rem; height: 24px; font-size: 0.7rem; background: var(--danger)" onclick="createMissingFolder('${c.path.replace(/\\/g, '\\\\')}', this, '${packId}')">📁 Create</button>`;
+
+            row.innerHTML = `
+                <td><input type="checkbox" class="batch-file-checkbox" checked data-index="${idx}"></td>
+                <td>
+                    <div style="font-weight: 500;">${c.filename}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">${c.filename !== c.original.filename ? 'Orig: ' + c.original.filename : ''}</div>
+                </td>
+                <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.path || 'Default'}">
+                    ${c.path || '(Défaut)'}
+                </td>
+                <td>${folderHtml}</td>
+                <td><span class="size-tag">${formatSize(c.original.size)}</span></td>
+                <td>${statusHtml}</td>
+            `;
+            tableBody.appendChild(row);
+
+            pendingBatchQueue.push({
+                link: c.original.link,
+                filename: c.original.filename,
+                override_filename: c.filename !== c.original.filename ? c.filename : null,
+                path: c.path,
+                overwrite: check.exists
+            });
+        });
+
+    } catch (e) {
+        console.error("Conflict check failed", e);
+        closeBatchModal();
+        window.notify('error', "Conflict check failed. Server might be down.");
+    }
+}
+
+async function createMissingFolder(path, btn, packId) {
+    btn.disabled = true;
+    btn.innerText = '⌛...';
+    
+    try {
+        const res = await fetch("{{ path('create_folder') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            window.notify('success', `Folder created: ${path}`);
+            // Re-run the check to update the entire modal state (folders might be shared)
+            // We need the original files list. Let's find it from the pack data.
+            // Simplified: juste change status of THIS button for now, or trigger re-downloadPack logic
+            btn.parentElement.innerHTML = '<span style="color: var(--success)">✓ Created</span>';
+        } else {
+            window.notify('error', `Folder creation failed: ${data.message}`);
+            btn.disabled = false;
+            btn.innerText = '📁 retry';
+        }
+    } catch (e) {
+        window.notify('error', "Network error while creating folder.");
+        btn.disabled = false;
+    }
+}
+
+async function confirmBatchDownloads() {
+    const checkboxes = document.querySelectorAll('.batch-file-checkbox');
+    const items = [];
+
+    checkboxes.forEach(cb => {
+        if (cb.checked) {
+            const index = parseInt(cb.dataset.index);
+            const item = pendingBatchQueue[index];
+            if (item) items.push(item);
+        }
+    });
+
+    if (items.length === 0) {
+        alert("Select at least one file.");
+        return;
+    }
+
+    closeBatchModal();
+    window.notify('info', `Adding ${items.length} files to server queue...`);
+
+    for (const item of items) {
+        const formData = new FormData();
+        formData.append('url', item.link);
+        formData.append('filename', item.filename);
+        if (item.override_filename) formData.append('override_filename', item.override_filename);
+        formData.append('path', item.path);
+        if (item.overwrite) formData.append('overwrite', '1');
+        formData.append('download_id', 'dl_' + Math.random().toString(36).substr(2, 9));
+
+        try {
+            const res = await fetch("{{ path('download') }}", { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                window.notify('success', `Enqueued: ${item.override_filename || item.filename}`);
+            } else {
+                window.notify('error', `Failed to enqueue: ${item.filename} - ${data.message}`);
+            }
+        } catch (e) {
+            window.notify('error', `Network error while enqueuing ${item.filename}`);
+        }
+    }
+    
+    syncWithServer();
+}
+
+
+async function syncWithServer() {
+    try {
+        const res = await fetch("{{ path('queue_status') }}");
+        const data = await res.json();
+        
+        renderQueue(data.queue || []);
+        updateActiveTaskUI(data.active);
+    } catch (e) {
+        console.warn("Sync failed", e);
+    }
+}
+
+async function updateActiveTaskUI(active) {
+    const list = document.getElementById('active-downloads-list');
+    serverActiveTask = active;
+
+    if (!active) {
+        list.innerHTML = '<div class="empty-msg">No active downloads</div>';
+        updateTrackerSummary();
+        return;
+    }
+
+    // Check progress for this specific task
+    try {
+        const downloadId = active.download_id || active.downloadId;
+        const res = await fetch(progressRouteTemplate.replace('000000', downloadId));
+        const progress = await res.json();
+        
+        const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
+
+        list.innerHTML = `
+            <div class="active-item" id="active-${downloadId}">
+                <div class="item-header">
+                    <span class="item-name" title="${filename}">${filename}</span>
+                    <span class="item-percent">${progress.percentage || 0}%</span>
+                </div>
+                <div class="item-progress">
+                    <div class="bar" style="width: ${progress.percentage || 0}%"></div>
+                </div>
+                <div class="item-footer">
+                    <span class="item-status">${progress.status === 'downloading' ? 'Downloading...' : 'Starting...'}</span>
+                    <span class="item-speed">${progress.speed || '...'}</span>
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        console.warn("Progress update failed", e);
+    }
+    updateTrackerSummary();
+}
+
+function startDownload(event, packId, file) {
+    if (event) event.preventDefault();
+    downloadPack(null, packId, file);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Restore collapse state
+    if (localStorage.getItem('tracker_collapsed') === 'true') {
+        document.getElementById('download-tracker').classList.add('collapsed');
+        document.getElementById('tracker-toggle-btn').innerText = '▲';
+    }
+
+    syncWithServer();
+    setInterval(syncWithServer, 2000);
+});
+</script>
+
+<style>
+.packs-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+}
+
+.pack-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+/* Recent Paths Manager */
+.recent-paths-manager {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 5rem;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.recent-paths-manager h3 {
+    font-size: 1rem;
+    margin: 0 0 1rem 0;
+    color: var(--text-secondary);
+}
+
+.recent-paths-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.recent-path-item {
+    background: var(--bg-primary);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 0.4rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.path-text {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-remove-path {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0;
+    line-height: 1;
+}
+
+.btn-remove-path:hover {
+    color: #ff4d4d;
+}
+
+/* Tracker Styles */
+.tracker-container {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    width: 350px;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 1000;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 80vh;
+}
+
+.tracker-container.collapsed {
+    max-height: 56px;
+    width: 250px;
+}
+
+.tracker-header {
+    background: rgba(255,255,255,0.03);
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.tracker-header:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.tracker-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.tracker-summary {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-left: 0.25rem;
+}
+
+#tracker-toggle-btn {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.tracker-content {
+    padding: 0 1rem 1rem 1rem;
+    overflow-y: auto;
+    max-height: calc(80vh - 56px);
+}
+
+.tracker-section h3 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin: 1rem 0 0.5rem 0;
+    letter-spacing: 0.05em;
+}
+
+.tracker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.empty-msg {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    padding: 0.5rem 0;
+}
+
+.active-item {
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    padding: 0.75rem;
+    border-left: 3px solid var(--accent);
+}
+
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.item-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 0.5rem;
+    flex: 1;
+}
+
+.item-progress {
+    height: 4px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 2px;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.item-progress .bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+}
+
+.item-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.queued-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255,255,255,0.02);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+}
+
+.btn-remove {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+}
+
+.btn-remove:hover {
+    color: #ff4d4d;
+}
+
+.pack-card {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.pack-card.loading .pack-loader-overlay {
+    display: flex;
+}
+
+.pack-loader-overlay {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255,255,255,0.1);
+    border-left-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Modal Styles */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.8);
+    backdrop-filter: blur(8px);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.modal-container {
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 900px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    animation: modalAppear 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes modalAppear {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+}
+
+.modal-body {
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.batch-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.batch-table th {
+    background: rgba(255,255,255,0.02);
+    text-align: left;
+    padding: 1rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    position: sticky;
+    top: 0;
+}
+
+.batch-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    vertical-align: middle;
+}
+
+.batch-table tr:hover td {
+    background: rgba(255,255,255,0.01);
+}
+
+.conflict-warning {
+    color: #ff9800;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 500;
+}
+
+.conflict-error {
+    background: rgba(255, 87, 34, 0.05);
+}
+
+.size-tag {
+    font-family: monospace;
+    font-size: 0.75rem;
+    background: rgba(255,255,255,0.05);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+}
+
+.btn-close-modal {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.pack-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.pack-header:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.pack-info h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+}
+
+.pack-icon {
+    font-size: 1.5rem;
+}
+
+.pack-meta {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-download-pack {
+    flex-shrink: 0;
+}
+
+.pack-files {
+    max-height: 2000px;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.pack-files.collapsed {
+    max-height: 0;
+}
+
+.file-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    gap: 1rem;
+}
+
+.file-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    word-break: break-word;
+}
+
+.file-size {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.download-form {
+    flex-shrink: 0;
+    width: 100%;
+    max-width: 500px;
+}
+</style>
+{% endblock %}

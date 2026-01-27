@@ -1,0 +1,27 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Settings - AllDebridDL{% endblock %}
+
+{% block body %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>Configuration</h2>
+    <form method="post">
+        <div>
+            <label for="api_key">Alldebrid API Key</label>
+            <input type="text" id="api_key" name="api_key" value="{{ config.api_key|default('') }}" placeholder="Enter your API Key" required>
+        </div>
+
+        <div>
+            <label for="grok_api_key">Grok AI API Key (xAI)</label>
+            <input type="text" id="grok_api_key" name="grok_api_key" value="{{ config.grok_api_key|default('') }}" placeholder="xai-...">
+        </div>
+        
+        <div>
+            <label for="default_path">Default Download Path</label>
+            <input type="text" id="default_path" name="default_path" value="{{ config.default_path|default('') }}" placeholder="C:\Users\Downloads" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full">Save Settings</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Download History - Alldebrid Downloader{% endblock %}
+
+{% block body %}
+<div class="card shadow-lg" style="margin-bottom: 2rem; border-radius: 16px; overflow: hidden;">
+    <div style="padding: 1.5rem; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+        <h1 style="margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
+            <span>📜</span> Download History
+        </h1>
+        <div class="badge badge-success">{{ totalItems }} total elements</div>
+    </div>
+
+    <div style="overflow-x: auto;">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Filename</th>
+                    <th>Destination</th>
+                    <th>Size</th>
+                    <th>Duration</th>
+                    <th>Avg Speed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in history %}
+                    <tr>
+                        <td style="white-space: nowrap; color: var(--text-secondary); font-size: 0.8rem;">
+                            {{ item.date|date('Y-m-d H:i:s') }}
+                        </td>
+                        <td style="max-width: 300px; font-weight: 500;">
+                            {{ item.filename }}
+                        </td>
+                        <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: var(--text-secondary);" title="{{ item.path }}">
+                            {{ item.path }}
+                        </td>
+                        <td>
+                            <span class="size-tag" style="background: rgba(56, 189, 248, 0.1); color: var(--accent);">
+                                {% set size = item.size ?? 0 %}
+                                {% if size > 1024 * 1024 * 1024 %}
+                                    {{ (size / 1024 / 1024 / 1024)|round(2) }} GB
+                                {% else %}
+                                    {{ (size / 1024 / 1024)|round(1) }} MB
+                                {% endif %}
+                            </span>
+                        </td>
+                        <td style="font-size: 0.85rem;">
+                            {{ item.duration ?? 'N/A' }}s
+                        </td>
+                        <td>
+                            <span style="font-family: monospace; font-size: 0.8rem;">{{ item.speed ?? 'N/A' }}</span>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+                            No downloads recorded yet.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if totalPages > 1 %}
+        <div style="padding: 1.5rem; display: flex; justify-content: center; gap: 0.5rem; border-top: 1px solid rgba(255,255,255,0.05);">
+            {% if currentPage > 1 %}
+                <a href="{{ path('history', {page: currentPage - 1}) }}" class="btn btn-secondary">Previous</a>
+            {% endif %}
+            
+            <div style="display: flex; align-items: center; padding: 0 1rem; color: var(--text-secondary); font-size: 0.9rem;">
+                Page {{ currentPage }} of {{ totalPages }}
+            </div>
+
+            {% if currentPage < totalPages %}
+                <a href="{{ path('history', {page: currentPage + 1}) }}" class="btn btn-secondary">Next</a>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<style>
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.history-table th {
+    text-align: left;
+    padding: 1rem 1.5rem;
+    background: rgba(255,255,255,0.01);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.history-table td {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    vertical-align: middle;
+}
+
+.history-table tr:hover td {
+    background: rgba(255,255,255,0.01);
+}
+
+.size-tag {
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+</style>
+{% endblock %}
