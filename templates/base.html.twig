@@ -411,6 +411,17 @@
             transition: width 0.3s ease;
         }
 
+        .item-progress .bar.pulsing {
+            background: linear-gradient(90deg, var(--accent), var(--success), var(--accent));
+            background-size: 200% 100%;
+            animation: pulse-bg 2s infinite linear;
+        }
+
+        @keyframes pulse-bg {
+            0% { background-position: 100% 0; }
+            100% { background-position: -100% 0; }
+        }
+
         .item-footer {
             display: flex;
             justify-content: space-between;
@@ -448,11 +459,12 @@
         <div class="container">
             <a href="{{ path('music') }}" class="brand">Downloader</a>
             <div style="display: flex; align-items: center; gap: 1rem;">
-                <a href="{{ path('music') }}">Music</a>
-                <a href="{{ path('video') }}">Video</a>
-                <a href="{{ path('queue') }}">Queue</a>
-                <a href="{{ path('history') }}">History</a>
-                <a href="{{ path('config') }}">Settings</a>
+                <a href="{{ path('music') }}" class="btn btn-secondary" style="background: none; border: none;">🎵 Music</a>
+                <a href="{{ path('video') }}" class="btn btn-secondary" style="background: none; border: none;">🎥 Video</a>
+                <a href="{{ path('queue') }}" class="btn btn-secondary" style="background: none; border: none;">⚙️ Queue</a>
+                <a href="{{ path('history') }}" class="btn btn-secondary" style="background: none; border: none;">📜 History</a>
+                <a href="{{ path('logs') }}" class="btn btn-secondary" style="background: none; border: none;">📋 Logs</a>
+                <a href="{{ path('config') }}" class="btn btn-secondary" style="background: none; border: none;">🛠️ Settings</a>
             </div>
         </div>
     </nav>
@@ -494,6 +506,7 @@
     </div>
 
     <!-- Global Download Tracker -->
+    {% if hide_tracker is not defined or not hide_tracker %}
     <div id="download-tracker" class="tracker-container collapsed">
         <div class="tracker-header">
             <div class="tracker-title" onclick="toggleTracker()">
@@ -522,6 +535,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <script>
         const progressRouteTemplate = "{{ path('progress', {downloadId: '000000'}) }}";
@@ -612,24 +626,25 @@
                 const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
                 const typeIcon = active.type === 'music' ? '🎵' : '🎥';
                 const typeLabel = (active.type || 'video').toUpperCase();
+                const isMusic = active.type === 'music';
 
                 list.innerHTML = `
                     <div class="active-item" id="active-${downloadId}">
                         <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom:0.75rem">
-                            <span class="badge ${active.type === 'music' ? 'badge-music' : 'badge-video'}" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">
+                            <span class="badge ${isMusic ? 'badge-music' : 'badge-video'}" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">
                                 ${typeIcon} ${typeLabel}
                             </span>
-                            <span class="badge badge-success" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">DOWNLOADING</span>
+                            <span class="badge badge-success" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">${isMusic ? 'PROCESSING' : 'DOWNLOADING'}</span>
                         </div>
                         <div class="item-header">
-                            <span class="item-name" title="${filename}" style="font-size: 1rem; font-weight: 600;">${filename}</span>
-                            <span class="item-percent" style="font-weight: bold; color: var(--accent);">${progress.percentage || 0}%</span>
+                            <span class="item-name" title="${filename}" style="font-size: 0.9rem; font-weight: 600; font-family: ${isMusic ? 'monospace' : 'inherit'};">${filename}</span>
+                            ${!isMusic ? `<span class="item-percent" style="font-weight: bold; color: var(--accent);">${progress.percentage || 0}%</span>` : ''}
                         </div>
-                        <div class="item-progress">
-                            <div class="bar" style="width: ${progress.percentage || 0}%"></div>
+                        <div class="item-progress" style="${isMusic ? 'height: 2px; opacity: 0.5;' : ''}">
+                            <div class="bar ${isMusic ? ' pulsing' : ''}" style="width: ${isMusic ? '100' : (progress.percentage || 0)}%"></div>
                         </div>
                         <div class="item-footer">
-                            <span class="item-status">${progress.status === 'downloading' ? 'Downloading...' : 'Starting...'}</span>
+                            <span class="item-status">${isMusic ? 'See Queue for full logs' : (progress.status === 'downloading' ? 'Downloading...' : 'Starting...')}</span>
                             <span class="item-speed">${progress.speed || '...'}</span>
                         </div>
                     </div>
@@ -697,14 +712,34 @@
                 logs.forEach(log => renderNotification(log, container));
             }
 
-            // Global Tracker Init
-            if (localStorage.getItem('tracker_collapsed') === 'true') {
-                document.getElementById('download-tracker').classList.add('collapsed');
-                document.getElementById('tracker-toggle-btn').innerText = '▲';
+            async function pollServerNotifications() {
+            try {
+                const res = await fetch("{{ path('notifications_poll') }}");
+                const data = await res.json();
+                if (data.notifications && data.notifications.length > 0) {
+                    data.notifications.forEach(notif => {
+                        if (window.notify) {
+                            window.notify(notif.message, notif.type);
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to poll notifications", e);
             }
+        }
 
-            syncWithServer();
-            setInterval(syncWithServer, 2000);
+        // Initialize
+        if (localStorage.getItem('tracker_collapsed') === 'true') {
+            document.getElementById('download-tracker').classList.add('collapsed');
+            document.getElementById('tracker-toggle-btn').innerText = '▲';
+        } else {
+            document.getElementById('download-tracker').classList.remove('collapsed');
+            document.getElementById('tracker-toggle-btn').innerText = '▼';
+        }
+
+        syncWithServer();
+        setInterval(syncWithServer, 2000);
+        setInterval(pollServerNotifications, 5000);
         });
     </script>
 </body>

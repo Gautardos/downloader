@@ -15,46 +15,73 @@
         <table class="history-table">
             <thead>
                 <tr>
+                    <th>Type</th>
                     <th>Date</th>
-                    <th>Filename</th>
-                    <th>Destination</th>
-                    <th>Size</th>
-                    <th>Duration</th>
-                    <th>Avg Speed</th>
+                    <th style="width: 30%;">Filename</th>
+                    <th>Size/Files</th>
+                    <th>Speed</th>
+                    <th>Status</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in history %}
-                    <tr>
+                    <tr class="status-{{ item.status|default('success') }}">
+                        <td style="font-size: 1.5rem; text-align: center;">
+                            {{ (item.type|default('video')) == 'music' ? '🎵' : '🎥' }}
+                        </td>
                         <td style="white-space: nowrap; color: var(--text-secondary); font-size: 0.8rem;">
                             {{ item.date|date('Y-m-d H:i:s') }}
                         </td>
-                        <td style="max-width: 300px; font-weight: 500;">
-                            {{ item.filename }}
-                        </td>
-                        <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: var(--text-secondary);" title="{{ item.path }}">
-                            {{ item.path }}
+                        <td>
+                            <div style="font-weight: 500; margin-bottom: 0.25rem;">{{ item.filename }}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;" title="{{ item.path }}">
+                                {{ item.path }}
+                            </div>
                         </td>
                         <td>
-                            <span class="size-tag" style="background: rgba(56, 189, 248, 0.1); color: var(--accent);">
-                                {% set size = item.size ?? 0 %}
-                                {% if size > 1024 * 1024 * 1024 %}
-                                    {{ (size / 1024 / 1024 / 1024)|round(2) }} GB
-                                {% else %}
-                                    {{ (size / 1024 / 1024)|round(1) }} MB
-                                {% endif %}
+                            {% if (item.type|default('video')) == 'video' %}
+                                <span class="size-tag" style="background: rgba(56, 189, 248, 0.1); color: var(--accent);">
+                                    {% set size = item.size ?? 0 %}
+                                    {% if size > 1024 * 1024 * 1024 %}
+                                        {{ (size / 1024 / 1024 / 1024)|round(2) }} GB
+                                    {% else %}
+                                        {{ (size / 1024 / 1024)|round(1) }} MB
+                                    {% endif %}
+                                </span>
+                            {% else %}
+                                <span style="font-size: 0.8rem; color: var(--text-secondary);">
+                                    {{ item.file_count|default(0) }} files
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span style="font-family: monospace; font-size: 0.8rem; color: var(--text-secondary);">
+                                {{ item.speed|default('--') }}
                             </span>
                         </td>
-                        <td style="font-size: 0.85rem;">
-                            {{ item.duration ?? 'N/A' }}s
+                        <td>
+                            {% if item.status|default('success') == 'error' %}
+                                <span class="badge" style="background: var(--danger); color: white;">FAILED</span>
+                            {% elseif item.status|default('success') == 'canceled' %}
+                                <span class="badge" style="background: var(--text-secondary); color: white;">CANCELED</span>
+                            {% else %}
+                                <span class="badge" style="background: var(--success); color: white;">SUCCESS</span>
+                            {% endif %}
                         </td>
                         <td>
-                            <span style="font-family: monospace; font-size: 0.8rem;">{{ item.speed ?? 'N/A' }}</span>
+                            {% if (item.type|default('video')) == 'music' and item.download_id is defined %}
+                                <a href="{{ path('history_log', {downloadId: item.download_id}) }}" target="_blank" class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; background: rgba(56, 189, 248, 0.1); color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.2);">
+                                    View Logs
+                                </a>
+                            {% else %}
+                                <span style="color: var(--text-secondary); font-size: 0.8rem;">--</span>
+                            {% endif %}
                         </td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="6" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+                        <td colspan="5" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
                             No downloads recorded yet.
                         </td>
                     </tr>

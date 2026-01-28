@@ -7,6 +7,7 @@ use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
 use App\Service\QueueManager;
+use GuzzleHttp\Client;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -122,30 +123,109 @@ class DashboardController extends AbstractController
     {
         return $this->render('dashboard/queue.html.twig', [
             'queue' => $queueManager->getQueue(),
-            'activeTask' => $queueManager->getActiveTask()
+            'active' => $queueManager->getActiveTask(),
+            'hide_tracker' => true
         ]);
     }
 
     #[Route('/music-add', name: 'music_add', methods: ['POST'])]
-    public function musicAdd(Request $request, QueueManager $queueManager): Response
+    public function musicAdd(Request $request, QueueManager $queueManager, JsonStorage $storage): Response
     {
         $urls = $request->request->get('urls');
         if (!$urls) {
             return $this->json(['success' => false, 'message' => 'No URLs provided.']);
         }
 
+        $config = $storage->get('config', []);
+        $path = $config['music_root_path'] ?? '';
+
         $urlList = array_filter(array_map('trim', explode("\n", $urls)));
         foreach ($urlList as $url) {
             $queueManager->enqueue([
                 'url' => $url,
-                'filename' => 'Music Link',
-                'path' => '',
+                'filename' => 'Music: ' . substr($url, -20),
+                'path' => $path,
                 'download_id' => bin2hex(random_bytes(8)),
-                'date_added' => date('Y-m-d H:i:s')
+                'date_added' => date('Y-m-d H:i:s'),
+                'type' => 'music'
             ], 'music');
         }
 
         return $this->json(['success' => true]);
+    }
+
+    #[Route('/queue-active-log', name: 'queue_active_log', methods: ['GET'])]
+    public function queueActiveLog(QueueManager $queueManager, JsonStorage $storage): Response
+    {
+        $active = $queueManager->getActiveTask();
+        if (!$active || ($active['type'] ?? '') !== 'music') {
+            return $this->json(['log' => '']);
+        }
+
+        $logFile = $storage->getStorageDir() . '/logs/active_worker.log';
+        if (!file_exists($logFile)) {
+            return $this->json(['log' => 'Initializing log...']);
+        }
+
+        // Return last 100 lines
+        $lines = file($logFile);
+        $lastLines = array_slice($lines, -100);
+        return $this->json(['log' => implode("", $lastLines)]);
+    }
+
+    #[Route('/history-log/{downloadId}', name: 'history_log', methods: ['GET'])]
+    public function historyLog(string $downloadId, JsonStorage $storage): Response
+    {
+        $logFile = $storage->getStorageDir() . '/logs/history_' . $downloadId . '.log';
+        if (!file_exists($logFile)) {
+            return new Response('Log file not found.', 404);
+        }
+
+        return new Response(file_get_contents($logFile), 200, [
+            'Content-Type' => 'text/plain'
+        ]);
+    }
+
+    #[Route('/notifications-poll', name: 'notifications_poll', methods: ['GET'])]
+    public function notificationsPoll(JsonStorage $storage): Response
+    {
+        $notifications = $storage->get('server_notifications', []);
+
+        // Clear them after reading
+        if (!empty($notifications)) {
+            $storage->set('server_notifications', []);
+        }
+
+        return $this->json([
+            'notifications' => $notifications
+        ]);
+    }
+
+    #[Route('/logs', name: 'logs', methods: ['GET'])]
+    public function logs(JsonStorage $storage): Response
+    {
+        $logsDir = $storage->getStorageDir() . '/logs';
+        $logFiles = [];
+        if (is_dir($logsDir)) {
+            $files = scandir($logsDir);
+            foreach ($files as $file) {
+                if ($file === '.' || $file === '..' || $file === 'active_worker.log')
+                    continue;
+                $logFiles[] = [
+                    'name' => $file,
+                    'path' => $file,
+                    'date' => date('Y-m-d H:i:s', filemtime($logsDir . '/' . $file)),
+                    'size' => filesize($logsDir . '/' . $file),
+                    'id' => str_replace(['history_', '.log'], '', $file)
+                ];
+            }
+            // Sort by date descending
+            usort($logFiles, fn($a, $b) => $b['date'] <=> $a['date']);
+        }
+
+        return $this->render('dashboard/logs.html.twig', [
+            'logs' => $logFiles
+        ]);
     }
 
     #[Route('/delete-path', name: 'delete_path', methods: ['POST'])]

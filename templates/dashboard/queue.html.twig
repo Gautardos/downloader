@@ -26,6 +26,14 @@
             <div id="active-task-container">
                 <p class="empty-msg">No active task.</p>
             </div>
+            
+            <!-- Real-time Log Viewer (Hidden by default) -->
+            <div id="log-viewer-container" style="display: none; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem;">
+                <h4 style="margin: 0 0 1rem 0; font-size: 0.9rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Console Output</h4>
+                <div id="log-content" style="background: #000; color: #0f0; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; padding: 1rem; border-radius: 8px; height: 300px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4; border: 1px solid rgba(0,255,0,0.1);">
+                    Initializing log viewer...
+                </div>
+            </div>
         </div>
 
         <!-- Queue Section -->
@@ -138,6 +146,30 @@ async function renderActive(active) {
         `;
     } catch (e) {
         console.warn("Active progress fetch failed", e);
+    }
+
+    // Handle Music Logs
+    const logContainer = document.getElementById('log-viewer-container');
+    if (active.type === 'music') {
+        logContainer.style.display = 'block';
+        updateActiveLog();
+    } else {
+        logContainer.style.display = 'none';
+    }
+}
+
+async function updateActiveLog() {
+    try {
+        const res = await fetch("{{ path('queue_active_log') }}");
+        const data = await res.json();
+        const content = document.getElementById('log-content');
+        if (data.log) {
+            const isAtBottom = content.scrollHeight - content.clientHeight <= content.scrollTop + 50;
+            content.innerText = data.log;
+            if (isAtBottom) content.scrollTop = content.scrollHeight;
+        }
+    } catch (e) {
+        console.error("Log fetch failed", e);
     }
 }
 

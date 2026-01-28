@@ -133,7 +133,8 @@ class DownloadManager
             }
 
             $duration = microtime(true) - $startTime;
-            $this->recordDownload($filename, $destinationPath, $bytes, $duration);
+            $speed = $duration > 0 ? $bytes / $duration : 0;
+            $speedStr = $this->formatSpeed($speed);
 
             $this->updateProgress($downloadId, [
                 'status' => 'complete',
@@ -143,7 +144,13 @@ class DownloadManager
                 'total' => $bytes
             ]);
 
-            return ['success' => true, 'message' => 'Complete.'];
+            return [
+                'success' => true,
+                'message' => 'Complete.',
+                'size' => $bytes,
+                'duration' => round($duration, 2),
+                'speed' => $speedStr
+            ];
 
         } catch (\Exception $e) {
             @unlink($filePath);
@@ -176,27 +183,6 @@ class DownloadManager
         return round($bytesPerSec, 2) . ' B/s';
     }
 
-    private function recordDownload(string $filename, string $path, int $size, float $duration): void
-    {
-        $history = $this->storage->get('history', []);
-
-        $speed = $duration > 0 ? $size / $duration : 0;
-        if ($speed > 1024 * 1024) {
-            $speedStr = round($speed / 1024 / 1024, 2) . ' MB/s';
-        } else {
-            $speedStr = round($speed / 1024, 2) . ' KB/s';
-        }
-
-        $history[] = [
-            'filename' => $filename,
-            'path' => $path,
-            'size' => $size,
-            'duration' => round($duration, 2),
-            'speed' => $speedStr,
-            'date' => date('Y-m-d H:i:s')
-        ];
-        $this->storage->set('history', $history);
-    }
 
     public function isDownloaded(string $filename): bool
     {

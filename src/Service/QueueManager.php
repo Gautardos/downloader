@@ -95,6 +95,11 @@ class QueueManager
 
     public function purgeQueue(): void
     {
+        $queue = $this->storage->get(self::QUEUE_KEY, []);
+        foreach ($queue as $item) {
+            $this->recordHistory($item, 'canceled', 0);
+        }
+
         $this->storage->set(self::QUEUE_KEY, []);
         $this->storage->set(self::ACTIVE_TASK_KEY, null);
         $this->storage->set('worker_heartbeat', 0);
@@ -111,9 +116,30 @@ class QueueManager
     {
         $queue = $this->storage->get(self::QUEUE_KEY, []);
         if (isset($queue[$index])) {
+            $item = $queue[$index];
+            $this->recordHistory($item, 'canceled', 0);
             array_splice($queue, $index, 1);
             $this->storage->set(self::QUEUE_KEY, $queue);
         }
+    }
+
+    public function recordHistory(array $item, string $status, int $fileCount, array $stats = []): void
+    {
+        $history = $this->storage->get('history', []);
+
+        $history[] = [
+            'download_id' => $item['download_id'] ?? bin2hex(random_bytes(8)),
+            'filename' => $item['filename'] ?? 'Download',
+            'type' => $item['type'] ?? 'music',
+            'status' => $status,
+            'date' => date('Y-m-d H:i:s'),
+            'path' => $item['path'] ?? '',
+            'file_count' => $fileCount,
+            'size' => $stats['size'] ?? ($item['size'] ?? null),
+            'speed' => $stats['speed'] ?? ($item['speed'] ?? null),
+            'duration' => $stats['duration'] ?? ($item['duration'] ?? null)
+        ];
+        $this->storage->set('history', array_values($history));
     }
 
     public function getStorage(): JsonStorage

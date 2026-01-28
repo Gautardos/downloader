@@ -17,3 +17,7 @@ services:
     App\Service\QueueManager:
         arguments:
             $projectDir: '%kernel.project_dir%'
+
+    App\Command\DownloadWorkerCommand:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
