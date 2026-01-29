@@ -23,7 +23,10 @@ class ConfigController extends AbstractController
             $storage->set('config', [
                 'api_key' => $apiKey,
                 'grok_api_key' => $grokKey,
+                'grok_model' => $request->request->get('grok_model', 'grok-4-fast-non-reasoning'),
                 'default_path' => $defaultPath,
+                'spotify_client_id' => $request->request->get('spotify_client_id', ''),
+                'spotify_client_secret' => $request->request->get('spotify_client_secret', ''),
                 'music_output' => $request->request->get('music_output', '{artist} - {album} - {song_name}.{ext}'),
                 'music_format' => $request->request->get('music_format', 'mp3'),
                 'music_root_path' => $request->request->get('music_root_path', ''),
@@ -37,7 +40,9 @@ class ConfigController extends AbstractController
                 'music_progress_info' => $request->request->get('music_progress_info') === '1',
                 'music_retries' => (int) $request->request->get('music_retries', 3),
                 'music_venv_path' => $request->request->get('music_venv_path', 'venv'),
-                'music_binary' => $request->request->get('music_binary', 'musicdownload')
+                'music_binary' => $request->request->get('music_binary', 'musicdownload'),
+                'admin_user' => $request->request->get('admin_user', 'admin'),
+                'admin_password' => $request->request->get('admin_password', 'admin')
             ]);
 
             $this->addFlash('success', 'Configuration saved.');

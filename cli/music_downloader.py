@@ -14,10 +14,82 @@ def load_config():
             return json.load(f)
     return {}
 
+def verify_directory(directory):
+    import music_tag
+    results = []
+    if not os.path.isdir(directory):
+        return results
+
+    audio_extensions = ('.mp3', '.flac', '.m4a', '.opus', '.ogg', '.wav')
+    
+    # Map of base filename (without extension) to check for lyrics
+    files_in_dir = os.listdir(directory)
+    
+    for filename in files_in_dir:
+        if filename.lower().endswith(audio_extensions):
+            file_path = os.path.join(directory, filename)
+            try:
+                f = music_tag.load_file(file_path)
+                
+                # Check for lyrics within ID3 tags
+                lyrics = str(f['lyrics']).strip()
+                has_lyrics = len(lyrics) > 0 and lyrics.lower() != 'none'
+
+                # Normalize artist delimiters to match Spotify format (Artist 1, Artist 2)
+                artist = str(f['artist'])
+                artist = artist.replace(' / ', ', ').replace(' /', ', ').replace('/ ', ', ').replace('/', ', ')
+                artist = artist.replace('; ', ', ').replace(';', ', ')
+
+                results.append({
+                    'artist': artist,
+                    'album': str(f['album']),
+                    'song_name': str(f['title']),
+                    'filename': filename,
+                    'lyrics': has_lyrics
+                })
+            except Exception as e:
+                continue
+    
+    return results
+
 def main():
     config = load_config()
     music_binary = config.get('music_binary', 'musicdownload')
     
+    # Check for verification mode
+    if len(sys.argv) > 2 and sys.argv[1] == '--verify':
+        results = verify_directory(sys.argv[2])
+        print(json.dumps(results))
+        return
+
+    # Check for single file tags mode
+    if len(sys.argv) > 2 and sys.argv[1] == '--tags':
+        import music_tag
+        file_path = sys.argv[2]
+        if not os.path.exists(file_path):
+            print(json.dumps({'error': 'File not found'}))
+            return
+        try:
+            f = music_tag.load_file(file_path)
+            # Comprehensive tag extraction
+            tags = {
+                'title': str(f['title']),
+                'artist': str(f['artist']),
+                'album': str(f['album']),
+                'year': str(f['year']),
+                'genre': str(f['genre']),
+                'tracknumber': str(f['tracknumber']),
+                'totaltracks': str(f['totaltracks']),
+                'comment': str(f['comment']),
+                'lyrics': str(f['lyrics']),
+                'composer': str(f['composer']),
+                'discnumber': str(f['discnumber'])
+            }
+            print(json.dumps(tags))
+        except Exception as e:
+            print(json.dumps({'error': str(e)}))
+        return
+
     # Arguments passed from PHP (excluding the script name itself)
     args = sys.argv[1:]
     

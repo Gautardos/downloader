@@ -21,11 +21,38 @@
                     <input type="text" id="grok_api_key" name="grok_api_key" value="{{ config.grok_api_key|default('') }}" placeholder="xai-...">
                     <small style="color: var(--text-secondary);">Used for AI-assisted file renaming.</small>
                 </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label for="grok_model">Grok Model</label>
+                    <input type="text" id="grok_model" name="grok_model" value="{{ config.grok_model|default('grok-4-fast-non-reasoning') }}" placeholder="grok-...">
+                </div>
                 
                 <div style="margin-bottom: 1rem;">
                     <label for="default_path">Default Video Path</label>
                     <input type="text" id="default_path" name="default_path" value="{{ config.default_path|default('') }}" placeholder="C:\Users\Downloads" required>
                     <small style="color: var(--text-secondary);">Where video files are saved by default.</small>
+                </div>
+
+                <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Spotify API (Metadata)</h3>
+                <div style="margin-bottom: 1rem;">
+                    <label for="spotify_client_id">Spotify Client ID</label>
+                    <input type="text" id="spotify_client_id" name="spotify_client_id" value="{{ config.spotify_client_id|default('') }}" placeholder="Enter Client ID">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label for="spotify_client_secret">Spotify Client Secret</label>
+                    <input type="password" id="spotify_client_secret" name="spotify_client_secret" value="{{ config.spotify_client_secret|default('') }}" placeholder="Enter Client Secret">
+                    <small style="color: var(--text-secondary);">Required for real-time track metadata extraction.</small>
+                </div>
+
+                <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">App Security 🔐</h3>
+                <div style="margin-bottom: 1rem;">
+                    <label for="admin_user">Username</label>
+                    <input type="text" id="admin_user" name="admin_user" value="{{ config.admin_user|default('admin') }}" required>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label for="admin_password">Password</label>
+                    <input type="password" id="admin_password" name="admin_password" value="{{ config.admin_password|default('admin') }}" required>
+                    <small style="color: var(--text-secondary);">Used to secure your dashboard.</small>
                 </div>
             </section>
 

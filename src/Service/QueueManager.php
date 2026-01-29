@@ -137,7 +137,10 @@ class QueueManager
             'file_count' => $fileCount,
             'size' => $stats['size'] ?? ($item['size'] ?? null),
             'speed' => $stats['speed'] ?? ($item['speed'] ?? null),
-            'duration' => $stats['duration'] ?? ($item['duration'] ?? null)
+            'duration' => $stats['duration'] ?? ($item['duration'] ?? null),
+            'expected_tracks' => $item['expected_tracks'] ?? [],
+            'downloaded_tracks' => $stats['downloaded_tracks'] ?? [],
+            'missing_tracks' => $stats['missing_tracks'] ?? []
         ];
         $this->storage->set('history', array_values($history));
     }

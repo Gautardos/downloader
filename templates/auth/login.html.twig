@@ -1,0 +1,47 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Login - Downloader{% endblock %}
+
+{% block body %}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 80vh;">
+    <div class="pack-card" style="width: 100%; max-width: 400px; padding: 2.5rem; background: var(--bg-secondary); border: 1px solid rgba(255,255,255,0.05);">
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <span style="font-size: 3rem;">📥</span>
+            <h1 style="margin: 1rem 0 0.5rem 0; font-size: 1.5rem;">Welcome Back</h1>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">Please enter your credentials to continue.</p>
+        </div>
+
+        {% if error %}
+            <div style="background: rgba(255, 77, 77, 0.1); border: 1px solid rgba(255, 77, 77, 0.2); color: #ff4d4d; padding: 0.75rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.85rem; text-align: center;">
+                {{ error }}
+            </div>
+        {% endif %}
+
+        <form action="{{ path('login') }}" method="POST">
+            <div style="margin-bottom: 1.25rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Username</label>
+                <input type="text" name="username" required 
+                       style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: var(--text-primary); outline: none; transition: border-color 0.2s;"
+                       placeholder="Enter your username">
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Password</label>
+                <input type="password" name="password" required 
+                       style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: var(--text-primary); outline: none; transition: border-color 0.2s;"
+                       placeholder="Enter your password">
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-weight: 600;">
+                Login
+            </button>
+        </form>
+    </div>
+</div>
+
+<style>
+    input:focus {
+        border-color: var(--accent) !important;
+    }
+</style>
+{% endblock %}

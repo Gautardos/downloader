@@ -11,6 +11,8 @@ use GuzzleHttp\Client;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Routing\Annotation\Route;
 
 class DashboardController extends AbstractController
@@ -36,7 +38,8 @@ class DashboardController extends AbstractController
 
         return $this->render('dashboard/index.html.twig', [
             'packs' => $packs,
-            'recent_paths' => $recentPaths
+            'recent_paths' => $recentPaths,
+            'config' => $storage->get('config', [])
         ]);
     }
 
@@ -113,9 +116,78 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/', name: 'music')]
-    public function music(): Response
+    public function music(JsonStorage $storage): Response
     {
-        return $this->render('dashboard/music.html.twig');
+        return $this->render('dashboard/music.html.twig', [
+            'config' => $storage->get('config', [])
+        ]);
+    }
+
+    #[Route('/music-files', name: 'music_files')]
+    public function musicFiles(JsonStorage $storage): Response
+    {
+        $config = $storage->get('config', []);
+        $root = $config['music_root_path'] ?? '';
+        $files = [];
+
+        if (!empty($root) && is_dir($root)) {
+            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
+            $audio_exts = ['mp3', 'flac', 'm4a', 'opus', 'ogg', 'wav'];
+
+            foreach ($iterator as $file) {
+                if ($file->isFile() && in_array(strtolower($file->getExtension()), $audio_exts)) {
+                    $files[] = [
+                        'name' => $file->getFilename(),
+                        'path' => $file->getRealPath(),
+                        'size' => $file->getSize(),
+                        'mtime' => $file->getMTime(),
+                        'rel_path' => str_replace($root, '', $file->getRealPath())
+                    ];
+                }
+            }
+
+            // Sort by mtime descending
+            usort($files, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
+        }
+
+        return $this->render('dashboard/music_files.html.twig', [
+            'files' => $files,
+            'root' => $root
+        ]);
+    }
+
+    #[Route('/file-tags', name: 'file_tags', methods: ['POST'])]
+    public function fileTags(Request $request, KernelInterface $kernel, JsonStorage $storage): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        $filePath = $data['path'] ?? '';
+
+        if (empty($filePath) || !file_exists($filePath)) {
+            return $this->json(['success' => false, 'message' => 'File not found']);
+        }
+
+        $config = $storage->get('config', []);
+        $venvPath = $config['music_venv_path'] ?? 'venv';
+        $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'music_downloader.py';
+
+        $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
+
+        // Build shell command
+        $cmdStr = "($activate && python3 \"$script\" --tags \"$filePath\")";
+
+        $process = Process::fromShellCommandline($cmdStr);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Failed to extract tags: ' . $process->getErrorOutput()
+            ]);
+        }
+
+        $tags = json_decode($process->getOutput(), true);
+        return $this->json(['success' => true, 'tags' => $tags]);
     }
 
     #[Route('/queue', name: 'queue')]
@@ -129,7 +201,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music-add', name: 'music_add', methods: ['POST'])]
-    public function musicAdd(Request $request, QueueManager $queueManager, JsonStorage $storage): Response
+    public function musicAdd(Request $request, QueueManager $queueManager, JsonStorage $storage, \App\Service\SpotifyService $spotify): Response
     {
         $urls = $request->request->get('urls');
         if (!$urls) {
@@ -140,14 +212,33 @@ class DashboardController extends AbstractController
         $path = $config['music_root_path'] ?? '';
 
         $urlList = array_filter(array_map('trim', explode("\n", $urls)));
+        $logsDir = $storage->getStorageDir() . '/logs';
+        if (!is_dir($logsDir)) {
+            mkdir($logsDir, 0777, true);
+        }
+
         foreach ($urlList as $url) {
+            $metadata = $spotify->getMetadata($url);
+            $downloadId = bin2hex(random_bytes(8));
+
+            // Log metadata extraction attempt
+            $historyLogFile = $logsDir . '/history_' . $downloadId . '.log';
+            $logContent = "--- Spotify Metadata Extraction ---\n";
+            $logContent .= implode("\n", $spotify->getLogs()) . "\n";
+            $logContent .= str_repeat("-", 40) . "\n\n";
+            file_put_contents($historyLogFile, $logContent, FILE_APPEND);
+
+            $filename = $metadata ? 'Spotify: ' . $metadata['name'] : 'Music: ' . substr($url, -20);
+            $expectedTracks = $metadata ? $metadata['tracks'] : [];
+
             $queueManager->enqueue([
                 'url' => $url,
-                'filename' => 'Music: ' . substr($url, -20),
+                'filename' => $filename,
                 'path' => $path,
-                'download_id' => bin2hex(random_bytes(8)),
+                'download_id' => $downloadId,
                 'date_added' => date('Y-m-d H:i:s'),
-                'type' => 'music'
+                'type' => 'music',
+                'expected_tracks' => $expectedTracks
             ], 'music');
         }
 
@@ -262,14 +353,20 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/check-files', name: 'check_files', methods: ['POST'])]
-    public function checkFiles(Request $request): Response
+    public function checkFiles(Request $request, JsonStorage $storage): Response
     {
         $data = json_decode($request->getContent(), true);
         $files = $data['files'] ?? [];
         $results = [];
 
+        $config = $storage->get('config', []);
+        $defaultPath = $config['default_path'] ?? '';
+
         foreach ($files as $file) {
             $path = $file['path'];
+            if (empty($path)) {
+                $path = $defaultPath;
+            }
             $filename = $file['filename'];
 
             // Clean paths and ensure they are absolute
@@ -277,7 +374,7 @@ class DashboardController extends AbstractController
 
             $exists = file_exists($fullPath);
             $size = $exists ? filesize($fullPath) : null;
-            $folderExists = is_dir($path);
+            $folderExists = !empty($path) && is_dir($path);
 
             $results[] = [
                 'exists' => $exists,

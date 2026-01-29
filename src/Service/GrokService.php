@@ -55,13 +55,16 @@ class GrokService
             $prompt .= "5. Return a JSON object where keys are ORIGINAL filenames and values are the NEW suggested filenames.\n";
             $prompt .= "6. Maintain the exact original file extension.";
 
-            $response = $this->client->post(self::API_URL, [
+            $config = $this->storage->get('config', []);
+            $model = $config['grok_model'] ?? 'grok-4-fast-non-reasoning';
+
+            $response = $this->client->request('POST', 'https://api.x.ai/v1/chat/completions', [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $apiKey,
                     'Content-Type' => 'application/json',
                 ],
                 'json' => [
-                    'model' => 'grok-4-fast-non-reasoning',
+                    'model' => $model,
                     'messages' => [
                         [
                             'role' => 'system',

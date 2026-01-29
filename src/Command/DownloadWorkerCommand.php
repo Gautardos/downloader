@@ -72,7 +72,7 @@ class DownloadWorkerCommand extends Command
             $this->queueManager->setActiveTask($item);
 
             // Add start notification
-            $this->addServerNotification($storage, 'info', "Starting $type download: $filename");
+            $this->addServerNotification($storage, 'info', "Starting $type download", 'Started', $filename, $type);
 
             try {
                 if ($type === 'music') {
@@ -96,14 +96,14 @@ class DownloadWorkerCommand extends Command
                 }
 
                 $log("Finished [$type]: " . ($item['filename'] ?? 'unknown'));
-                $this->addServerNotification($storage, 'success', "Successfully downloaded $type: " . ($item['filename'] ?? 'unknown'));
+                $this->addServerNotification($storage, 'success', "Successfully downloaded $type", 'Finished', ($item['filename'] ?? 'unknown'), $type);
             } catch (\Throwable $e) {
                 $log('Error: ' . $e->getMessage());
                 $log('Stack trace: ' . $e->getTraceAsString());
 
                 // Add failed task to history
                 $this->queueManager->recordHistory($item, 'error', 0, $type === 'music' ? [] : ['type' => $type]);
-                $this->addServerNotification($storage, 'error', "Failed $type download: " . ($item['filename'] ?? 'unknown'));
+                $this->addServerNotification($storage, 'error', "Failed $type download", 'Failed', ($item['filename'] ?? 'unknown'), $type);
             }
 
             $this->queueManager->setActiveTask(null);
@@ -152,11 +152,14 @@ class DownloadWorkerCommand extends Command
 
         // Prepare logs directory
         $logsDir = $storage->getStorageDir() . '/logs';
-        if (!is_dir($logsDir))
+        if (!is_dir($logsDir)) {
             mkdir($logsDir, 0777, true);
+        }
 
         $activeLogFile = $logsDir . '/active_worker.log';
         $historyLogFile = $logsDir . '/history_' . $downloadId . '.log';
+
+        // Custom home directory
 
         // Custom home directory to avoid permission issues (e.g. zotify trying to write to /var/www/.config)
         $customHome = rtrim($this->projectDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'var' . DIRECTORY_SEPARATOR . 'home';
@@ -164,9 +167,9 @@ class DownloadWorkerCommand extends Command
             mkdir($customHome, 0777, true);
         }
 
-        // Clear active log
-        file_put_contents($activeLogFile, "Executing Music Downloader:\n\"$url\" ...\n" . str_repeat("-", 40) . "\n");
-        file_put_contents($historyLogFile, "Executing Full Command:\n$cmdStr\n" . str_repeat("-", 40) . "\n");
+        // Append to logs to preserve metadata logs from enqueue phase
+        file_put_contents($activeLogFile, "Executing Music Downloader:\n\"$url\" ...\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
+        file_put_contents($historyLogFile, "Executing Full Command:\n$cmdStr\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
 
         $progressFile = $storage->getStorageDir() . '/progress_' . $downloadId . '.json';
 
@@ -220,26 +223,76 @@ class DownloadWorkerCommand extends Command
             throw new \RuntimeException("Music download failed. Check logs for details.");
         }
 
-        // Count files (only those with *.* format, excluding hidden files starting with a dot)
+        // Post-download Verification
         $rootPath = $config['music_root_path'] ?? '';
-        $fileCount = 0;
-        if (is_dir($rootPath)) {
-            $files = scandir($rootPath);
-            $fileCount = count(array_filter($files, function ($f) {
-                // Must contain a dot, and it must NOT be at the beginning
-                return !in_array($f, ['.', '..']) && strpos($f, '.') > 0;
-            }));
+        $log("Verifying downloaded tracks in: $rootPath");
+        $verifyCmd = "($activate && python3 \"$wrapperPath\" --verify \"$rootPath\")";
+        $verifyProcess = \Symfony\Component\Process\Process::fromShellCommandline($verifyCmd);
+        $verifyProcess->setEnv([
+            'HOME' => $customHome,
+            'USERPROFILE' => $customHome,
+            'APPDATA' => $customHome . DIRECTORY_SEPARATOR . 'AppData' . DIRECTORY_SEPARATOR . 'Roaming'
+        ]);
+
+        $verifyProcess->run();
+
+        $verifiedTracks = [];
+        if ($verifyProcess->isSuccessful()) {
+            $verifiedTracks = json_decode($verifyProcess->getOutput(), true) ?: [];
         }
 
-        $this->queueManager->recordHistory($item, 'success', $fileCount);
+        $expectedTracks = $item['expected_tracks'] ?? [];
+        $matchedTracks = [];
+        $validatedCount = 0;
+
+        $missingTracks = [];
+        $matchedTracks = [];
+        foreach ($expectedTracks as $expected) {
+            $found = false;
+            foreach ($verifiedTracks as $verified) {
+                if (
+                    strtolower(trim($expected['artist'])) === strtolower(trim($verified['artist'])) &&
+                    strtolower(trim($expected['album'])) === strtolower(trim($verified['album'])) &&
+                    strtolower(trim($expected['song_name'])) === strtolower(trim($verified['song_name']))
+                ) {
+                    $found = true;
+                    $matchedTracks[] = $verified;
+                    $validatedCount++;
+                    break;
+                }
+            }
+            if (!$found) {
+                $missingTracks[] = $expected;
+            }
+        }
+
+        // Determine status: success (all found), warning (some found), error (none found)
+        $finalStatus = 'success';
+        if (!empty($expectedTracks)) {
+            if ($validatedCount === 0) {
+                $finalStatus = 'error';
+            } elseif ($validatedCount < count($expectedTracks)) {
+                $finalStatus = 'warning';
+            }
+        }
+
+        $log("Verification complete: $validatedCount/" . count($expectedTracks) . " tracks validated. Status: $finalStatus");
+
+        $this->queueManager->recordHistory($item, $finalStatus, $validatedCount, [
+            'downloaded_tracks' => $matchedTracks,
+            'missing_tracks' => $missingTracks
+        ]);
     }
 
-    private function addServerNotification($storage, string $type, string $message): void
+    private function addServerNotification($storage, string $type, string $message, string $action = '', string $item = '', string $mediaType = ''): void
     {
         $notifications = $storage->get('server_notifications', []);
         $notifications[] = [
             'type' => $type,
             'message' => $message,
+            'action' => $action,
+            'item' => $item,
+            'media_type' => $mediaType,
             'time' => date('H:i:s')
         ];
         $storage->set('server_notifications', $notifications);

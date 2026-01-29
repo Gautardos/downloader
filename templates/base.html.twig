@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Downloader{% endblock %}</title>
+    <link rel="icon" type="image/png" href="/logo.png">
     <style>
         :root {
             --bg-primary: #0f172a;
@@ -34,10 +35,13 @@
 
         /* Navbar */
         nav {
-            background-color: var(--bg-secondary);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 1rem 0;
-            margin-bottom: 2rem;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0.75rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
 
         nav .container {
@@ -57,16 +61,87 @@
 
         nav a:hover {
             color: var(--accent);
+            background: rgba(255,255,255,0.05);
+        }
+
+        /* Burger Menu Styles */
+        .burger-btn {
+            display: none;
+            flex-direction: column;
+            gap: 5px;
+            cursor: pointer;
+            padding: 0.5rem;
+            z-index: 5000;
+        }
+
+        .burger-btn span {
+            width: 25px;
+            height: 2px;
+            background: var(--text-primary);
+            transition: 0.3s;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        @media (max-width: 900px) {
+            .burger-btn { display: flex; }
+            .nav-links {
+                position: fixed;
+                top: 0;
+                right: -100%;
+                width: 280px;
+                height: 100vh;
+                background: var(--bg-secondary);
+                flex-direction: column;
+                padding-top: 5rem;
+                transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+                z-index: 4000;
+                gap: 0;
+                align-items: center; /* Center items */
+                text-align: center;
+            }
+            .nav-links.active { right: 0; }
+            .nav-links a {
+                width: 100%;
+                padding: 1.8rem 2rem;
+                margin: 0;
+                border-bottom: 1px solid rgba(255,255,255,0.03);
+                font-size: 1.2rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 1rem;
+            }
         }
 
         nav .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
             font-size: 1.25rem;
             font-weight: 700;
-            color: var(--accent);
-            margin: 0;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+
+        nav .brand img {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
         }
 
         /* Cards */
+
+        /* Notifications Status Colors */
+        .notif-item.success { border-left: 4px solid var(--success); }
+        .notif-item.error { border-left: 4px solid var(--danger); }
+        .notif-item.info { border-left: 4px solid var(--accent); }
+
         .card {
             background-color: var(--bg-secondary);
             border-radius: 0.75rem;
@@ -313,7 +388,7 @@
 
         .tracker-container.collapsed {
             max-height: 56px;
-            width: 300px;
+            width: 400px;
         }
 
         .tracker-header {
@@ -457,23 +532,40 @@
 <body>
     <nav>
         <div class="container">
-            <a href="{{ path('music') }}" class="brand">Downloader</a>
-            <div style="display: flex; align-items: center; gap: 1rem;">
-                <a href="{{ path('music') }}" class="btn btn-secondary" style="background: none; border: none;">🎵 Music</a>
-                <a href="{{ path('video') }}" class="btn btn-secondary" style="background: none; border: none;">🎥 Video</a>
-                <a href="{{ path('queue') }}" class="btn btn-secondary" style="background: none; border: none;">⚙️ Queue</a>
-                <a href="{{ path('history') }}" class="btn btn-secondary" style="background: none; border: none;">📜 History</a>
-                <a href="{{ path('logs') }}" class="btn btn-secondary" style="background: none; border: none;">📋 Logs</a>
-                <a href="{{ path('config') }}" class="btn btn-secondary" style="background: none; border: none;">🛠️ Settings</a>
+            <a href="{{ path('music') }}" class="brand">
+                <img src="/logo.png" alt="Logo">
+                <span>Downloader</span>
+            </a>
+            
+            {% if app.session and app.session.get('authenticated') %}
+            <div class="burger-btn" onclick="toggleBurger()">
+                <span></span>
+                <span></span>
+                <span></span>
             </div>
+
+            <div class="nav-links" id="nav-links">
+                <a href="{{ path('music') }}">🎵 Music</a>
+                <a href="{{ path('music_files') }}">📂 Downloads</a>
+                <a href="{{ path('video') }}">🎥 Video</a>
+                <a href="{{ path('queue') }}">⚙️ Queue</a>
+                <a href="{{ path('history') }}">📜 History</a>
+                <a href="{{ path('config') }}">🛠️ Settings</a>
+                <a href="{{ path('logout') }}" style="color: var(--danger); display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="font-size: 1.1rem;">🏃</span> Logout
+                </a>
+            </div>
+            {% endif %}
         </div>
     </nav>
 
+    {% if app.session and app.session.get('authenticated') %}
     <div id="notif-sidebar" class="notif-sidebar">
         <div class="notif-header">
             <div style="display: flex; align-items: center; gap: 0.75rem;">
                 <h3 style="margin: 0;">Logs</h3>
                 <button class="btn btn-secondary" style="font-size: 0.65rem; padding: 0.2rem 0.5rem; background: rgba(255,255,255,0.05);" onclick="clearNotifications()">Clear All</button>
+                <button id="btn-browser-notif" class="btn btn-primary" style="font-size: 0.65rem; padding: 0.2rem 0.5rem;" onclick="requestBrowserNotifications()">🔔 Enable Alerts</button>
             </div>
             <button class="notif-close" onclick="toggleNotifSidebar()">×</button>
         </div>
@@ -481,6 +573,7 @@
             <div class="empty-msg" style="text-align: center; margin-top: 2rem; color: var(--text-secondary);">No logs yet.</div>
         </div>
     </div>
+    {% endif %}
 
     <div class="container">
         {% for message in app.flashes('success') %}
@@ -497,6 +590,7 @@
         {% block body %}{% endblock %}
     </div>
 
+    {% if app.session and app.session.get('authenticated') %}
     <!-- Sticky UI Container (Bottom Right) -->
     <div class="sticky-ui-container">
         <div class="notif-bell-container shadow-lg" onclick="toggleNotifSidebar()">
@@ -504,9 +598,10 @@
             <div id="notif-dot" class="notif-dot"></div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Global Download Tracker -->
-    {% if hide_tracker is not defined or not hide_tracker %}
+    {% if (hide_tracker is not defined or not hide_tracker) and (app.session and app.session.get('authenticated')) %}
     <div id="download-tracker" class="tracker-container collapsed">
         <div class="tracker-header">
             <div class="tracker-title" onclick="toggleTracker()">
@@ -679,7 +774,40 @@
             }
 
             const now = new Date().toLocaleTimeString();
-            const logEntry = { type, message, time: now };
+            
+            // Rich notification formatting
+            let displayHtml = '';
+            const mediaIcons = { 'music': '🎵', 'video': '🎥', 'default': '📦' };
+            const statusEmojis = { 'success': '✅', 'error': '❌', 'info': 'ℹ️', 'Finished': '✨', 'Started': '🚀', 'Failed': '❌' };
+
+            if (typeof message === 'object') {
+                const icon = mediaIcons[message.media_type] || mediaIcons.default;
+                const statusEmoji = statusEmojis[message.action] || statusEmojis[message.type] || '';
+                
+                displayHtml = `
+                    <div style="display: flex; align-items: flex-start; gap: 1rem;">
+                        <span style="font-size: 1.5rem;">${statusEmoji}</span>
+                        <div>
+                            <div style="font-weight: bold; margin-bottom: 2px;">
+                                ${message.action || 'Update'}: ${icon} ${message.media_type || ''}
+                            </div>
+                            <div style="font-size: 0.85rem; opacity: 0.9; word-break: break-all;">
+                                ${message.item || message.message}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Fallback for simple strings
+                const lower = message.toLowerCase();
+                let emoji = 'ℹ️';
+                if (lower.includes('success')) emoji = '✅';
+                if (lower.includes('error') || lower.includes('fail')) emoji = '❌';
+
+                displayHtml = `<b>${emoji} ${message}</b>`;
+            }
+
+            const logEntry = { type, message: displayHtml, time: now };
             
             // Persist
             const logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
@@ -691,7 +819,38 @@
             if (!sidebar.classList.contains('open')) {
                 dot.style.display = 'block';
             }
+
+            // Native Browser Notification
+            if (Notification.permission === "granted" && typeof message === 'object') {
+                const icon = mediaIcons[message.media_type] || mediaIcons.default;
+                const statusEmoji = statusEmojis[message.action] || statusEmojis[message.type] || '';
+                
+                new Notification(`${statusEmoji} ${message.action || 'Update'}: ${message.media_type || ''}`, {
+                    body: message.item || message.message || '',
+                    icon: '/logo.png',
+                    tag: 'downloader-update'
+                }).onclick = function() {
+                    window.focus();
+                    this.close();
+                };
+            }
         };
+
+        async function requestBrowserNotifications() {
+            if (!("Notification" in window)) {
+                alert("This browser does not support desktop notification");
+                return;
+            }
+
+            const permission = await Notification.requestPermission();
+            if (permission === "granted") {
+                document.getElementById('btn-browser-notif').style.display = 'none';
+                new Notification("Notifications Enabled!", {
+                    body: "You will now receive desktop alerts for downloads.",
+                    icon: '/logo.png'
+                });
+            }
+        }
 
         function renderNotification(log, container, prepend = false) {
             const div = document.createElement('div');
@@ -702,6 +861,10 @@
             `;
             if (prepend) container.prepend(div);
             else container.appendChild(div);
+        }
+
+        function toggleBurger() {
+            document.getElementById('nav-links').classList.toggle('active');
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -719,7 +882,7 @@
                 if (data.notifications && data.notifications.length > 0) {
                     data.notifications.forEach(notif => {
                         if (window.notify) {
-                            window.notify(notif.message, notif.type);
+                            window.notify(notif.type, notif);
                         }
                     });
                 }
@@ -739,7 +902,12 @@
 
         syncWithServer();
         setInterval(syncWithServer, 2000);
-        setInterval(pollServerNotifications, 5000);
+        setInterval(pollServerNotifications, 3000); // Poll more frequently
+
+        if (Notification.permission === "granted") {
+            const btn = document.getElementById('btn-browser-notif');
+            if (btn) btn.style.display = 'none';
+        }
         });
     </script>
 </body>

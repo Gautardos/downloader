@@ -63,20 +63,29 @@
                         <td>
                             {% if item.status|default('success') == 'error' %}
                                 <span class="badge" style="background: var(--danger); color: white;">FAILED</span>
+                            {% elseif item.status|default('success') == 'warning' %}
+                                <span class="badge" style="background: #f59e0b; color: white;">WARNING</span>
                             {% elseif item.status|default('success') == 'canceled' %}
                                 <span class="badge" style="background: var(--text-secondary); color: white;">CANCELED</span>
                             {% else %}
                                 <span class="badge" style="background: var(--success); color: white;">SUCCESS</span>
                             {% endif %}
                         </td>
-                        <td>
-                            {% if (item.type|default('video')) == 'music' and item.download_id is defined %}
-                                <a href="{{ path('history_log', {downloadId: item.download_id}) }}" target="_blank" class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; background: rgba(56, 189, 248, 0.1); color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.2);">
-                                    View Logs
-                                </a>
-                            {% else %}
-                                <span style="color: var(--text-secondary); font-size: 0.8rem;">--</span>
-                            {% endif %}
+                        <td style="white-space: nowrap;">
+                            <div style="display: flex; gap: 0.4rem; justify-content: flex-end;">
+                                {% if (item.type|default('video')) == 'music' %}
+                                    {% if item.download_id is defined %}
+                                        <a href="{{ path('history_log', {downloadId: item.download_id}) }}" target="_blank" class="btn btn-icon" title="View Logs">📄</a>
+                                    {% endif %}
+                                    <button class="btn btn-icon" onclick="showTracksList('Expected', {{ item.expected_tracks|default([])|json_encode }})" title="Expected Files">📋</button>
+                                    {% if item.status|default('success') == 'warning' %}
+                                        <button class="btn btn-icon" onclick="showTracksList('Missing', {{ item.missing_tracks|default([])|json_encode }})" title="Missing Files">❌</button>
+                                    {% endif %}
+                                    <button class="btn btn-icon" onclick="showTracksList('Downloaded', {{ item.downloaded_tracks|default([])|json_encode }}, true)" title="Downloaded Files">✅</button>
+                                {% else %}
+                                    <span style="color: var(--text-secondary); font-size: 0.8rem;">--</span>
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                 {% else %}
@@ -106,6 +115,66 @@
         </div>
     {% endif %}
 </div>
+
+<!-- Tracks Modal -->
+<div id="tracks-modal" class="modal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);">
+    <div style="background: var(--bg-card); margin: 5% auto; padding: 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); width: 80%; max-width: 800px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 id="modal-title" style="margin: 0; color: var(--accent);">Expected Tracks</h3>
+            <button onclick="document.getElementById('tracks-modal').style.display='none'" class="btn" style="padding: 0.5rem;">✕</button>
+        </div>
+        <div id="modal-content" style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
+                        <th style="padding: 1rem; text-align: left; color: var(--text-secondary);">Artist</th>
+                        <th style="padding: 1rem; text-align: left; color: var(--text-secondary);">Album</th>
+                        <th style="padding: 1rem; text-align: left; color: var(--text-secondary);">Song Name</th>
+                        <th id="modal-th-lyrics" style="padding: 1rem; text-align: center; color: var(--text-secondary); display: none;">Lyrics</th>
+                    </tr>
+                </thead>
+                <tbody id="modal-tbody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function showTracksList(title, tracks, showLyrics = false) {
+    document.getElementById('modal-title').innerText = title + ' Tracks (' + (tracks ? tracks.length : 0) + ')';
+    const tbody = document.getElementById('modal-tbody');
+    tbody.innerHTML = '';
+    
+    document.getElementById('modal-th-lyrics').style.display = showLyrics ? 'table-cell' : 'none';
+
+    if (!tracks || tracks.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-secondary);">No tracks data available.</td></tr>';
+    } else {
+        tracks.forEach(track => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+            tr.innerHTML = `
+                <td style="padding: 0.75rem 1rem;">${track.artist || '--'}</td>
+                <td style="padding: 0.75rem 1rem;">${track.album || '--'}</td>
+                <td style="padding: 0.75rem 1rem; font-weight: 500;">${track.song_name || '--'}</td>
+                ${showLyrics ? `<td style="padding: 0.75rem 1rem; text-align: center;">${track.lyrics ? '📝' : '--'}</td>` : ''}
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+    
+    document.getElementById('tracks-modal').style.display = 'block';
+}
+
+// Close modal on outside click
+window.onclick = function(event) {
+    const modal = document.getElementById('tracks-modal');
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+</script>
 
 <style>
 .history-table {
@@ -139,6 +208,20 @@
     border-radius: 6px;
     font-size: 0.8rem;
     font-weight: 600;
+}
+
+.btn-icon {
+    padding: 0.4rem;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-icon:hover {
+    background: rgba(255,255,255,0.1);
+    transform: translateY(-1px);
 }
 </style>
 {% endblock %}

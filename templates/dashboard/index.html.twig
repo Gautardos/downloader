@@ -326,7 +326,7 @@ async function downloadPack(event, packId, files) {
         
         modalLoading.style.display = 'none';
         
-        pendingBatchQueue = [];
+        const defaultPath = "{{ config.default_path|default('')|e('js') }}";
 
         candidates.forEach((c, idx) => {
             const check = data.results[idx];
@@ -346,7 +346,9 @@ async function downloadPack(event, packId, files) {
 
             let folderHtml = check.folderExists 
                 ? '<span style="color: var(--success)">✓ Exists</span>' 
-                : `<button class="btn btn-secondary btn-icon" style="width: auto; padding: 0 0.5rem; height: 24px; font-size: 0.7rem; background: var(--danger)" onclick="createMissingFolder('${c.path.replace(/\\/g, '\\\\')}', this, '${packId}')">📁 Create</button>`;
+                : `<button class="btn btn-secondary btn-icon" style="width: auto; padding: 0 0.5rem; height: 24px; font-size: 0.7rem; background: var(--danger)" onclick="createMissingFolder('${(c.path || defaultPath).replace(/\\/g, '\\\\')}', this, '${packId}')">📁 Create</button>`;
+
+            const resolvedPath = c.path || defaultPath || '(No path set)';
 
             row.innerHTML = `
                 <td><input type="checkbox" class="batch-file-checkbox" checked data-index="${idx}"></td>
@@ -354,8 +356,8 @@ async function downloadPack(event, packId, files) {
                     <div style="font-weight: 500;">${c.filename}</div>
                     <div style="font-size: 0.75rem; color: var(--text-secondary);">${c.filename !== c.original.filename ? 'Orig: ' + c.original.filename : ''}</div>
                 </td>
-                <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.path || 'Default'}">
-                    ${c.path || '(Défaut)'}
+                <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${resolvedPath}">
+                    ${resolvedPath}
                 </td>
                 <td>${folderHtml}</td>
                 <td><span class="size-tag">${formatSize(c.original.size)}</span></td>

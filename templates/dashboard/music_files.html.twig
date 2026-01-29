@@ -1,0 +1,152 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Music Explorer - Downloader{% endblock %}
+
+{% block body %}
+<div class="header" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h1 style="display: flex; align-items: center; gap: 0.75rem; margin: 0;">
+            <span style="font-size: 2rem;">📂</span>
+            Music Downloads
+        </h1>
+        <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code></p>
+    </div>
+    <button class="btn btn-primary" onclick="alert('Move to library triggered (to be implemented)')">
+        🚚 Move to library
+    </button>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+        <thead style="background: rgba(255,255,255,0.03);">
+            <tr>
+                <th style="padding: 1rem;">File Name</th>
+                <th style="padding: 1rem;">Location</th>
+                <th style="padding: 1rem;">Size</th>
+                <th style="padding: 1rem;">Added</th>
+                <th style="padding: 1rem; width: 100px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                <td style="padding: 1rem; font-weight: 500;">{{ file.name }}</td>
+                <td style="padding: 1rem; color: var(--text-secondary); font-size: 0.85rem;" title="{{ file.path }}">
+                    {{ file.rel_path }}
+                </td>
+                <td style="padding: 1rem;"><span class="badge" style="background: rgba(255,255,255,0.05);">{{ (file.size / 1024 / 1024)|number_format(2) }} MB</span></td>
+                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">{{ file.mtime|date('d/m/Y H:i') }}</td>
+                <td style="padding: 1rem;">
+                    <button class="btn btn-secondary btn-icon" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="viewDetails('{{ file.path|e('js') }}', '{{ file.name|e('js') }}')">
+                        🔍 Details
+                    </button>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" style="padding: 3rem; text-align: center; color: var(--text-secondary);">
+                    No audio files found in the download directory.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Details Modal -->
+<div id="details-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center;">
+    <div class="card" style="width: 100%; max-width: 600px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h2 id="details-title" style="margin: 0; font-size: 1.25rem;">File Details</h2>
+            <button class="btn-remove" onclick="closeDetails()" style="font-size: 2rem;">×</button>
+        </div>
+        <div id="details-loading" style="text-align: center; padding: 2rem;">
+            <div style="font-size: 2rem; animation: spin 1s infinite linear;">⌛</div>
+            <p>Extracting metadata...</p>
+        </div>
+        <div id="details-content" style="display: none;">
+            <div id="details-grid" style="display: grid; grid-template-columns: 140px 1fr; gap: 0.75rem; font-size: 0.9rem;">
+                <!-- Dynamic -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
+
+<script>
+async function viewDetails(path, name) {
+    console.log("View Details clicked for:", name, "Path:", path);
+    const modal = document.getElementById('details-modal');
+    const title = document.getElementById('details-title');
+    const loading = document.getElementById('details-loading');
+    const content = document.getElementById('details-content');
+    const grid = document.getElementById('details-grid');
+
+    modal.style.display = 'flex';
+    title.innerText = 'Details: ' + name;
+    loading.style.display = 'block';
+    content.style.display = 'none';
+    grid.innerHTML = '';
+
+    try {
+        console.log("Fetching tags from:", "{{ path('file_tags') }}");
+        const res = await fetch("{{ path('file_tags') }}", {
+            method: 'POST',
+            body: JSON.stringify({ path: path }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        console.log("Response status:", res.status);
+        const data = await res.json();
+        console.log("Response data:", data);
+
+        if (data.success) {
+            loading.style.display = 'none';
+            content.style.display = 'block';
+            
+            for (const [key, value] of Object.entries(data.tags)) {
+                if (value && value !== 'None' && value !== '[]') {
+                    const label = document.createElement('div');
+                    label.style.color = 'var(--text-secondary)';
+                    label.style.fontWeight = 'bold';
+                    label.style.textTransform = 'capitalize';
+                    label.innerText = key.replace('number', ' #');
+                    
+                    const val = document.createElement('div');
+                    val.style.wordBreak = 'break-word';
+                    val.innerText = value;
+                    
+                    if (key === 'lyrics') {
+                        val.style.whiteSpace = 'pre-wrap';
+                        val.style.background = 'rgba(0,0,0,0.2)';
+                        val.style.padding = '0.75rem';
+                        val.style.borderRadius = '4px';
+                        val.style.marginTop = '0.5rem';
+                        val.style.gridColumn = '1 / span 2';
+                        label.style.gridColumn = '1 / span 2';
+                    }
+                    
+                    grid.appendChild(label);
+                    grid.appendChild(val);
+                }
+            }
+        } else {
+            console.error("Extraction failed:", data.message);
+            alert('Failed: ' + data.message);
+            closeDetails();
+        }
+    } catch (e) {
+        console.error("Fetch error:", e);
+        alert('Error: ' + e.message);
+        closeDetails();
+    }
+}
+
+function closeDetails() {
+    document.getElementById('details-modal').style.display = 'none';
+}
+</script>
+{% endblock %}
