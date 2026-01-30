@@ -4,42 +4,42 @@
 
 {% block body %}
 <div class="card shadow-lg" style="margin-bottom: 2rem; border-radius: 16px; overflow: hidden;">
-    <div style="padding: 1.5rem; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+    <div class="history-header" id="history-header">
         <h1 style="margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
             <span>📜</span> Download History
         </h1>
-        <div class="badge badge-success">{{ totalItems }} total elements</div>
+        <div class="badge badge-success">{{ totalItems }} total</div>
     </div>
 
     <div style="overflow-x: auto;">
         <table class="history-table">
             <thead>
                 <tr>
-                    <th>Type</th>
-                    <th>Date</th>
-                    <th style="width: 30%;">Filename</th>
-                    <th>Size/Files</th>
-                    <th>Speed</th>
+                    <th class="hide-mobile">Type</th>
+                    <th class="hide-mobile">Date</th>
+                    <th style="width: 40%;">Filename</th>
+                    <th class="hide-mobile">Size/Files</th>
+                    <th class="hide-mobile">Speed</th>
                     <th>Status</th>
-                    <th>Action</th>
+                    <th style="text-align: right;">Action</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in history %}
                     <tr class="status-{{ item.status ?? 'success' }}">
-                        <td style="font-size: 1.5rem; text-align: center;">
+                        <td class="hide-mobile" style="font-size: 1.5rem; text-align: center;">
                             {{ (item.type ?? 'video') == 'music' ? '🎵' : '🎥' }}
                         </td>
-                        <td style="white-space: nowrap; color: var(--text-secondary); font-size: 0.8rem;">
+                        <td class="hide-mobile" style="white-space: nowrap; color: var(--text-secondary); font-size: 0.8rem;">
                             {{ (item.date ?? item.timestamp ?? "now")|date('Y-m-d H:i:s') }}
                         </td>
                         <td>
-                            <div style="font-weight: 500; margin-bottom: 0.25rem;">{{ item.filename ?? item.item ?? 'Unknown' }}</div>
-                            <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;" title="{{ item.path ?? '' }}">
+                            <div class="history-filename">{{ item.filename ?? item.item ?? 'Unknown' }}</div>
+                            <div class="history-path" title="{{ item.path ?? '' }}">
                                 {{ item.path ?? '' }}
                             </div>
                         </td>
-                        <td>
+                        <td class="hide-mobile">
                             {% if (item.type ?? 'video') == 'video' %}
                                 <span class="size-tag" style="background: rgba(56, 189, 248, 0.1); color: var(--accent);">
                                     {% set size = item.size ?? 0 %}
@@ -55,7 +55,7 @@
                                 </span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="hide-mobile">
                             <span style="font-family: monospace; font-size: 0.8rem; color: var(--text-secondary);">
                                 {{ item.speed ?? '--' }}
                             </span>
@@ -122,21 +122,21 @@
 </div>
 
 <!-- Migration Modal -->
-<div id="migration-modal" class="modal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);">
-    <div style="background: var(--bg-card); margin: 5% auto; padding: 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); width: 90%; max-width: 1000px; max-height: 80vh; overflow-y: auto;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+<div id="migration-modal" class="modal-overlay">
+    <div class="modal-container-custom">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding: 1rem;">
             <h3 id="mig-modal-title" style="margin: 0; color: var(--accent);">Migration Summary</h3>
             <button onclick="document.getElementById('migration-modal').style.display='none'" class="btn" style="padding: 0.5rem;">✕</button>
         </div>
-        <div id="mig-modal-content" style="overflow-x: auto;">
+        <div id="mig-modal-content" style="overflow-x: auto; flex: 1; padding: 1rem;">
             <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
                 <thead>
                     <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
                         <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Original File</th>
                         <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Artist/Title</th>
-                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Genre</th>
-                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">New Path</th>
-                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Steps</th>
+                        <th class="hide-mobile" style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Genre</th>
+                        <th class="hide-mobile" style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">New Path</th>
+                        <th class="hide-mobile" style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Steps</th>
                         <th style="padding: 0.75rem; text-align: center; color: var(--text-secondary);">Status</th>
                     </tr>
                 </thead>
@@ -148,18 +148,18 @@
 </div>
 
 <!-- Tracks Modal -->
-<div id="tracks-modal" class="modal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);">
-    <div style="background: var(--bg-card); margin: 5% auto; padding: 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); width: 80%; max-width: 800px; max-height: 80vh; overflow-y: auto;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+<div id="tracks-modal" class="modal-overlay">
+    <div class="modal-container-custom" style="max-width: 800px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding: 1rem;">
             <h3 id="modal-title" style="margin: 0; color: var(--accent);">Expected Tracks</h3>
             <button onclick="document.getElementById('tracks-modal').style.display='none'" class="btn" style="padding: 0.5rem;">✕</button>
         </div>
-        <div id="modal-content" style="overflow-x: auto;">
+        <div id="modal-content" style="overflow-x: auto; flex: 1; padding: 1rem;">
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
                     <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
                         <th style="padding: 1rem; text-align: left; color: var(--text-secondary);">Artist</th>
-                        <th style="padding: 1rem; text-align: left; color: var(--text-secondary);">Album</th>
+                        <th class="hide-mobile" style="padding: 1rem; text-align: left; color: var(--text-secondary);">Album</th>
                         <th style="padding: 1rem; text-align: left; color: var(--text-secondary);">Song Name</th>
                         <th id="modal-th-lyrics" style="padding: 1rem; text-align: center; color: var(--text-secondary); display: none;">Lyrics</th>
                     </tr>
@@ -287,6 +287,15 @@ window.onclick = function(event) {
 </script>
 
 <style>
+.history-header {
+    padding: 1.5rem;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .history-table {
     width: 100%;
     border-collapse: collapse;
@@ -313,6 +322,23 @@ window.onclick = function(event) {
     background: rgba(255,255,255,0.01);
 }
 
+.history-filename {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    word-break: break-all;
+}
+
+.history-path {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    font-family: monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
 .size-tag {
     padding: 0.25rem 0.6rem;
     border-radius: 6px;
@@ -332,6 +358,66 @@ window.onclick = function(event) {
 .btn-icon:hover {
     background: rgba(255,255,255,0.1);
     transform: translateY(-1px);
+}
+
+/* Modal Enhancements */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    backdrop-filter: blur(8px);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.modal-container-custom {
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    width: 100%;
+    max-width: 1000px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    animation: modalAppear 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes modalAppear {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 768px) {
+    .history-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .modal-overlay {
+        padding: 1rem;
+    }
+
+    .modal-container-custom {
+        max-height: 95vh;
+    }
+
+    .hide-mobile {
+        display: none !important;
+    }
+
+    .history-table th, .history-table td {
+        padding: 0.75rem 1rem;
+    }
+
+    .history-filename {
+        max-width: 180px;
+    }
 }
 </style>
 {% endblock %}

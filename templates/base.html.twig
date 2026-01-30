@@ -25,12 +25,30 @@
             margin: 0;
             padding: 0;
             min-height: 100vh;
+            overflow-x: hidden; /* Prevent menu overflow */
+        }
+
+        html {
+            overflow-x: hidden;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding-bottom: 80px; /* Space for sticky download bar */
+            }
         }
 
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 2rem;
+            transition: padding 0.2s;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
         }
 
         /* Navbar */
@@ -92,20 +110,27 @@
             .nav-links {
                 position: fixed;
                 top: 0;
-                right: -100%;
+                right: 0;
                 width: 280px;
                 height: 100vh;
                 background: var(--bg-secondary);
                 flex-direction: column;
                 padding-top: 5rem;
-                transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                transform: translateX(100%);
+                visibility: hidden;
+                pointer-events: none;
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.3s;
                 box-shadow: -10px 0 30px rgba(0,0,0,0.5);
                 z-index: 4000;
                 gap: 0;
                 align-items: center; /* Center items */
                 text-align: center;
             }
-            .nav-links.active { right: 0; }
+            .nav-links.active { 
+                transform: translateX(0); 
+                visibility: visible;
+                pointer-events: auto;
+            }
             .nav-links a {
                 width: 100%;
                 padding: 1.8rem 2rem;
@@ -127,6 +152,7 @@
             font-weight: 700;
             color: var(--text-primary);
             text-decoration: none;
+            margin-left: 0 !important; /* Override nav a margin */
         }
 
         nav .brand img {
@@ -361,6 +387,18 @@
             border-radius: 50%;
             display: none;
         }
+
+        @media (max-width: 768px) {
+            .sticky-ui-container {
+                bottom: calc(56px + 2rem); /* Above the sticky tracker bar */
+                right: 1.5rem;
+                left: auto;
+            }
+            .notif-bell-container {
+                width: 48px;
+                height: 48px;
+            }
+        }
         .badge-video {
             background-color: rgba(56, 189, 248, 0.2);
             color: var(--accent);
@@ -389,6 +427,26 @@
         .tracker-container.collapsed {
             max-height: 56px;
             width: 400px;
+        }
+
+        @media (max-width: 768px) {
+            .tracker-container {
+                bottom: 0;
+                right: 0;
+                left: 0;
+                width: 100%;
+                border-radius: 0;
+                border-bottom: none;
+                border-left: none;
+                border-right: none;
+                margin-bottom: 0;
+            }
+            .tracker-container.collapsed {
+                width: 100%;
+            }
+            .tracker-header {
+                padding: 0.75rem 1rem;
+            }
         }
 
         .tracker-header {

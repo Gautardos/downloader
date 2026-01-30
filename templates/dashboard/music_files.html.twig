@@ -3,7 +3,7 @@
 {% block title %}Music Explorer - Downloader{% endblock %}
 
 {% block body %}
-<div class="header" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+<div class="header" id="music-header">
     <div>
         <h1 style="display: flex; align-items: center; gap: 0.75rem; margin: 0;">
             <span style="font-size: 2rem;">📂</span>
@@ -11,8 +11,8 @@
         </h1>
         <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code></p>
     </div>
-    <div id="move-container" style="display: flex; gap: 0.75rem; align-items: center;">
-        <button id="btn-lyrics" class="btn btn-secondary" onclick="fetchLyrics()" style="display: flex; align-items: center; gap: 0.5rem;">
+    <div id="move-container">
+        <button id="btn-lyrics" class="btn btn-secondary" onclick="fetchLyrics()">
             <span id="lyrics-icon">🎤</span> Add Lyrics
         </button>
         <button id="btn-move" class="btn btn-primary" onclick="moveToLibrary()" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
@@ -30,10 +30,10 @@
         <thead style="background: rgba(255,255,255,0.03);">
             <tr>
                 <th style="padding: 1rem;">File Name</th>
-                <th style="padding: 1rem;">Location</th>
-                <th style="padding: 1rem; text-align: center;">Lyrics</th>
-                <th style="padding: 1rem;">Size</th>
-                <th style="padding: 1rem;">Added</th>
+                <th class="hide-mobile" style="padding: 1rem;">Location</th>
+                <th class="hide-mobile" style="padding: 1rem; text-align: center;">Lyrics</th>
+                <th class="hide-mobile" style="padding: 1rem;">Size</th>
+                <th class="hide-mobile" style="padding: 1rem;">Added</th>
                 <th style="padding: 1rem; width: 100px;">Actions</th>
             </tr>
         </thead>
@@ -41,18 +41,18 @@
             {% for file in files %}
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 1rem; font-weight: 500;">{{ file.name }}</td>
-                <td style="padding: 1rem; color: var(--text-secondary); font-size: 0.85rem;" title="{{ file.path }}">
+                <td class="hide-mobile" style="padding: 1rem; color: var(--text-secondary); font-size: 0.85rem;" title="{{ file.path }}">
                     {{ file.rel_path }}
                 </td>
-                <td style="padding: 1rem; text-align: center; font-size: 1.2rem;">
+                <td class="hide-mobile" style="padding: 1rem; text-align: center; font-size: 1.2rem;">
                     {% if file.has_lyrics %}
                         <span title="Lyrics Present">📝</span>
                     {% else %}
                         <span title="No Lyrics" style="opacity: 0.3; filter: grayscale(1);">❌</span>
                     {% endif %}
                 </td>
-                <td style="padding: 1rem;"><span class="badge" style="background: rgba(255,255,255,0.05);">{{ (file.size / 1024 / 1024)|number_format(2) }} MB</span></td>
-                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">{{ file.mtime|date('d/m/Y H:i') }}</td>
+                <td class="hide-mobile" style="padding: 1rem;"><span class="badge" style="background: rgba(255,255,255,0.05);">{{ (file.size / 1024 / 1024)|number_format(2) }} MB</span></td>
+                <td class="hide-mobile" style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">{{ file.mtime|date('d/m/Y H:i') }}</td>
                 <td style="padding: 1rem;">
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
                         <button class="btn btn-secondary btn-icon" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="viewDetails('{{ file.path|e('js') }}', '{{ file.name|e('js') }}')">
@@ -79,9 +79,9 @@
 </div>
 
 <!-- Details Modal -->
-<div id="details-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center;">
-    <div class="card" style="width: 100%; max-width: 600px; max-height: 80vh; overflow-y: auto;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+<div id="details-modal" class="modal-overlay">
+    <div class="modal-container-custom">
+        <div class="modal-header-custom">
             <h2 id="details-title" style="margin: 0; font-size: 1.25rem;">File Details</h2>
             <button class="btn-remove" onclick="closeDetails()" style="font-size: 2rem;">×</button>
         </div>
@@ -89,8 +89,8 @@
             <div style="font-size: 2rem; animation: spin 1s infinite linear;">⌛</div>
             <p>Extracting metadata...</p>
         </div>
-        <div id="details-content" style="display: none;">
-            <div id="details-grid" style="display: grid; grid-template-columns: 140px 1fr; gap: 0.75rem; font-size: 0.9rem;">
+        <div id="details-content" class="modal-body-custom" style="display: none;">
+            <div id="details-grid" class="details-grid">
                 <!-- Dynamic -->
             </div>
         </div>
@@ -99,34 +99,145 @@
 
 <style>
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    #music-header {
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    #move-container {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    @media (max-width: 768px) {
+        #music-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1.5rem;
+        }
+
+        #move-container {
+            width: 100%;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .hide-mobile {
+            display: none !important;
+        }
+
+        td {
+            padding: 0.75rem !important;
+        }
+    }
+
+    /* Modal Enhancements */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.8);
+        backdrop-filter: blur(8px);
+        z-index: 2000;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+    }
+
+    .modal-container-custom {
+        background: var(--bg-secondary);
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.1);
+        width: 100%;
+        max-width: 600px;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+        animation: modalAppear 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .modal-header-custom {
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        padding: 1.5rem;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .modal-body-custom {
+        padding: 1.5rem;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .details-grid {
+        display: grid; 
+        grid-template-columns: 140px 1fr; 
+        gap: 1rem; 
+        font-size: 0.9rem;
+    }
+
+    @keyframes modalAppear {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 768px) {
+        .modal-overlay {
+            padding: 1rem;
+        }
+        .modal-container-custom {
+            max-height: 95vh;
+        }
+        .details-grid {
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+        }
+        .details-grid > div:nth-child(even) {
+            margin-bottom: 0.75rem;
+            padding-left: 0.5rem;
+            border-left: 2px solid var(--accent);
+        }
+        .modal-header-custom, .modal-body-custom {
+            padding: 1rem;
+        }
+    }
 </style>
 
 <!-- Lyrics Modal -->
-<div id="lyrics-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2100; align-items: center; justify-content: center;">
-    <div class="card" style="width: 100%; max-width: 800px; max-height: 85vh; display: flex; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding: 0.5rem;">
+<div id="lyrics-modal" class="modal-overlay" style="z-index: 2100;">
+    <div class="modal-container-custom" style="max-width: 800px;">
+        <div class="modal-header-custom">
             <h2 style="margin: 0; font-size: 1.25rem;">Lyrics Fetching Summary</h2>
             <button class="btn-remove" onclick="closeLyricsModal()" style="font-size: 2rem;">×</button>
         </div>
         
-        <div id="lyrics-results-container" style="overflow-y: auto; flex-grow: 1; padding: 0.5rem;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
-                <thead style="position: sticky; top: 0; background: var(--bg-secondary); z-index: 1;">
-                    <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
-                        <th style="padding: 0.75rem;">Artist</th>
-                        <th style="padding: 0.75rem;">Title</th>
-                        <th style="padding: 0.75rem;">Status</th>
-                        <th style="padding: 0.75rem;">Type</th>
-                    </tr>
-                </thead>
-                <tbody id="lyrics-results-body">
-                    <!-- Dynamic -->
-                </tbody>
-            </table>
-        </div>
-        
-        <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; padding: 0.5rem;">
-            <button class="btn btn-primary" onclick="window.location.reload()">Refresh Page</button>
+        <div class="modal-body-custom">
+            <div id="lyrics-results-container" style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                    <thead style="position: sticky; top: 0; background: var(--bg-secondary); z-index: 1;">
+                        <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
+                            <th style="padding: 0.75rem;">Artist</th>
+                            <th style="padding: 0.75rem;">Title</th>
+                            <th style="padding: 0.75rem;">Status</th>
+                            <th class="hide-mobile" style="padding: 0.75rem;">Type</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lyrics-results-body">
+                        <!-- Dynamic -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="window.location.reload()">Refresh Page</button>
+            </div>
         </div>
     </div>
 </div>
@@ -261,7 +372,7 @@ function showLyricsResults(results) {
                 <td style="padding: 0.75rem;">${res.artist || '-'}</td>
                 <td style="padding: 0.75rem;">${res.title || '-'}</td>
                 <td style="padding: 0.75rem; ${statusStyle}">${statusText}</td>
-                <td style="padding: 0.75rem;">${typeBadge}</td>
+                <td class="hide-mobile" style="padding: 0.75rem;">${typeBadge}</td>
             `;
             body.appendChild(tr);
         });

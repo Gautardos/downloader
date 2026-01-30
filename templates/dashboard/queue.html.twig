@@ -4,7 +4,7 @@
 
 {% block body %}
 <div class="container">
-    <div class="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <div class="header" id="queue-header">
         <div>
             <h1 style="display: flex; align-items: center; gap: 0.75rem; margin: 0;">
                 <span style="font-size: 2.5rem;">⚙️</span>
@@ -12,7 +12,7 @@
             </h1>
             <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Monitor and control the download worker state.</p>
         </div>
-        <button class="btn" style="background: var(--danger); color: white;" onclick="purgeQueue()">
+        <button class="btn btn-purge" onclick="purgeQueue()">
             Purge All Tasks
         </button>
     </div>
@@ -48,8 +48,8 @@
                         <tr>
                             <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Type</th>
                             <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Filename</th>
-                            <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Path</th>
-                            <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Added At</th>
+                            <th class="hide-mobile" style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Path</th>
+                            <th class="hide-mobile" style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">Added At</th>
                             <th style="padding: 1rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; text-align: right;">Action</th>
                         </tr>
                     </thead>
@@ -120,19 +120,19 @@ async function renderActive(active) {
         const typeLabel = active.type.toUpperCase();
 
         container.innerHTML = `
-            <div style="display: flex; gap: 1.5rem; align-items: flex-start;">
-                <div style="font-size: 3.5rem; background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">${typeIcon}</div>
-                <div style="flex: 1;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <div class="active-task-wrapper">
+                <div class="active-task-icon">${typeIcon}</div>
+                <div style="flex: 1; min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
                         <span class="badge ${active.type === 'music' ? 'badge-music' : 'badge-video'}" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">
                             ${typeIcon} ${typeLabel}
                         </span>
                         <span class="badge badge-success" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">NOW PROCESSING</span>
                     </div>
-                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1.3rem; font-weight: 700;">${filename}</h4>
-                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
-                        <span>Target: <code style="background: rgba(255,255,255,0.08); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace;">${active.path || 'Default'}</code></span>
-                        <span style="color: var(--accent); font-weight: bold; font-family: monospace; font-size: 1rem;">${progress.speed || '...'}</span>
+                    <h4 class="active-task-title">${filename}</h4>
+                    <div class="active-task-meta">
+                        <span class="active-task-path">Target: <code style="background: rgba(255,255,255,0.08); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace;">${active.path || 'Default'}</code></span>
+                        <span class="active-task-speed">${progress.speed || '...'}</span>
                     </div>
                     <div style="height: 14px; background: rgba(255,255,255,0.05); border-radius: 7px; overflow: hidden; margin-bottom: 0.5rem; border: 1px solid rgba(255,255,255,0.03);">
                         <div style="width: ${progress.percentage || 0}%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);"></div>
@@ -189,16 +189,17 @@ function renderQueue(queue) {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
         tr.innerHTML = `
+        tr.innerHTML = `
             <td style="padding: 1rem; font-size: 1.5rem;">${typeIcon}</td>
             <td style="padding: 1rem;">
-                <div style="font-weight: 500; font-size: 0.9rem; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.filename}">
+                <div class="queue-filename" title="${item.filename}">
                     ${item.filename}
                 </div>
             </td>
-            <td style="padding: 1rem; font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">${item.path || '--'}</td>
-            <td style="padding: 1rem; font-size: 0.8rem; color: var(--text-secondary);">${item.date_added || '--'}</td>
+            <td class="hide-mobile" style="padding: 1rem; font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">${item.path || '--'}</td>
+            <td class="hide-mobile" style="padding: 1rem; font-size: 0.8rem; color: var(--text-secondary);">${item.date_added || '--'}</td>
             <td style="padding: 1rem; text-align: right;">
-                <button class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2);" onclick="removeTask(${index})">
+                <button class="btn btn-remove-task" onclick="removeTask(${index})">
                     Remove
                 </button>
             </td>
@@ -212,4 +213,98 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(refreshUI, 2000);
 });
 </script>
+
+<style>
+    #queue-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .btn-purge {
+        background: var(--danger);
+        color: white;
+    }
+
+    .active-task-wrapper {
+        display: flex;
+        gap: 1.5rem;
+        align-items: flex-start;
+    }
+
+    .active-task-icon {
+        font-size: 3.5rem;
+        background: rgba(255,255,255,0.03);
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .active-task-title {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.3rem;
+        font-weight: 700;
+        word-break: break-all;
+    }
+
+    .active-task-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .queue-filename {
+        font-weight: 500;
+        font-size: 0.9rem;
+        max-width: 400px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .btn-remove-task {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    @media (max-width: 768px) {
+        #queue-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .active-task-wrapper {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .active-task-icon {
+            font-size: 2.5rem;
+            padding: 0.75rem;
+        }
+
+        .active-task-meta {
+            justify-content: center;
+        }
+
+        .hide-mobile {
+            display: none !important;
+        }
+
+        .queue-filename {
+            max-width: 150px;
+        }
+    }
+</style>
 {% endblock %}
