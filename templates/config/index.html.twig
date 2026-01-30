@@ -131,9 +131,54 @@
                     </div>
                 </div>
 
+                <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Lyrics Sources 🎤</h3>
+                <div style="margin-bottom: 1rem;">
+                    <label for="genius_api_token">Genius API Token</label>
+                    <input type="text" id="genius_api_token" name="genius_api_token" value="{{ config.genius_api_token|default('') }}" placeholder="Enter Genius Client Access Token">
+                    <small style="color: var(--text-secondary);">Used for fetching unsynchronized lyrics.</small>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label for="lrclib_token">LRCLib Token (Optional)</label>
+                    <input type="text" id="lrclib_token" name="lrclib_token" value="{{ config.lrclib_token|default('') }}" placeholder="Enter LRCLib Token">
+                    <small style="color: var(--text-secondary);">LRCLib usually doesn't require a token for standard usage.</small>
+                </div>
+
                 <div style="margin-top: 1rem;">
                     <label for="music_retries">Retry Attempts</label>
                     <input type="number" id="music_retries" name="music_retries" value="{{ config.music_retries|default(3) }}" min="0" max="10">
+                </div>
+
+                <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Library & Tagging 🎵🚚</h3>
+                
+                <div style="margin-bottom: 1rem;">
+                    <label for="music_library_path">Library Target Path</label>
+                    <input type="text" id="music_library_path" name="music_library_path" value="{{ config.music_library_path|default('') }}" placeholder="/music/library">
+                    <small style="color: var(--text-secondary);">Where files are moved after processing.</small>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label for="music_genre_tagging_mode">Tagging Mode</label>
+                    <select id="music_genre_tagging_mode" name="music_genre_tagging_mode" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
+                        <option value="ai" {{ config.music_genre_tagging_mode|default('ai') == 'ai' ? 'selected' : '' }}>AI (Grok)</option>
+                        <option value="mapping" {{ config.music_genre_tagging_mode|default('ai') == 'mapping' ? 'selected' : '' }}>Regex Mapping</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label for="music_genre_grok_model">Grok Music Model</label>
+                    <input type="text" id="music_genre_grok_model" name="music_genre_grok_model" value="{{ config.music_genre_grok_model|default('grok-4-fast-non-reasoning') }}" placeholder="grok-...">
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label for="music_genre_grok_prompt">AI Tagging Prompt</label>
+                    <textarea id="music_genre_grok_prompt" name="music_genre_grok_prompt" style="width:100%; height:150px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.music_genre_grok_prompt|default('') }}</textarea>
+                    <small style="color: var(--text-secondary);">System prompt for Grok classification.</small>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label for="music_genre_mapping">Regex Genre Mapping (JSON)</label>
+                    <textarea id="music_genre_mapping" name="music_genre_mapping" style="width:100%; height:150px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.music_genre_mapping|default('') }}</textarea>
+                    <small style="color: var(--text-secondary);">JSON object mapping regex patterns to genres.</small>
                 </div>
             </section>
         </div>

@@ -138,6 +138,100 @@ class AlldebridService
         }
     }
 
+    public function uploadMagnet(array $magnets): array
+    {
+        $apiKey = $this->getApiKey();
+        if (!$apiKey || empty($magnets)) {
+            return ['success' => false, 'message' => 'No API key or magnets provided'];
+        }
+
+        try {
+            $query = ['agent' => 'downloader-app', 'apikey' => $apiKey];
+            foreach ($magnets as $magnet) {
+                $query['magnets'][] = $magnet;
+            }
+
+            $response = $this->client->post('magnet/upload', [
+                'form_params' => $query
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if (($data['status'] ?? '') === 'success') {
+                return ['success' => true, 'data' => $data['data']];
+            }
+            return ['success' => false, 'message' => $data['error']['message'] ?? 'Unknown error'];
+
+        } catch (\Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    public function uploadTorrent(string $filePath, ?string $filename = null): array
+    {
+        $apiKey = $this->getApiKey();
+        if (!$apiKey || !file_exists($filePath)) {
+            return ['success' => false, 'message' => 'Invalid file or API key'];
+        }
+
+        try {
+            $response = $this->client->post('magnet/upload/file', [
+                'query' => ['agent' => 'downloader-app', 'apikey' => $apiKey],
+                'multipart' => [
+                    [
+                        'name' => 'files[]',
+                        'contents' => fopen($filePath, 'r'),
+                        'filename' => $filename ?? basename($filePath)
+                    ]
+                ]
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if (($data['status'] ?? '') === 'success') {
+                // The 'files' array in response contains upload results
+                $files = $data['data']['files'] ?? [];
+                if (!empty($files) && isset($files[0]['error'])) {
+                    return ['success' => false, 'message' => $files[0]['error']['message']];
+                }
+                return ['success' => true, 'data' => $data['data']];
+            }
+            return ['success' => false, 'message' => $data['error']['message'] ?? 'Unknown error'];
+
+        } catch (\Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    public function saveMagnet(int $magnetId): array
+    {
+        $apiKey = $this->getApiKey();
+        if (!$apiKey) {
+            return ['success' => false, 'message' => 'No API key'];
+        }
+
+        try {
+            // Use v4.1 magnet/status endpoint to get links
+            $response = $this->client->get('/v4.1/magnet/status', [
+                'query' => [
+                    'agent' => 'downloader-app',
+                    'apikey' => $apiKey,
+                    'id' => $magnetId
+                ]
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if (($data['status'] ?? '') === 'success') {
+                return ['success' => true, 'data' => $data['data']];
+            }
+            return ['success' => false, 'message' => $data['error']['message'] ?? 'Unknown error'];
+
+        } catch (\Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
     public function testAllEndpoints(): array
     {
         $apiKey = $this->getApiKey();
@@ -200,6 +294,34 @@ class AlldebridService
 
         try {
             $response = $this->client->get('link/unlock', [
+                'query' => [
+                    'agent' => 'downloader-app',
+                    'apikey' => $apiKey,
+                    'link' => $link
+                ]
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if (($data['status'] ?? '') === 'success') {
+                return $data['data']['link'] ?? null;
+            }
+
+            return null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    public function getStreamingLink(string $link): ?string
+    {
+        $apiKey = $this->getApiKey();
+        if (!$apiKey) {
+            return null;
+        }
+
+        try {
+            $response = $this->client->get('link/streaming', [
                 'query' => [
                     'agent' => 'downloader-app',
                     'apikey' => $apiKey,

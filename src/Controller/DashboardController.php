@@ -124,30 +124,41 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music-files', name: 'music_files')]
-    public function musicFiles(JsonStorage $storage): Response
+    public function musicFiles(JsonStorage $storage, KernelInterface $kernel): Response
     {
         $config = $storage->get('config', []);
         $root = $config['music_root_path'] ?? '';
         $files = [];
 
         if (!empty($root) && is_dir($root)) {
-            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
-            $audio_exts = ['mp3', 'flac', 'm4a', 'opus', 'ogg', 'wav'];
+            $venvPath = $config['music_venv_path'] ?? 'venv';
+            $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'music_downloader.py';
 
-            foreach ($iterator as $file) {
-                if ($file->isFile() && in_array(strtolower($file->getExtension()), $audio_exts)) {
+            $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+            $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
+
+            // Run verification with recursion support
+            $cmd = "($activate && python3 \"$script\" --verify \"$root\" --recursive)";
+
+            $process = Process::fromShellCommandline($cmd);
+            $process->run();
+
+            if ($process->isSuccessful()) {
+                $rawFiles = json_decode($process->getOutput(), true) ?: [];
+                foreach ($rawFiles as $rf) {
                     $files[] = [
-                        'name' => $file->getFilename(),
-                        'path' => $file->getRealPath(),
-                        'size' => $file->getSize(),
-                        'mtime' => $file->getMTime(),
-                        'rel_path' => str_replace($root, '', $file->getRealPath())
+                        'name' => $rf['filename'],
+                        'path' => $rf['full_path'],
+                        'size' => $rf['size'],
+                        'mtime' => (int) $rf['mtime'],
+                        'rel_path' => $rf['rel_path'],
+                        'has_lyrics' => $rf['lyrics'] ?? false
                     ];
                 }
-            }
 
-            // Sort by mtime descending
-            usort($files, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
+                // Sort by mtime descending
+                usort($files, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
+            }
         }
 
         return $this->render('dashboard/music_files.html.twig', [
@@ -195,8 +206,7 @@ class DashboardController extends AbstractController
     {
         return $this->render('dashboard/queue.html.twig', [
             'queue' => $queueManager->getQueue(),
-            'active' => $queueManager->getActiveTask(),
-            'hide_tracker' => true
+            'active' => $queueManager->getActiveTask()
         ]);
     }
 
@@ -513,20 +523,290 @@ class DashboardController extends AbstractController
         }
     }
 
-    #[Route('/debug-all-endpoints', name: 'debug_all_endpoints')]
-    public function debugAllEndpoints(AlldebridService $alldebrid): Response
+    #[Route('/music/move-to-library', name: 'move_to_library', methods: ['POST'])]
+    public function moveToLibrary(JsonStorage $storage, KernelInterface $kernel): Response
     {
         try {
-            $allData = $alldebrid->testAllEndpoints();
+            $config = $storage->get('config', []);
+            $sourcePath = $config['music_root_path'] ?? '';
+            $libraryPath = $config['music_library_path'] ?? '';
+            $mode = $config['music_genre_tagging_mode'] ?? 'ai';
+            $mapping = $config['music_genre_mapping'] ?? '{}';
+            $grokKey = $config['grok_api_key'] ?? '';
+            $grokModel = $config['music_genre_grok_model'] ?? 'grok-4-fast-non-reasoning';
+            $grokPrompt = $config['music_genre_grok_prompt'] ?? '';
+            $venvPath = $config['music_venv_path'] ?? 'venv';
 
-            return new Response(json_encode($allData, JSON_PRETTY_PRINT), 200, [
-                'Content-Type' => 'application/json'
-            ]);
-        } catch (\Exception $e) {
+            if (!$sourcePath || !$libraryPath) {
+                return new Response(json_encode(['error' => 'Source or Library path not configured.']), 400);
+            }
+
+            $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'tag_rename_move.py';
+
+            $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+            $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
+
+            $mappingEscaped = str_replace('"', '\"', $mapping);
+            $promptEscaped = str_replace('"', '\"', $grokPrompt);
+
+            $cmd = "($activate && python3 \"$script\" " .
+                "--source \"$sourcePath\" " .
+                "--library \"$libraryPath\" " .
+                "--mode \"$mode\" " .
+                "--mapping \"$mappingEscaped\" " .
+                "--grok-key \"$grokKey\" " .
+                "--grok-model \"$grokModel\" " .
+                "--grok-prompt \"$promptEscaped\")";
+
+            $process = Process::fromShellCommandline($cmd);
+            $process->setTimeout(300);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                return new Response(json_encode([
+                    'error' => 'Script failed.',
+                    'details' => $process->getErrorOutput(),
+                    'cmd' => $cmd
+                ]), 500);
+            }
+
+            $output = json_decode($process->getOutput(), true);
+            $results = $output['results'] ?? [];
+
+            // Add history entry
+            $history = $storage->get('history', []);
+            $history[] = [
+                'date' => date('Y-m-d H:i:s'),
+                'status' => 'success',
+                'action' => 'library_move',
+                'type' => 'music',
+                'filename' => 'Moved files to music library',
+                'file_count' => count($results),
+                'message' => 'Processed ' . count($results) . ' files into ' . $libraryPath,
+                'details' => $results
+            ];
+            $storage->set('history', array_slice($history, -100));
+
+            // Server-side notification
+            $notifs = $storage->get('server_notifications', []);
+            $notifs[] = [
+                'id' => uniqid(),
+                'timestamp' => time(),
+                'type' => 'success',
+                'action' => 'Finished',
+                'media_type' => 'music',
+                'item' => count($results) . ' files moved to Library'
+            ];
+            $storage->set('server_notifications', $notifs);
+
             return new Response(json_encode([
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]), 500, ['Content-Type' => 'application/json']);
+                'status' => 'success',
+                'processed' => count($results),
+                'results' => $results
+            ]), 200, ['Content-Type' => 'application/json']);
+
+        } catch (\Exception $e) {
+            return new Response(json_encode(['error' => $e->getMessage()]), 500);
+        }
+    }
+
+    #[Route('/dashboard/upload-torrent', name: 'upload_torrent', methods: ['POST'])]
+    public function uploadTorrent(Request $request, AlldebridService $debrid): Response
+    {
+        $magnet = $request->request->get('magnet');
+        $file = $request->files->get('file');
+
+        if ($magnet) {
+            $result = $debrid->uploadMagnet([trim($magnet)]);
+        } elseif ($file) {
+            $result = $debrid->uploadTorrent($file->getPathname(), $file->getClientOriginalName());
+        } else {
+            return $this->json(['success' => false, 'message' => 'No magnet or file provided']);
+        }
+
+        // If upload successful, save the magnet
+        $magnetId = $result['data']['magnets'][0]['id'] ?? $result['data']['files'][0]['id'] ?? null;
+
+        if ($result['success'] && $magnetId) {
+            // Retry loop to give Alldebrid time to parse the magnet links
+            $maxRetries = 10; // Increase retries to 10 seconds
+            $saveResult = null;
+            $magnetData = null;
+
+            // Helper to recursively extract links from Alldebrid's 'files' structure
+            $extractLinks = function ($items) use (&$extractLinks) {
+                $found = [];
+                foreach ($items as $item) {
+                    if (isset($item['l']) && isset($item['n'])) {
+                        $found[] = ['link' => $item['l'], 'filename' => $item['n']];
+                    } elseif (isset($item['link']) && isset($item['filename'])) {
+                        $found[] = ['link' => $item['link'], 'filename' => $item['filename']];
+                    }
+
+                    if (isset($item['e']) && is_array($item['e'])) {
+                        $found = array_merge($found, $extractLinks($item['e']));
+                    }
+                }
+                return $found;
+            };
+
+            for ($i = 0; $i < $maxRetries; $i++) {
+                $saveResult = $debrid->saveMagnet((int) $magnetId);
+
+                $magnetsRetry = $saveResult['data']['magnets'] ?? [];
+
+                // Flexible discovery of magnet data
+                if (isset($magnetsRetry['files']) || isset($magnetsRetry['links'])) {
+                    $magnetData = $magnetsRetry;
+                } elseif (is_array($magnetsRetry)) {
+                    foreach ($magnetsRetry as $item) {
+                        if (is_array($item) && (isset($item['files']) || isset($item['links']))) {
+                            $magnetData = $item;
+                            break;
+                        }
+                    }
+                }
+
+                // Check if we have links/files AND if the status is "Ready" (statusCode 4)
+                $allLinksRetry = $extractLinks($magnetsRetry['links'] ?? $magnetsRetry['files'] ?? []);
+                $hasLinks = !empty($allLinksRetry);
+                $isReady = ($magnetData['statusCode'] ?? 0) === 4;
+
+                if ($hasLinks && $isReady) {
+                    break;
+                }
+
+                // If it's an error status, stop retrying
+                if (($magnetData['statusCode'] ?? 0) > 4) {
+                    break;
+                }
+
+                if ($i < $maxRetries - 1) {
+                    sleep(1);
+                }
+            }
+
+            if (!$saveResult['success']) {
+                return $this->json([
+                    'success' => false,
+                    'message' => 'Upload successful but failed to get status: ' . ($saveResult['message'] ?? 'Unknown error'),
+                    'debug_save_result' => $saveResult
+                ]);
+            }
+
+            // Chain unlock → streaming for each link
+            $linksRecap = [];
+            $filesToProcess = $magnetData['links'] ?? $magnetData['files'] ?? [];
+
+            $allLinks = $extractLinks($filesToProcess);
+
+            if (!empty($allLinks)) {
+                foreach ($allLinks as $fileData) {
+                    $rawLink = $fileData['link'];
+                    $filename = $fileData['filename'];
+
+                    if ($rawLink) {
+                        $unlockedLink = $debrid->unlockLink($rawLink);
+                        if ($unlockedLink) {
+                            $streamingLink = $debrid->getStreamingLink($unlockedLink);
+                            $linksRecap[] = [
+                                'filename' => $filename,
+                                'unlocked' => $unlockedLink,
+                                'streaming' => $streamingLink ?: $unlockedLink
+                            ];
+                        }
+                    }
+                }
+            }
+
+            $finalMessage = "Torrent uploaded successfully.";
+            if (empty($linksRecap)) {
+                $status = $magnetData['status'] ?? 'Unknown';
+                $finalMessage .= " However, no downloadable links were found (Status: $status). It might still be downloading on Alldebrid.";
+            } else {
+                $finalMessage .= " " . count($linksRecap) . " file(s) processed.";
+            }
+
+            return $this->json([
+                'success' => true,
+                'message' => $finalMessage,
+                'links' => $linksRecap,
+                'debug_save_result' => $saveResult
+            ]);
+        }
+
+        return $this->json($result);
+    }
+
+    #[Route('/music/fetch-lyrics', name: 'fetch_lyrics', methods: ['POST'])]
+    public function fetchLyrics(Request $request, JsonStorage $storage, KernelInterface $kernel): Response
+    {
+        try {
+            $config = $storage->get('config', []);
+            $data = json_decode($request->getContent(), true);
+            $targetPath = $data['path'] ?? null;
+
+            $root = $config['music_root_path'] ?? '';
+
+            $path = $root;
+            // If a specific file is requested, use it if it exists
+            if ($targetPath) {
+                $fullTargetPath = realpath($targetPath);
+                if ($fullTargetPath && str_starts_with($fullTargetPath, realpath($root))) {
+                    $path = $fullTargetPath;
+                }
+            }
+
+            if (empty($path) || !file_exists($path)) {
+                return $this->json(['success' => false, 'message' => 'Invalid path specified.']);
+            }
+
+            $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'lyrics_fetcher.py';
+
+            // Determine OS and activate command
+            $venvPath = $config['music_venv_path'] ?? 'venv';
+
+            // Check if venv path is relative or absolute
+            if (!file_exists($venvPath)) {
+                // Try relative to project dir
+                $venvPath = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . $venvPath;
+            }
+
+            if (!file_exists($venvPath)) {
+                return $this->json(['success' => false, 'message' => 'Virtual environment not found at: ' . $venvPath]);
+            }
+
+            // Determine OS and activate command
+            $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+            $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
+
+            // Build command: activate venv AND run script
+            // Note: On Windows, use & or &&. Chaining with && ensures python runs only if activate succeeds.
+            // We need to run inside a shell.
+            $cmd = "($activate && python3 \"$script\" \"$path\" --force-save --add-unsync --json)";
+
+            $process = Process::fromShellCommandline($cmd);
+            $process->setWorkingDirectory($kernel->getProjectDir());
+            $process->setTimeout(600);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                return $this->json([
+                    'success' => false,
+                    'message' => 'Lyrics search failed.',
+                    'details' => $process->getErrorOutput()
+                ]);
+            }
+
+            $results = json_decode($process->getOutput(), true);
+
+            return $this->json([
+                'success' => true,
+                'results' => $results
+            ]);
+
+        } catch (\Exception $e) {
+            return $this->json(['success' => false, 'message' => $e->getMessage()]);
         }
     }
 }

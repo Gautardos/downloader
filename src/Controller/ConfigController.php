@@ -41,6 +41,14 @@ class ConfigController extends AbstractController
                 'music_retries' => (int) $request->request->get('music_retries', 3),
                 'music_venv_path' => $request->request->get('music_venv_path', 'venv'),
                 'music_binary' => $request->request->get('music_binary', 'musicdownload'),
+                'music_library_path' => $request->request->get('music_library_path', ''),
+                'music_genre_mapping' => $request->request->get('music_genre_mapping', ''),
+                'music_genre_tagging_mode' => $request->request->get('music_genre_tagging_mode', 'ai'),
+                'music_genre_grok_prompt' => $request->request->get('music_genre_grok_prompt', ''),
+                'music_genre_grok_model' => $request->request->get('music_genre_grok_model', 'grok-4-fast-non-reasoning'),
+                'music_genres' => $request->request->get('music_genres') === '1',
+                'genius_api_token' => $request->request->get('genius_api_token', ''),
+                'lrclib_token' => $request->request->get('lrclib_token', ''),
                 'admin_user' => $request->request->get('admin_user', 'admin'),
                 'admin_password' => $request->request->get('admin_password', 'admin')
             ]);

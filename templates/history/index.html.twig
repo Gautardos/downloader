@@ -26,21 +26,21 @@
             </thead>
             <tbody>
                 {% for item in history %}
-                    <tr class="status-{{ item.status|default('success') }}">
+                    <tr class="status-{{ item.status ?? 'success' }}">
                         <td style="font-size: 1.5rem; text-align: center;">
-                            {{ (item.type|default('video')) == 'music' ? '🎵' : '🎥' }}
+                            {{ (item.type ?? 'video') == 'music' ? '🎵' : '🎥' }}
                         </td>
                         <td style="white-space: nowrap; color: var(--text-secondary); font-size: 0.8rem;">
-                            {{ item.date|date('Y-m-d H:i:s') }}
+                            {{ (item.date ?? item.timestamp ?? "now")|date('Y-m-d H:i:s') }}
                         </td>
                         <td>
-                            <div style="font-weight: 500; margin-bottom: 0.25rem;">{{ item.filename }}</div>
-                            <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;" title="{{ item.path }}">
-                                {{ item.path }}
+                            <div style="font-weight: 500; margin-bottom: 0.25rem;">{{ item.filename ?? item.item ?? 'Unknown' }}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;" title="{{ item.path ?? '' }}">
+                                {{ item.path ?? '' }}
                             </div>
                         </td>
                         <td>
-                            {% if (item.type|default('video')) == 'video' %}
+                            {% if (item.type ?? 'video') == 'video' %}
                                 <span class="size-tag" style="background: rgba(56, 189, 248, 0.1); color: var(--accent);">
                                     {% set size = item.size ?? 0 %}
                                     {% if size > 1024 * 1024 * 1024 %}
@@ -51,21 +51,21 @@
                                 </span>
                             {% else %}
                                 <span style="font-size: 0.8rem; color: var(--text-secondary);">
-                                    {{ item.file_count|default(0) }} files
+                                    {{ item.file_count ?? 0 }} files
                                 </span>
                             {% endif %}
                         </td>
                         <td>
                             <span style="font-family: monospace; font-size: 0.8rem; color: var(--text-secondary);">
-                                {{ item.speed|default('--') }}
+                                {{ item.speed ?? '--' }}
                             </span>
                         </td>
                         <td>
-                            {% if item.status|default('success') == 'error' %}
+                            {% if (item.status ?? 'success') == 'error' %}
                                 <span class="badge" style="background: var(--danger); color: white;">FAILED</span>
-                            {% elseif item.status|default('success') == 'warning' %}
+                            {% elseif (item.status ?? 'success') == 'warning' %}
                                 <span class="badge" style="background: #f59e0b; color: white;">WARNING</span>
-                            {% elseif item.status|default('success') == 'canceled' %}
+                            {% elseif (item.status ?? 'success') == 'canceled' %}
                                 <span class="badge" style="background: var(--text-secondary); color: white;">CANCELED</span>
                             {% else %}
                                 <span class="badge" style="background: var(--success); color: white;">SUCCESS</span>
@@ -73,15 +73,20 @@
                         </td>
                         <td style="white-space: nowrap;">
                             <div style="display: flex; gap: 0.4rem; justify-content: flex-end;">
-                                {% if (item.type|default('video')) == 'music' %}
+                                {% if (item.action ?? '') == 'library_move' %}
+                                    <button class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: var(--accent); color: white; border: none; border-radius: 6px;" 
+                                            onclick="showMigrationSummary('Migration Summary', {{ (item.details ?? [])|json_encode }})">
+                                        Summary
+                                    </button>
+                                {% elseif (item.type ?? 'video') == 'music' %}
                                     {% if item.download_id is defined %}
                                         <a href="{{ path('history_log', {downloadId: item.download_id}) }}" target="_blank" class="btn btn-icon" title="View Logs">📄</a>
                                     {% endif %}
-                                    <button class="btn btn-icon" onclick="showTracksList('Expected', {{ item.expected_tracks|default([])|json_encode }})" title="Expected Files">📋</button>
-                                    {% if item.status|default('success') == 'warning' %}
-                                        <button class="btn btn-icon" onclick="showTracksList('Missing', {{ item.missing_tracks|default([])|json_encode }})" title="Missing Files">❌</button>
+                                    <button class="btn btn-icon" onclick="showTracksList('Expected', {{ (item.expected_tracks ?? [])|json_encode }})" title="Expected Files">📋</button>
+                                    {% if (item.status ?? 'success') == 'warning' %}
+                                        <button class="btn btn-icon" onclick="showTracksList('Missing', {{ (item.missing_tracks ?? [])|json_encode }})" title="Missing Files">❌</button>
                                     {% endif %}
-                                    <button class="btn btn-icon" onclick="showTracksList('Downloaded', {{ item.downloaded_tracks|default([])|json_encode }}, true)" title="Downloaded Files">✅</button>
+                                    <button class="btn btn-icon" onclick="showTracksList('Downloaded', {{ (item.downloaded_tracks ?? [])|json_encode }}, true)" title="Downloaded Files">✅</button>
                                 {% else %}
                                     <span style="color: var(--text-secondary); font-size: 0.8rem;">--</span>
                                 {% endif %}
@@ -114,6 +119,32 @@
             {% endif %}
         </div>
     {% endif %}
+</div>
+
+<!-- Migration Modal -->
+<div id="migration-modal" class="modal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);">
+    <div style="background: var(--bg-card); margin: 5% auto; padding: 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); width: 90%; max-width: 1000px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 id="mig-modal-title" style="margin: 0; color: var(--accent);">Migration Summary</h3>
+            <button onclick="document.getElementById('migration-modal').style.display='none'" class="btn" style="padding: 0.5rem;">✕</button>
+        </div>
+        <div id="mig-modal-content" style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                <thead>
+                    <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
+                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Original File</th>
+                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Artist/Title</th>
+                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Genre</th>
+                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">New Path</th>
+                        <th style="padding: 0.75rem; text-align: left; color: var(--text-secondary);">Steps</th>
+                        <th style="padding: 0.75rem; text-align: center; color: var(--text-secondary);">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="mig-modal-tbody">
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <!-- Tracks Modal -->
@@ -167,12 +198,91 @@ function showTracksList(title, tracks, showLyrics = false) {
     document.getElementById('tracks-modal').style.display = 'block';
 }
 
-// Close modal on outside click
-window.onclick = function(event) {
-    const modal = document.getElementById('tracks-modal');
-    if (event.target == modal) {
-        modal.style.display = "none";
+function showMigrationSummary(title, results) {
+    document.getElementById('mig-modal-title').innerText = title + ' (' + (results ? results.length : 0) + ' files)';
+    const tbody = document.getElementById('mig-modal-tbody');
+    tbody.innerHTML = '';
+    
+    if (!results || results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-secondary);">No results available.</td></tr>';
+    } else {
+        results.forEach(res => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+            
+            // Handle fallbacks for nested metadata (legacy data)
+            const artist = res.artist || (res.metadata_before ? res.metadata_before.artist : '--');
+            const title = res.title || (res.metadata_before ? res.metadata_before.title : '--');
+            const genre = res.genre || (res.metadata_before ? res.metadata_before.genre : '--');
+            const old_genre = res.old_genre || (res.metadata_before ? res.metadata_before.genre : '--');
+            const newPath = res.new_path || res.final_path || '--';
+            const originalFile = res.file || res.original_file || '--';
+            const source = res.genre_source || '--';
+            const logs = res.logs || [];
+
+            let genreDisplay = genre;
+            if (genre !== old_genre) {
+                 genreDisplay = `<div style="text-decoration: line-through; opacity: 0.5; font-size: 0.7rem;">${old_genre}</div>
+                                 <div style="font-weight: 600;">${genre}</div>`;
+            }
+
+            let sourceBadge = '';
+            const sourceColorMap = {
+                'AI (Grok)': '#8b5cf6',
+                'Mapping': '#3b82f6',
+                'Existing File': '#10b981',
+                'Session Cache': '#f59e0b',
+                'Original': '#6b7280'
+            };
+            const sourceColor = sourceColorMap[source] || 'rgba(255,255,255,0.1)';
+            sourceBadge = `<div style="margin-top: 0.25rem;"><span class="badge" style="background: ${sourceColor}; color: white; font-size: 0.6rem; padding: 0.1rem 0.4rem;">${source}</span></div>`;
+
+            let logsHtml = '<ul style="margin: 0; padding-left: 1rem; font-size: 0.7rem; color: var(--text-secondary); list-style-type: none;">';
+            if (logs.length > 0) {
+                logs.forEach(log => {
+                    logsHtml += `<li style="margin-bottom: 0.2rem; border-left: 2px solid rgba(255,255,255,0.1); padding-left: 0.5rem;">${log}</li>`;
+                });
+            } else {
+                logsHtml += '<li>No detailed logs available.</li>';
+            }
+            logsHtml += '</ul>';
+
+            tr.innerHTML = `
+                <td style="padding: 0.75rem; color: var(--text-secondary); font-size: 0.75rem;">${originalFile}</td>
+                <td style="padding: 0.75rem;">
+                    <div style="font-weight: 500;">${artist}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.8;">${title}</div>
+                </td>
+                <td style="padding: 0.75rem;">
+                    ${genreDisplay}
+                    ${sourceBadge}
+                </td>
+                <td style="padding: 0.75rem; font-family: monospace; font-size: 0.7rem; opacity: 0.7; word-break: break-all;">${newPath}</td>
+                <td style="padding: 0.75rem; min-width: 250px;">
+                    <details>
+                        <summary style="cursor: pointer; font-size: 0.75rem; color: var(--accent); outline: none;">View Process Steps</summary>
+                        <div style="margin-top: 0.5rem; background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px;">
+                            ${logsHtml}
+                        </div>
+                    </details>
+                </td>
+                <td style="padding: 0.75rem; text-align: center;">
+                    ${res.status === 'success' ? '✅' : '❌'}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
     }
+    
+    document.getElementById('migration-modal').style.display = 'block';
+}
+
+// Close modals on outside click
+window.onclick = function(event) {
+    const tracksModal = document.getElementById('tracks-modal');
+    const migModal = document.getElementById('migration-modal');
+    if (event.target == tracksModal) tracksModal.style.display = "none";
+    if (event.target == migModal) migModal.style.display = "none";
 }
 </script>
 

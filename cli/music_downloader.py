@@ -14,7 +14,7 @@ def load_config():
             return json.load(f)
     return {}
 
-def verify_directory(directory):
+def verify_directory(directory, recursive=False):
     import music_tag
     results = []
     if not os.path.isdir(directory):
@@ -22,33 +22,37 @@ def verify_directory(directory):
 
     audio_extensions = ('.mp3', '.flac', '.m4a', '.opus', '.ogg', '.wav')
     
-    # Map of base filename (without extension) to check for lyrics
-    files_in_dir = os.listdir(directory)
+    walker = os.walk(directory) if recursive else [(directory, [], os.listdir(directory))]
     
-    for filename in files_in_dir:
-        if filename.lower().endswith(audio_extensions):
-            file_path = os.path.join(directory, filename)
-            try:
-                f = music_tag.load_file(file_path)
-                
-                # Check for lyrics within ID3 tags
-                lyrics = str(f['lyrics']).strip()
-                has_lyrics = len(lyrics) > 0 and lyrics.lower() != 'none'
+    for root, _, files_in_dir in walker:
+        for filename in files_in_dir:
+            if filename.lower().endswith(audio_extensions):
+                file_path = os.path.join(root, filename)
+                try:
+                    f = music_tag.load_file(file_path)
+                    
+                    # Check for lyrics within ID3 tags
+                    lyrics = str(f['lyrics']).strip()
+                    has_lyrics = len(lyrics) > 0 and lyrics.lower() != 'none'
 
-                # Normalize artist delimiters to match Spotify format (Artist 1, Artist 2)
-                artist = str(f['artist'])
-                artist = artist.replace(' / ', ', ').replace(' /', ', ').replace('/ ', ', ').replace('/', ', ')
-                artist = artist.replace('; ', ', ').replace(';', ', ')
+                    # Normalize artist delimiters
+                    artist = str(f['artist'])
+                    artist = artist.replace(' / ', ', ').replace(' /', ', ').replace('/ ', ', ').replace('/', ', ')
+                    artist = artist.replace('; ', ', ').replace(';', ', ')
 
-                results.append({
-                    'artist': artist,
-                    'album': str(f['album']),
-                    'song_name': str(f['title']),
-                    'filename': filename,
-                    'lyrics': has_lyrics
-                })
-            except Exception as e:
-                continue
+                    results.append({
+                        'artist': artist,
+                        'album': str(f['album']),
+                        'song_name': str(f['title']),
+                        'filename': filename,
+                        'rel_path': os.path.relpath(file_path, directory),
+                        'full_path': file_path,
+                        'size': os.path.getsize(file_path),
+                        'mtime': os.path.getmtime(file_path),
+                        'lyrics': has_lyrics
+                    })
+                except Exception as e:
+                    continue
     
     return results
 
@@ -58,7 +62,8 @@ def main():
     
     # Check for verification mode
     if len(sys.argv) > 2 and sys.argv[1] == '--verify':
-        results = verify_directory(sys.argv[2])
+        is_recursive = '--recursive' in sys.argv or '-r' in sys.argv
+        results = verify_directory(sys.argv[2], recursive=is_recursive)
         print(json.dumps(results))
         return
 

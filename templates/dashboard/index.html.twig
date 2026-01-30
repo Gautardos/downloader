@@ -18,6 +18,13 @@
             {% endfor %}
         </datalist>
 
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 2rem;">
+            <button class="btn btn-primary" onclick="openUploadModal()" style="display: flex; align-items: center; gap: 0.5rem;">
+                <span>☁️</span> Upload Torrent / Magnet
+            </button>
+        </div>
+
+
         <div class="packs-grid">
             {% for pack in packs %}
                 <div class="pack-card">
@@ -129,6 +136,43 @@
         </div>
     {% endif %}
 
+
+    <!-- Upload Torrent Modal -->
+    <div id="upload-modal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>☁️ Upload Torrent / Magnet</h2>
+                <button class="btn-close-modal" onclick="closeUploadModal()">×</button>
+            </div>
+            <div class="modal-body" style="padding: 2rem;">
+                <!-- Drag and Drop Zone -->
+                <div id="drop-zone" style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 3rem 2rem; text-align: center; transition: all 0.2s; cursor: pointer; margin-bottom: 2rem;"
+                     onclick="document.getElementById('torrent-file-input').click()"
+                     ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">📄</div>
+                    <h3 style="margin: 0 0 0.5rem 0;">Click or Drop .torrent file here</h3>
+                    <p style="color: var(--text-secondary); margin: 0;">Supports single .torrent file upload</p>
+                    <input type="file" id="torrent-file-input" accept=".torrent" style="display: none" onchange="handleFileSelect(this)">
+                </div>
+
+                <div style="text-align: center; margin-bottom: 2rem; position: relative;">
+                    <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: var(--bg-secondary); padding: 0 1rem; color: var(--text-secondary); font-size: 0.9rem;">OR</span>
+                </div>
+
+                <!-- Magnet Link Input -->
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Magnet Link</label>
+                    <textarea id="magnet-input" placeholder="magnet:?xt=urn:btih:..." rows="3"
+                              style="width: 100%; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; resize: vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
+                <button class="btn btn-primary" id="btn-upload" onclick="submitUpload()">Upload</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Batch Confirmation Modal -->
     <div id="batch-modal" class="modal-overlay">
@@ -457,6 +501,142 @@ async function confirmBatchDownloads() {
 function startDownload(event, packId, file) {
     if (event) event.preventDefault();
     downloadPack(null, packId, file);
+}
+
+
+let lastUploadSuccess = false;
+
+function openUploadModal() {
+    lastUploadSuccess = false;
+    document.getElementById('upload-modal').style.display = 'flex';
+}
+
+function closeUploadModal() {
+    document.getElementById('upload-modal').style.display = 'none';
+    if (lastUploadSuccess) {
+        location.reload();
+    }
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.currentTarget.style.borderColor = 'var(--accent)';
+    e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+}
+
+function handleDragLeave(e) {
+    e.preventDefault();
+    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+    e.currentTarget.style.background = 'transparent';
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    handleDragLeave(e);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFiles(files);
+    }
+}
+
+function handleFileSelect(input) {
+    if (input.files.length > 0) {
+        handleFiles(input.files);
+    }
+}
+
+let selectedFile = null;
+
+function handleFiles(files) {
+    const file = files[0];
+    if (file && file.name.endsWith('.torrent')) {
+        selectedFile = file;
+        const dropZone = document.getElementById('drop-zone');
+        dropZone.innerHTML = `
+            <div style="font-size: 3rem; margin-bottom: 1rem; color: var(--success);">✅</div>
+            <h3 style="margin: 0 0 0.5rem 0;">${file.name}</h3>
+            <p style="color: var(--text-secondary); margin: 0;">Ready to upload</p>
+        `;
+    } else {
+        alert('Please select a valid .torrent file');
+    }
+}
+
+async function submitUpload() {
+    const magnet = document.getElementById('magnet-input').value;
+    const btn = document.getElementById('btn-upload');
+    const formData = new FormData();
+
+    if (magnet) {
+        formData.append('magnet', magnet);
+    } else if (selectedFile) {
+        formData.append('file', selectedFile);
+    } else {
+        alert('Please provide a magnet link or select a file.');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = 'Uploading...';
+    let data;
+
+    try {
+        const res = await fetch("{{ path('upload_torrent') }}", {
+            method: 'POST',
+            body: formData
+        });
+        data = await res.json();
+        console.log("Upload Response Data:", data);
+
+        if (data.success) {
+            lastUploadSuccess = true;
+            window.notify('success', 'Upload successful!');
+            
+            if (data.links && data.links.length > 0) {
+                // Show recap
+                const dropZone = document.getElementById('drop-zone');
+                let linksHtml = `
+                    <div style="text-align: left; margin-top: 1rem; max-height: 300px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: var(--accent);">Generated Links:</h4>
+                        <ul style="list-style: none; padding: 0;">
+                `;
+                
+                data.links.forEach(link => {
+                    linksHtml += `
+                        <li style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+                            <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 5px;">${link.filename}</div>
+                            <div style="display: flex; flex-direction: column; gap: 5px;">
+                                <a href="${link.streaming}" target="_blank" style="color: var(--success); font-size: 0.8rem; text-decoration: none; word-break: break-all;">
+                                    Download / Stream
+                                </a>
+                                <div style="color: var(--text-secondary); font-size: 0.7rem; cursor: pointer;" onclick="navigator.clipboard.writeText('${link.streaming}').then(() => window.notify('success', 'Copied to clipboard!'))">
+                                    Copy link
+                                </div>
+                            </div>
+                        </li>
+                    `;
+                });
+                
+                linksHtml += `</ul></div>`;
+                dropZone.innerHTML = linksHtml;
+                btn.style.display = 'none';
+            } else {
+                console.warn("No links found in response.");
+                window.notify('info', 'Success, but no individual links were generated.');
+            }
+        } else {
+            console.error("Upload failed:", data.message);
+            alert('Upload failed: ' + (data.message || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error("Fetch Error:", e);
+        alert('Upload failed: Network error');
+    } finally {
+        if (!data || !data.links || data.links.length === 0) {
+            btn.disabled = false;
+            btn.innerText = 'Upload';
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

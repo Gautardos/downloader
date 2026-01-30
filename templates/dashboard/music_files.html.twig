@@ -11,9 +11,18 @@
         </h1>
         <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code></p>
     </div>
-    <button class="btn btn-primary" onclick="alert('Move to library triggered (to be implemented)')">
-        🚚 Move to library
-    </button>
+    <div id="move-container" style="display: flex; gap: 0.75rem; align-items: center;">
+        <button id="btn-lyrics" class="btn btn-secondary" onclick="fetchLyrics()" style="display: flex; align-items: center; gap: 0.5rem;">
+            <span id="lyrics-icon">🎤</span> Add Lyrics
+        </button>
+        <button id="btn-move" class="btn btn-primary" onclick="moveToLibrary()" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+            <span id="move-icon">🚚</span> Move to library
+        </button>
+        <div id="move-loader" style="display: none; align-items: center; gap: 0.5rem; color: var(--accent);">
+            <div style="font-size: 1.2rem; animation: spin 1s infinite linear;">⌛</div>
+            <span>Processing...</span>
+        </div>
+    </div>
 </div>
 
 <div class="card" style="padding: 0; overflow: hidden;">
@@ -22,6 +31,7 @@
             <tr>
                 <th style="padding: 1rem;">File Name</th>
                 <th style="padding: 1rem;">Location</th>
+                <th style="padding: 1rem; text-align: center;">Lyrics</th>
                 <th style="padding: 1rem;">Size</th>
                 <th style="padding: 1rem;">Added</th>
                 <th style="padding: 1rem; width: 100px;">Actions</th>
@@ -34,17 +44,32 @@
                 <td style="padding: 1rem; color: var(--text-secondary); font-size: 0.85rem;" title="{{ file.path }}">
                     {{ file.rel_path }}
                 </td>
+                <td style="padding: 1rem; text-align: center; font-size: 1.2rem;">
+                    {% if file.has_lyrics %}
+                        <span title="Lyrics Present">📝</span>
+                    {% else %}
+                        <span title="No Lyrics" style="opacity: 0.3; filter: grayscale(1);">❌</span>
+                    {% endif %}
+                </td>
                 <td style="padding: 1rem;"><span class="badge" style="background: rgba(255,255,255,0.05);">{{ (file.size / 1024 / 1024)|number_format(2) }} MB</span></td>
                 <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">{{ file.mtime|date('d/m/Y H:i') }}</td>
                 <td style="padding: 1rem;">
-                    <button class="btn btn-secondary btn-icon" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="viewDetails('{{ file.path|e('js') }}', '{{ file.name|e('js') }}')">
-                        🔍 Details
-                    </button>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <button class="btn btn-secondary btn-icon" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="viewDetails('{{ file.path|e('js') }}', '{{ file.name|e('js') }}')">
+                            🔍 Details
+                        </button>
+                        <button class="btn btn-secondary btn-icon" 
+                                style="padding: 0.4rem 0.8rem; font-size: 0.75rem; {% if file.has_lyrics %}opacity: 0.5; cursor: not-allowed; filter: grayscale(1);{% endif %}" 
+                                onclick="fetchSingleLyrics('{{ file.path|e('js') }}', this)"
+                                {% if file.has_lyrics %}disabled title="Lyrics already present"{% endif %}>
+                            🎵 Lyrics
+                        </button>
+                    </div>
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="5" style="padding: 3rem; text-align: center; color: var(--text-secondary);">
+                <td colspan="6" style="padding: 2rem; text-align: center; color: var(--text-secondary);">
                     No audio files found in the download directory.
                 </td>
             </tr>
@@ -76,7 +101,179 @@
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 </style>
 
+<!-- Lyrics Modal -->
+<div id="lyrics-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2100; align-items: center; justify-content: center;">
+    <div class="card" style="width: 100%; max-width: 800px; max-height: 85vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding: 0.5rem;">
+            <h2 style="margin: 0; font-size: 1.25rem;">Lyrics Fetching Summary</h2>
+            <button class="btn-remove" onclick="closeLyricsModal()" style="font-size: 2rem;">×</button>
+        </div>
+        
+        <div id="lyrics-results-container" style="overflow-y: auto; flex-grow: 1; padding: 0.5rem;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                <thead style="position: sticky; top: 0; background: var(--bg-secondary); z-index: 1;">
+                    <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
+                        <th style="padding: 0.75rem;">Artist</th>
+                        <th style="padding: 0.75rem;">Title</th>
+                        <th style="padding: 0.75rem;">Status</th>
+                        <th style="padding: 0.75rem;">Type</th>
+                    </tr>
+                </thead>
+                <tbody id="lyrics-results-body">
+                    <!-- Dynamic -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; padding: 0.5rem;">
+            <button class="btn btn-primary" onclick="window.location.reload()">Refresh Page</button>
+        </div>
+    </div>
+</div>
+
 <script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if Add Lyrics button should be enabled
+    const filesMissingLyrics = Array.from(document.querySelectorAll('td span[title="No Lyrics"]')).length;
+    const btnLyrics = document.getElementById('btn-lyrics');
+    if (btnLyrics && filesMissingLyrics === 0) {
+        btnLyrics.disabled = true;
+        btnLyrics.style.opacity = '0.5';
+        btnLyrics.title = 'All files already have lyrics.';
+    }
+});
+
+async function fetchLyrics() {
+    const btn = document.getElementById('btn-lyrics');
+    const originalText = btn.innerHTML;
+
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    btn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear; margin-right:5px;">⌛</span> Fetching...';
+
+    try {
+        const res = await fetch("{{ path('fetch_lyrics') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await res.json();
+        
+        if (data.success) {
+            showLyricsResults(data.results);
+            window.notify('success', 'Lyrics fetching completed!');
+        } else {
+            let errorMsg = 'Error: ' + (data.message || 'Unknown error');
+            if (data.details) {
+                errorMsg += '\n\nDetails:\n' + data.details;
+            }
+            alert(errorMsg);
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.innerHTML = originalText;
+        }
+    } catch (e) {
+        alert('Fetch Error: ' + e.message);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.innerHTML = originalText;
+    }
+}
+
+async function fetchSingleLyrics(path, btn) {
+    const originalText = btn.innerHTML;
+    const originalPointerEvents = btn.style.pointerEvents;
+
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    btn.style.pointerEvents = 'none';
+    btn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear;">⌛</span>';
+
+    try {
+        const res = await fetch("{{ path('fetch_lyrics') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path })
+        });
+
+        const data = await res.json();
+        
+        if (data.success) {
+            // Check if specific file result is found
+            const fileResult = data.results.find(r => r.file === path.split(/[\\/]/).pop());
+            if (fileResult) {
+                if (fileResult.status === 'found') {
+                     window.notify('success', `Lyrics found for ${fileResult.title}`);
+                     setTimeout(() => window.location.reload(), 1000);
+                } else {
+                     window.notify('info', `Lyrics status: ${fileResult.status} (${fileResult.reason || 'No reason'})`);
+                }
+            } else {
+                showLyricsResults(data.results);
+            }
+        } else {
+            let errorMsg = 'Error: ' + (data.message || 'Unknown error');
+            if (data.details) {
+                errorMsg += '\n\nDetails:\n' + data.details;
+            }
+            alert(errorMsg);
+        }
+    } catch (e) {
+        alert('Fetch Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = originalPointerEvents;
+        btn.innerHTML = originalText;
+    }
+}
+
+function showLyricsResults(results) {
+    const modal = document.getElementById('lyrics-modal');
+    const body = document.getElementById('lyrics-results-body');
+    body.innerHTML = '';
+
+    if (!results || results.length === 0) {
+        body.innerHTML = '<tr><td colspan="4" style="padding:2rem; text-align:center;">No processing needed or no files found.</td></tr>';
+    } else {
+        results.forEach(res => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+            
+            let statusStyle = 'color: var(--text-secondary)';
+            let statusText = res.status;
+            if (res.status === 'found') {
+                statusStyle = 'color: #4ade80; font-weight: bold;';
+                statusText = '✅ Found';
+            } else if (res.status === 'not_found') {
+                statusStyle = 'color: #f87171';
+                statusText = '❌ Not Found';
+            } else if (res.status === 'skipped') {
+                statusStyle = 'color: #94a3b8; font-style: italic;';
+                statusText = '⏭️ ' + (res.reason || 'Skipped');
+            }
+
+            const typeBadge = res.type === 'synced' ? 
+                '<span class="badge" style="background: #06b6d4; color: white;">Synced</span>' : 
+                (res.type === 'unsynced' ? '<span class="badge" style="background: #f59e0b; color: white;">Unsynced</span>' : '-');
+
+            tr.innerHTML = `
+                <td style="padding: 0.75rem;">${res.artist || '-'}</td>
+                <td style="padding: 0.75rem;">${res.title || '-'}</td>
+                <td style="padding: 0.75rem; ${statusStyle}">${statusText}</td>
+                <td style="padding: 0.75rem;">${typeBadge}</td>
+            `;
+            body.appendChild(tr);
+        });
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeLyricsModal() {
+    document.getElementById('lyrics-modal').style.display = 'none';
+}
+
 async function viewDetails(path, name) {
     console.log("View Details clicked for:", name, "Path:", path);
     const modal = document.getElementById('details-modal');
@@ -142,6 +339,40 @@ async function viewDetails(path, name) {
         console.error("Fetch error:", e);
         alert('Error: ' + e.message);
         closeDetails();
+    }
+}
+
+async function moveToLibrary() {
+    const btn = document.getElementById('btn-move');
+    const loader = document.getElementById('move-loader');
+
+    btn.style.display = 'none';
+    loader.style.display = 'flex';
+
+    try {
+        const res = await fetch("{{ path('move_to_library') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+            window.notify('success', {
+                action: 'Finished',
+                media_type: 'music',
+                item: data.processed + ' files moved to Library'
+            });
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+            btn.style.display = 'inline-flex';
+            loader.style.display = 'none';
+        }
+    } catch (e) {
+        alert('Fetch Error: ' + e.message);
+        btn.style.display = 'inline-flex';
+        loader.style.display = 'none';
     }
 }
 
