@@ -90,7 +90,7 @@ Toute la configuration s'effectue directement dans l'interface via l'onglet **Se
 
 ---
 
-## � Focus sur le système Alldebrid
+## Focus sur le système Alldebrid
 
 L'application n'est pas un client BitTorrent classique. Elle délègue le téléchargement des fichiers P2P au service **Alldebrid**, ce qui permet de télécharger à la vitesse maximale de votre connexion internet sans exposer votre adresse IP.
 
@@ -136,7 +136,7 @@ Variables disponibles : `{artist}`, `{album}`, `{song_name}`, `{track_number}`, 
 
 ---
 
-## �📂 Structure du projet
+## 📂 Structure du projet
 
 - `src/` : Code source Symfony (Contrôleurs, Services).
 - `templates/` : Vues Twig pour l'interface web.
