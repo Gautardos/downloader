@@ -573,11 +573,26 @@ class DashboardController extends AbstractController
             $output = json_decode($process->getOutput(), true);
             $results = $output['results'] ?? [];
 
+            // Determine aggregated status
+            $params = ['error' => 0, 'warning' => 0, 'success' => 0];
+            foreach ($results as $res) {
+                $s = $res['status'] ?? 'success';
+                if (isset($params[$s]))
+                    $params[$s]++;
+            }
+
+            $globalStatus = 'success';
+            if ($params['error'] > 0) {
+                $globalStatus = ($params['error'] === count($results)) ? 'error' : 'warning';
+            } elseif ($params['warning'] > 0) {
+                $globalStatus = 'warning';
+            }
+
             // Add history entry
             $history = $storage->get('history', []);
             $history[] = [
                 'date' => date('Y-m-d H:i:s'),
-                'status' => 'success',
+                'status' => $globalStatus,
                 'action' => 'library_move',
                 'type' => 'music',
                 'filename' => 'Moved files to music library',

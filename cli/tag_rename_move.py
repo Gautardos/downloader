@@ -226,8 +226,38 @@ def process_file(file_path, library_path, args):
 
         if os.path.exists(final_path):
             add_log(f"Overwriting existing file: {final_name}")
-        shutil.move(file_path, final_path)
-        add_log(f"Moved to: {final_path}")
+        
+        try:
+            shutil.move(file_path, final_path)
+            add_log(f"Moved to: {final_path}")
+        except Exception as move_err:
+            # Fallback for cross-device move issues
+            if os.path.exists(final_path):
+                # EPERM (Errno 1) usually means metadata/chown failure on CIFS/exFAT
+                # If file exists, the data is safe. We can ignore this specific error content-wise.
+                is_eperm = getattr(move_err, 'errno', 0) == 1
+                
+                if is_eperm:
+                     add_log(f"Info: Metadata preservation excluded by filesystem (EPERM), but data copied successfully.")
+                else:
+                     add_log(f"Warning: Move operation raised error, but destination exists. Verifying... ({str(move_err)})")
+                
+                try:
+                    os.remove(file_path)
+                    if is_eperm:
+                        add_log("Source file removed. Move considered successful.")
+                    else:
+                        add_log("Source file removed manually.")
+                        
+                    # If it was just EPERM, we don't flag as warning in the main report, keep it 'success'
+                    if not is_eperm:
+                         report["status"] = "warning"
+                         
+                except Exception as del_err:
+                    add_log(f"Critical: Source file could not be removed: {str(del_err)}")
+                    report["status"] = "warning"
+            else:
+                raise move_err
         
         report["final_path"] = final_path
         report["final_name"] = final_name

@@ -101,8 +101,9 @@ class DownloadWorkerCommand extends Command
                 $log('Error: ' . $e->getMessage());
                 $log('Stack trace: ' . $e->getTraceAsString());
 
-                // Add failed task to history
-                $this->queueManager->recordHistory($item, 'error', 0, $type === 'music' ? [] : ['type' => $type]);
+                // Add failed task to history - for music, we try to preserve the expected tracks list
+                $details = $type === 'music' ? ['missing_tracks' => $item['expected_tracks'] ?? []] : ['type' => $type];
+                $this->queueManager->recordHistory($item, 'error', 0, $details);
                 $this->addServerNotification($storage, 'error', "Failed $type download", 'Failed', ($item['filename'] ?? 'unknown'), $type);
             }
 
@@ -175,6 +176,11 @@ class DownloadWorkerCommand extends Command
 
         $log("Executing: $cmdStr");
 
+        $expectedTracks = $item['expected_tracks'] ?? [];
+        $matchedTracks = [];
+        $missingTracks = $expectedTracks;
+        $validatedCount = 0;
+
         // Execute using shell
         try {
             $process = \Symfony\Component\Process\Process::fromShellCommandline($cmdStr);
@@ -218,9 +224,13 @@ class DownloadWorkerCommand extends Command
             $errorMsg .= "ERROR OUTPUT:\n" . $process->getErrorOutput() . "\n";
             $errorMsg .= "STANDARD OUTPUT:\n" . $process->getOutput();
 
+            // Log fatal error but DO NOT throw if we want to retry
             file_put_contents($activeLogFile, "\n[FATAL ERROR]\n" . $errorMsg, FILE_APPEND);
             file_put_contents($historyLogFile, "\n[FATAL ERROR]\n" . $errorMsg, FILE_APPEND);
-            throw new \RuntimeException("Music download failed. Check logs for details.");
+
+            $log("Music download script failed. Marking as error to trigger retry check.");
+            $finalStatus = 'error';
+            goto retry_check; // Skip verification and jump to retry logic
         }
 
         // Post-download Verification
@@ -241,12 +251,7 @@ class DownloadWorkerCommand extends Command
             $verifiedTracks = json_decode($verifyProcess->getOutput(), true) ?: [];
         }
 
-        $expectedTracks = $item['expected_tracks'] ?? [];
-        $matchedTracks = [];
-        $validatedCount = 0;
-
         $missingTracks = [];
-        $matchedTracks = [];
         foreach ($expectedTracks as $expected) {
             $found = false;
             foreach ($verifiedTracks as $verified) {
@@ -268,11 +273,39 @@ class DownloadWorkerCommand extends Command
 
         // Determine status: success (all found), warning (some found), error (none found)
         $finalStatus = 'success';
-        if (!empty($expectedTracks)) {
-            if ($validatedCount === 0) {
-                $finalStatus = 'error';
-            } elseif ($validatedCount < count($expectedTracks)) {
-                $finalStatus = 'warning';
+        if (empty($expectedTracks)) {
+            $log("No expected tracks found (Metadata missing). Marking as error to trigger retry.");
+            $finalStatus = 'error';
+        } elseif ($validatedCount === 0) {
+            $finalStatus = 'error';
+        } elseif ($validatedCount < count($expectedTracks)) {
+            $finalStatus = 'warning';
+        }
+
+        retry_check:
+        // Retry Logic for failed downloads
+        if ($finalStatus === 'error') {
+            $retryCount = $item['retry_count'] ?? 0;
+            $maxRetries = 2; // Total 3 attempts (0, 1, 2)
+
+            if ($retryCount < $maxRetries) {
+                $attemptNum = $retryCount + 1;
+                $log("Validation failed (0 tracks found). Retrying... (Attempt $attemptNum of " . ($maxRetries + 1) . ")");
+
+                // Record the failure in history
+                $this->queueManager->recordHistory($item, 'failed_requeued', $validatedCount, [
+                    'downloaded_tracks' => $matchedTracks,
+                    'missing_tracks' => $missingTracks
+                ]);
+
+                // Prepare for re-queue
+                $item['retry_count'] = $attemptNum;
+                // Append retry suffix to ID to create a distinct history entry next time
+                $item['download_id'] = $downloadId . '_retry_' . $attemptNum;
+
+                // Re-enqueue
+                $this->queueManager->enqueue($item, 'music');
+                return;
             }
         }
 

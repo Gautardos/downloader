@@ -67,6 +67,8 @@
                                 <span class="badge" style="background: #f59e0b; color: white;">WARNING</span>
                             {% elseif (item.status ?? 'success') == 'canceled' %}
                                 <span class="badge" style="background: var(--text-secondary); color: white;">CANCELED</span>
+                            {% elseif (item.status ?? 'success') == 'failed_requeued' %}
+                                <span class="badge" style="background: #8b5cf6; color: white;">FAILED / REQUEUED</span>
                             {% else %}
                                 <span class="badge" style="background: var(--success); color: white;">SUCCESS</span>
                             {% endif %}
@@ -83,7 +85,7 @@
                                         <a href="{{ path('history_log', {downloadId: item.download_id}) }}" target="_blank" class="btn btn-icon" title="View Logs">📄</a>
                                     {% endif %}
                                     <button class="btn btn-icon" onclick="showTracksList('Expected', {{ (item.expected_tracks ?? [])|json_encode }})" title="Expected Files">📋</button>
-                                    {% if (item.status ?? 'success') == 'warning' %}
+                                    {% if (item.status ?? 'success') == 'warning' or (item.status ?? 'success') == 'failed_requeued' or (item.status ?? 'success') == 'error' %}
                                         <button class="btn btn-icon" onclick="showTracksList('Missing', {{ (item.missing_tracks ?? [])|json_encode }})" title="Missing Files">❌</button>
                                     {% endif %}
                                     <button class="btn btn-icon" onclick="showTracksList('Downloaded', {{ (item.downloaded_tracks ?? [])|json_encode }}, true)" title="Downloaded Files">✅</button>
