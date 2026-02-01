@@ -59,7 +59,7 @@ def verify_directory(directory, recursive=False):
 
 def main():
     config = load_config()
-    music_binary = config.get('music_binary', 'musicdownload')
+    music_binary = config.get('music_binary', 'zotify')
     
     # Check for verification mode
     if len(sys.argv) > 2 and sys.argv[1] == '--verify':

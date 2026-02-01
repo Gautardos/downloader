@@ -40,7 +40,7 @@ class ConfigController extends AbstractController
                 'music_progress_info' => $request->request->get('music_progress_info') === '1',
                 'music_retries' => (int) $request->request->get('music_retries', 3),
                 'music_venv_path' => $request->request->get('music_venv_path', 'venv'),
-                'music_binary' => $request->request->get('music_binary', 'musicdownload'),
+                'music_binary' => $request->request->get('music_binary', 'zotify'),
                 'music_library_path' => $request->request->get('music_library_path', ''),
                 'music_genre_mapping' => $request->request->get('music_genre_mapping', ''),
                 'music_genre_tagging_mode' => $request->request->get('music_genre_tagging_mode', 'ai'),
