@@ -90,7 +90,53 @@ Toute la configuration s'effectue directement dans l'interface via l'onglet **Se
 
 ---
 
-## 📂 Structure du projet
+## � Focus sur le système Alldebrid
+
+L'application n'est pas un client BitTorrent classique. Elle délègue le téléchargement des fichiers P2P au service **Alldebrid**, ce qui permet de télécharger à la vitesse maximale de votre connexion internet sans exposer votre adresse IP.
+
+### Fonctionnement technique :
+1. **Soumission** : Vous envoyez un lien magnet ou un fichier `.torrent` via le dashboard.
+2. **Transfert Cloud** : Alldebrid télécharge le contenu sur ses serveurs haute performance.
+3. **Récupération des liens** : L'application interroge l'API v4.1 pour l'état du magnet. Une fois prêt (Status 4), elle extrait récursivement tous les fichiers du pack.
+4. **Débridage & Streaming** : Chaque lien de fichier est "débridé" (unlocked) pour générer un lien direct HTTP. Si possible, un lien de streaming optimisé est également généré.
+5. **Worker Local** : Si vous choisissez de télécharger localement, le `DownloadWorkerCommand` prend le relais pour transférer ces fichiers HTTP vers votre stockage local de manière séquentielle.
+
+---
+
+## 📝 Exemples de Configuration
+
+Pour vous aider à configurer l'application, voici des exemples concrets à saisir dans l'onglet **Settings** :
+
+### 🏷️ Mapping des Genres (JSON)
+Permet de regrouper des sous-genres complexes sous des catégories simplifiées dans votre bibliothèque.
+```json
+{
+  "genre_patterns": {
+    "tech house|deep house|minimal": "House",
+    "drill|trap|boom bap": "Hip-Hop",
+    "liquid|neurofunk": "Drum & Bass",
+    "synthwave|retrowave": "Electronic"
+  }
+}
+```
+
+### 🤖 Prompt Grok pour les Genres
+Exemple de prompt pour affiner la détection IA :
+> "Tu es un expert musical. Classe cet album. Réponds uniquement par : Pop, Rock, Rap, Electro, Jazz, Classique ou Metal. Sois précis sur les artistes hybrides."
+
+### 📂 Modèle de nommage (Musique)
+Variables disponibles : `{artist}`, `{album}`, `{song_name}`, `{track_number}`, `{year}`, `{ext}`.
+- Standard : `{artist}/{album}/{track_number} - {song_name}.{ext}`
+- Simple : `{artist} - {song_name}.{ext}`
+
+### 📍 Chemins (Relative vs Absolute)
+- **Venv Path** : `./venv` (si à la racine)
+- **Music Root** : `C:/Downloads/Music/Temp` (Windows) ou `/mnt/data/music/temp` (Linux)
+- **Library Path** : `//NAS/Music/Library` (Support des lecteurs réseau)
+
+---
+
+## �📂 Structure du projet
 
 - `src/` : Code source Symfony (Contrôleurs, Services).
 - `templates/` : Vues Twig pour l'interface web.
