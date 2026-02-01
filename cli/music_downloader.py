@@ -49,6 +49,7 @@ def verify_directory(directory, recursive=False):
                         'full_path': file_path,
                         'size': os.path.getsize(file_path),
                         'mtime': os.path.getmtime(file_path),
+                        'genre': str(f['genre']),
                         'lyrics': has_lyrics
                     })
                 except Exception as e:
@@ -65,6 +66,42 @@ def main():
         is_recursive = '--recursive' in sys.argv or '-r' in sys.argv
         results = verify_directory(sys.argv[2], recursive=is_recursive)
         print(json.dumps(results))
+        return
+
+    # Check for tag update mode
+    if len(sys.argv) > 2 and sys.argv[1] == '--update-tags':
+        import music_tag
+        file_path = sys.argv[2]
+        if not os.path.exists(file_path):
+            print(json.dumps({'error': 'File not found'}))
+            return
+        
+        try:
+            # Parse tags to update from command line
+            # Format: --update-tags path --genre "Pop" --title "Song" ...
+            f = music_tag.load_file(file_path)
+            updated = False
+            
+            i = 3
+            while i < len(sys.argv):
+                arg = sys.argv[i]
+                if arg.startswith('--') and i + 1 < len(sys.argv):
+                    tag_name = arg[2:]
+                    tag_value = sys.argv[i+1]
+                    f[tag_name] = tag_value
+                    updated = True
+                    i += 2
+                else:
+                    i += 1
+            
+            if updated:
+                f.save()
+                print(json.dumps({'success': True, 'message': 'Tags updated successfully'}))
+            else:
+                print(json.dumps({'success': False, 'message': 'No tags provided to update'}))
+                
+        except Exception as e:
+            print(json.dumps({'error': str(e)}))
         return
 
     # Check for single file tags mode

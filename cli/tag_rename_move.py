@@ -219,6 +219,11 @@ def process_file(file_path, library_path, args):
         audio_full.save(file_path)
         add_log(f"Saved tags with genre: {new_genre} (Source: {genre_source}) and date: {date}")
         
+        # If tags-only mode, stop here
+        if args.tags_only:
+            add_log("Tags-only mode: skipping move.")
+            return report
+
         # Move
         if not os.path.exists(artist_dir):
             os.makedirs(artist_dir)
@@ -286,6 +291,7 @@ def main():
     parser.add_argument("--grok-endpoint", default="https://api.x.ai/v1/chat/completions")
     parser.add_argument("--grok-model", default="grok-beta")
     parser.add_argument("--grok-prompt", default="")
+    parser.add_argument("--tags-only", action="store_true", help="Only update tags, do not move files")
     
     args = parser.parse_args()
     

@@ -152,6 +152,7 @@ class DashboardController extends AbstractController
                         'size' => $rf['size'],
                         'mtime' => (int) $rf['mtime'],
                         'rel_path' => $rf['rel_path'],
+                        'genre' => $rf['genre'] ?? '',
                         'has_lyrics' => $rf['lyrics'] ?? false
                     ];
                 }
@@ -199,6 +200,49 @@ class DashboardController extends AbstractController
 
         $tags = json_decode($process->getOutput(), true);
         return $this->json(['success' => true, 'tags' => $tags]);
+    }
+
+    #[Route('/update-tags', name: 'update_tags', methods: ['POST'])]
+    public function updateTags(Request $request, KernelInterface $kernel, JsonStorage $storage): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        $filePath = $data['path'] ?? '';
+        $tags = $data['tags'] ?? [];
+
+        if (empty($filePath) || !file_exists($filePath)) {
+            return $this->json(['success' => false, 'message' => 'File not found']);
+        }
+
+        if (empty($tags)) {
+            return $this->json(['success' => false, 'message' => 'No tags provided']);
+        }
+
+        $config = $storage->get('config', []);
+        $venvPath = $config['music_venv_path'] ?? 'venv';
+        $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'music_downloader.py';
+
+        $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
+
+        // Build shell command
+        $cmdStr = "($activate && python3 \"$script\" --update-tags \"$filePath\"";
+        foreach ($tags as $name => $value) {
+            $valueEscaped = str_replace('"', '\"', $value);
+            $cmdStr .= " --$name \"$valueEscaped\"";
+        }
+        $cmdStr .= ")";
+
+        $process = Process::fromShellCommandline($cmdStr);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Failed to update tags: ' . $process->getErrorOutput()
+            ]);
+        }
+
+        return $this->json(['success' => true]);
     }
 
     #[Route('/queue', name: 'queue')]
@@ -628,129 +672,165 @@ class DashboardController extends AbstractController
     #[Route('/dashboard/upload-torrent', name: 'upload_torrent', methods: ['POST'])]
     public function uploadTorrent(Request $request, AlldebridService $debrid): Response
     {
-        $magnet = $request->request->get('magnet');
-        $file = $request->files->get('file');
+        try {
+            $magnet = $request->request->get('magnet');
+            $file = $request->files->get('file');
 
-        if ($magnet) {
-            $result = $debrid->uploadMagnet([trim($magnet)]);
-        } elseif ($file) {
-            $result = $debrid->uploadTorrent($file->getPathname(), $file->getClientOriginalName());
-        } else {
-            return $this->json(['success' => false, 'message' => 'No magnet or file provided']);
-        }
+            if ($magnet) {
+                $result = $debrid->uploadMagnet([trim($magnet)]);
+            } elseif ($file) {
+                $result = $debrid->uploadTorrent($file->getPathname(), $file->getClientOriginalName());
+            } else {
+                return $this->json(['success' => false, 'message' => 'No magnet or file provided']);
+            }
 
-        // If upload successful, save the magnet
-        $magnetId = $result['data']['magnets'][0]['id'] ?? $result['data']['files'][0]['id'] ?? null;
+            $magnetId = $result['data']['magnets'][0]['id'] ?? $result['data']['files'][0]['id'] ?? null;
 
-        if ($result['success'] && $magnetId) {
-            // Retry loop to give Alldebrid time to parse the magnet links
-            $maxRetries = 10; // Increase retries to 10 seconds
-            $saveResult = null;
-            $magnetData = null;
+            if ($result['success'] && $magnetId) {
+                $maxRetries = 10;
+                $saveResult = null;
+                $magnetData = null;
 
-            // Helper to recursively extract links from Alldebrid's 'files' structure
-            $extractLinks = function ($items) use (&$extractLinks) {
-                $found = [];
-                foreach ($items as $item) {
-                    if (isset($item['l']) && isset($item['n'])) {
-                        $found[] = ['link' => $item['l'], 'filename' => $item['n']];
-                    } elseif (isset($item['link']) && isset($item['filename'])) {
-                        $found[] = ['link' => $item['link'], 'filename' => $item['filename']];
+                $extractLinks = function ($items) use (&$extractLinks) {
+                    $found = [];
+                    foreach ($items as $item) {
+                        if (isset($item['l']) && isset($item['n'])) {
+                            $found[] = ['link' => $item['l'], 'filename' => $item['n']];
+                        } elseif (isset($item['link']) && isset($item['filename'])) {
+                            $found[] = ['link' => $item['link'], 'filename' => $item['filename']];
+                        }
+                        if (isset($item['e']) && is_array($item['e'])) {
+                            $found = array_merge($found, $extractLinks($item['e']));
+                        }
+                    }
+                    return $found;
+                };
+
+                for ($i = 0; $i < $maxRetries; $i++) {
+                    $saveResult = $debrid->saveMagnet((int) $magnetId);
+                    $magnetsRetry = $saveResult['data']['magnets'] ?? [];
+
+                    if (isset($magnetsRetry['files']) || isset($magnetsRetry['links'])) {
+                        $magnetData = $magnetsRetry;
+                    } elseif (is_array($magnetsRetry)) {
+                        foreach ($magnetsRetry as $item) {
+                            if (is_array($item) && (isset($item['files']) || isset($item['links']))) {
+                                $magnetData = $item;
+                                break;
+                            }
+                        }
                     }
 
-                    if (isset($item['e']) && is_array($item['e'])) {
-                        $found = array_merge($found, $extractLinks($item['e']));
+                    $allLinksRetry = $extractLinks($magnetData['links'] ?? $magnetData['files'] ?? []);
+                    if (!empty($allLinksRetry) && ($magnetData['statusCode'] ?? 0) === 4) {
+                        break;
                     }
+                    if (($magnetData['statusCode'] ?? 0) > 4) {
+                        break;
+                    }
+                    if ($i < $maxRetries - 1)
+                        sleep(1);
                 }
-                return $found;
-            };
 
-            for ($i = 0; $i < $maxRetries; $i++) {
-                $saveResult = $debrid->saveMagnet((int) $magnetId);
+                if (!$saveResult['success']) {
+                    return $this->json([
+                        'success' => false,
+                        'message' => 'Upload successful but failed to get status: ' . ($saveResult['message'] ?? 'Unknown error'),
+                        'debug_save_result' => $saveResult
+                    ]);
+                }
 
-                $magnetsRetry = $saveResult['data']['magnets'] ?? [];
+                $linksRecap = [];
+                $filesToProcess = $magnetData['links'] ?? $magnetData['files'] ?? [];
+                $allLinks = $extractLinks($filesToProcess);
 
-                // Flexible discovery of magnet data
-                if (isset($magnetsRetry['files']) || isset($magnetsRetry['links'])) {
-                    $magnetData = $magnetsRetry;
-                } elseif (is_array($magnetsRetry)) {
-                    foreach ($magnetsRetry as $item) {
-                        if (is_array($item) && (isset($item['files']) || isset($item['links']))) {
-                            $magnetData = $item;
-                            break;
+                if (!empty($allLinks)) {
+                    foreach ($allLinks as $fileData) {
+                        $rawLink = $fileData['link'];
+                        if ($rawLink) {
+                            $unlockedLink = $debrid->unlockLink($rawLink);
+                            if ($unlockedLink) {
+                                $streamingLink = $debrid->getStreamingLink($unlockedLink);
+                                $linksRecap[] = [
+                                    'filename' => $fileData['filename'],
+                                    'unlocked' => $unlockedLink,
+                                    'streaming' => $streamingLink ?: $unlockedLink
+                                ];
+                            }
                         }
                     }
                 }
 
-                // Check if we have links/files AND if the status is "Ready" (statusCode 4)
-                $allLinksRetry = $extractLinks($magnetsRetry['links'] ?? $magnetsRetry['files'] ?? []);
-                $hasLinks = !empty($allLinksRetry);
-                $isReady = ($magnetData['statusCode'] ?? 0) === 4;
-
-                if ($hasLinks && $isReady) {
-                    break;
+                $finalMessage = "Torrent uploaded successfully.";
+                if (empty($linksRecap)) {
+                    $status = $magnetData['status'] ?? 'Unknown';
+                    $finalMessage .= " However, no downloadable links were found (Status: $status).";
+                } else {
+                    $finalMessage .= " " . count($linksRecap) . " file(s) processed.";
                 }
 
-                // If it's an error status, stop retrying
-                if (($magnetData['statusCode'] ?? 0) > 4) {
-                    break;
-                }
-
-                if ($i < $maxRetries - 1) {
-                    sleep(1);
-                }
-            }
-
-            if (!$saveResult['success']) {
                 return $this->json([
-                    'success' => false,
-                    'message' => 'Upload successful but failed to get status: ' . ($saveResult['message'] ?? 'Unknown error'),
+                    'success' => true,
+                    'message' => $finalMessage,
+                    'links' => $linksRecap,
                     'debug_save_result' => $saveResult
                 ]);
             }
 
-            // Chain unlock → streaming for each link
-            $linksRecap = [];
-            $filesToProcess = $magnetData['links'] ?? $magnetData['files'] ?? [];
+            return $this->json($result);
 
-            $allLinks = $extractLinks($filesToProcess);
-
-            if (!empty($allLinks)) {
-                foreach ($allLinks as $fileData) {
-                    $rawLink = $fileData['link'];
-                    $filename = $fileData['filename'];
-
-                    if ($rawLink) {
-                        $unlockedLink = $debrid->unlockLink($rawLink);
-                        if ($unlockedLink) {
-                            $streamingLink = $debrid->getStreamingLink($unlockedLink);
-                            $linksRecap[] = [
-                                'filename' => $filename,
-                                'unlocked' => $unlockedLink,
-                                'streaming' => $streamingLink ?: $unlockedLink
-                            ];
-                        }
-                    }
-                }
-            }
-
-            $finalMessage = "Torrent uploaded successfully.";
-            if (empty($linksRecap)) {
-                $status = $magnetData['status'] ?? 'Unknown';
-                $finalMessage .= " However, no downloadable links were found (Status: $status). It might still be downloading on Alldebrid.";
-            } else {
-                $finalMessage .= " " . count($linksRecap) . " file(s) processed.";
-            }
-
-            return $this->json([
-                'success' => true,
-                'message' => $finalMessage,
-                'links' => $linksRecap,
-                'debug_save_result' => $saveResult
-            ]);
+        } catch (\Exception $e) {
+            return $this->json(['success' => false, 'message' => $e->getMessage()]);
         }
+    }
 
-        return $this->json($result);
+    #[Route('/music/update-genres', name: 'music_update_genres', methods: ['POST'])]
+    public function musicUpdateGenres(JsonStorage $storage, KernelInterface $kernel): Response
+    {
+        try {
+            $config = $storage->get('config', []);
+            $sourcePath = $config['music_root_path'] ?? '';
+            $mode = $config['music_genre_tagging_mode'] ?? 'ai';
+            $mapping = $config['music_genre_mapping'] ?? '{}';
+            $grokKey = $config['grok_api_key'] ?? '';
+            $grokModel = $config['music_genre_grok_model'] ?? 'grok-beta';
+            $grokPrompt = $config['music_genre_grok_prompt'] ?? '';
+            $venvPath = $config['music_venv_path'] ?? 'venv';
+
+            if (!$sourcePath) {
+                return $this->json(['success' => false, 'message' => 'Music root path not configured.']);
+            }
+
+            $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'tag_rename_move.py';
+
+            $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+            $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
+
+            $mappingEscaped = str_replace('"', '\"', $mapping);
+            $promptEscaped = str_replace('"', '\"', $grokPrompt);
+
+            $cmd = "($activate && python3 \"$script\" " .
+                "--source \"$sourcePath\" " .
+                "--library \"$sourcePath\" " . // Pass source as library since move is disabled
+                "--mode \"$mode\" " .
+                "--mapping \"$mappingEscaped\" " .
+                "--grok-key \"$grokKey\" " .
+                "--grok-model \"$grokModel\" " .
+                "--grok-prompt \"$promptEscaped\" " .
+                "--tags-only)";
+
+            $process = Process::fromShellCommandline($cmd);
+            $process->setTimeout(300); // 5 minutes for AI processing
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                return $this->json(['success' => false, 'message' => $process->getErrorOutput()]);
+            }
+
+            return $this->json(['success' => true, 'output' => json_decode($process->getOutput())]);
+        } catch (\Exception $e) {
+            return $this->json(['success' => false, 'message' => $e->getMessage()]);
+        }
     }
 
     #[Route('/music/fetch-lyrics', name: 'fetch_lyrics', methods: ['POST'])]

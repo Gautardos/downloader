@@ -3,8 +3,9 @@
 {% block title %}Music Explorer - Downloader{% endblock %}
 
 {% block body %}
+<div class="container" style="margin-top: 2rem; margin-bottom: 3rem;">
 <div class="header" id="music-header">
-    <div>
+    <div style="width: 100%;">
         <h1 style="display: flex; align-items: center; gap: 0.75rem; margin: 0;">
             <span style="font-size: 2rem;">📂</span>
             Music Downloads
@@ -12,6 +13,9 @@
         <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code></p>
     </div>
     <div id="move-container">
+        <button id="btn-update-genres" class="btn btn-secondary" onclick="updateAllGenres()" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+            <span id="genre-icon">🏷️</span> Update Genres
+        </button>
         <button id="btn-lyrics" class="btn btn-secondary" onclick="fetchLyrics()">
             <span id="lyrics-icon">🎤</span> Add Lyrics
         </button>
@@ -25,12 +29,13 @@
     </div>
 </div>
 
-<div class="card" style="padding: 0; overflow: hidden;">
-    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+<div class="card" style="padding: 0; overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 800px;">
         <thead style="background: rgba(255,255,255,0.03);">
             <tr>
                 <th style="padding: 1rem;">File Name</th>
                 <th class="hide-mobile" style="padding: 1rem;">Location</th>
+                <th class="hide-mobile" style="padding: 1rem; text-align: center;">Genre</th>
                 <th class="hide-mobile" style="padding: 1rem; text-align: center;">Lyrics</th>
                 <th class="hide-mobile" style="padding: 1rem;">Size</th>
                 <th class="hide-mobile" style="padding: 1rem;">Added</th>
@@ -43,6 +48,9 @@
                 <td style="padding: 1rem; font-weight: 500;">{{ file.name }}</td>
                 <td class="hide-mobile" style="padding: 1rem; color: var(--text-secondary); font-size: 0.85rem;" title="{{ file.path }}">
                     {{ file.rel_path }}
+                </td>
+                <td class="hide-mobile" style="padding: 1rem; text-align: center; color: var(--text-secondary); font-size: 0.85rem;">
+                    {{ file.genre ?: '-' }}
                 </td>
                 <td class="hide-mobile" style="padding: 1rem; text-align: center; font-size: 1.2rem;">
                     {% if file.has_lyrics %}
@@ -69,7 +77,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="6" style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+                <td colspan="7" style="padding: 2rem; text-align: center; color: var(--text-secondary);">
                     No audio files found in the download directory.
                 </td>
             </tr>
@@ -77,13 +85,17 @@
         </tbody>
     </table>
 </div>
+</div>
 
 <!-- Details Modal -->
 <div id="details-modal" class="modal-overlay">
     <div class="modal-container-custom">
         <div class="modal-header-custom">
-            <h2 id="details-title" style="margin: 0; font-size: 1.25rem;">File Details</h2>
-            <button class="btn-remove" onclick="closeDetails()" style="font-size: 2rem;">×</button>
+            <h2 id="details-title" style="margin: 0; font-size: 1.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">File Details</h2>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button id="btn-save-tags" class="btn btn-primary" onclick="saveTags()" style="display: none; padding: 0.4rem 0.8rem; font-size: 0.85rem;">💾 Save</button>
+                <button class="btn-remove" onclick="closeDetails()" style="font-size: 2rem; background: none; border: none; color: var(--text-secondary); cursor: pointer;">×</button>
+            </div>
         </div>
         <div id="details-loading" style="text-align: center; padding: 2rem;">
             <div style="font-size: 2rem; animation: spin 1s infinite linear;">⌛</div>
@@ -103,14 +115,18 @@
     #music-header {
         margin-bottom: 2rem;
         display: flex;
-        justify-content: space-between;
-        align-items: center;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
     }
 
     #move-container {
         display: flex;
         gap: 0.75rem;
         align-items: center;
+        width: 100%;
+        justify-content: flex-end;
+        flex-wrap: wrap;
     }
 
     @media (max-width: 768px) {
@@ -160,6 +176,7 @@
         overflow: hidden;
         box-shadow: 0 24px 64px rgba(0,0,0,0.5);
         animation: modalAppear 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        margin: 0 auto;
     }
 
     .modal-header-custom {
@@ -253,6 +270,39 @@ document.addEventListener('DOMContentLoaded', () => {
         btnLyrics.title = 'All files already have lyrics.';
     }
 });
+
+async function updateAllGenres() {
+    const btn = document.getElementById('btn-update-genres');
+    const originalContent = btn.innerHTML;
+
+    if (!confirm('This will attempt to detect and update genres for all files using AI/Mapping. Continue?')) return;
+
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    btn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear; margin-right:5px;">⌛</span> Updating...';
+
+    try {
+        const res = await fetch("{{ path('music_update_genres') }}", {
+            method: 'POST'
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            window.notify('success', 'Genre updates completed!');
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            alert('Error: ' + (data.message || 'Unknown error'));
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.innerHTML = originalContent;
+        }
+    } catch (e) {
+        alert('Fetch Error: ' + e.message);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.innerHTML = originalContent;
+    }
+}
 
 async function fetchLyrics() {
     const btn = document.getElementById('btn-lyrics');
@@ -385,71 +435,145 @@ function closeLyricsModal() {
     document.getElementById('lyrics-modal').style.display = 'none';
 }
 
+let currentFilePath = '';
+
 async function viewDetails(path, name) {
     console.log("View Details clicked for:", name, "Path:", path);
+    currentFilePath = path;
     const modal = document.getElementById('details-modal');
     const title = document.getElementById('details-title');
     const loading = document.getElementById('details-loading');
     const content = document.getElementById('details-content');
     const grid = document.getElementById('details-grid');
+    const btnSave = document.getElementById('btn-save-tags');
 
     modal.style.display = 'flex';
     title.innerText = 'Details: ' + name;
     loading.style.display = 'block';
     content.style.display = 'none';
+    btnSave.style.display = 'none';
     grid.innerHTML = '';
 
     try {
-        console.log("Fetching tags from:", "{{ path('file_tags') }}");
         const res = await fetch("{{ path('file_tags') }}", {
             method: 'POST',
             body: JSON.stringify({ path: path }),
             headers: { 'Content-Type': 'application/json' }
         });
         
-        console.log("Response status:", res.status);
         const data = await res.json();
-        console.log("Response data:", data);
 
         if (data.success) {
             loading.style.display = 'none';
             content.style.display = 'block';
+            btnSave.style.display = 'block';
             
-            for (const [key, value] of Object.entries(data.tags)) {
-                if (value && value !== 'None' && value !== '[]') {
-                    const label = document.createElement('div');
-                    label.style.color = 'var(--text-secondary)';
-                    label.style.fontWeight = 'bold';
-                    label.style.textTransform = 'capitalize';
-                    label.innerText = key.replace('number', ' #');
-                    
-                    const val = document.createElement('div');
-                    val.style.wordBreak = 'break-word';
+            // List of editable tags we want to always show
+            const editableTags = ['title', 'artist', 'album', 'year', 'genre'];
+            const allTags = {...data.tags};
+            
+            // Ensure essential tags exist in the display
+            editableTags.forEach(t => {
+                if (!allTags.hasOwnProperty(t)) allTags[t] = '';
+            });
+
+            for (const [key, rawValue] of Object.entries(allTags)) {
+                let value = rawValue;
+                if (value === 'None' || value === '[]' || value === null) value = '';
+
+                // Skip non-essential empty tags
+                if (!editableTags.includes(key) && !value) continue;
+
+                const label = document.createElement('div');
+                label.style.color = 'var(--text-secondary)';
+                label.style.fontWeight = 'bold';
+                label.style.textTransform = 'capitalize';
+                label.style.alignSelf = 'center';
+                label.innerText = key.replace('tracknumber', 'Track #').replace('discnumber', 'Disc #');
+                
+                const val = document.createElement('div');
+                val.style.wordBreak = 'break-word';
+                
+                if (editableTags.includes(key)) {
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.id = 'edit-' + key;
+                    input.value = value;
+                    input.className = 'input-path';
+                    input.style.width = '100.5%';
+                    input.style.fontSize = '0.96rem';
+                    input.style.padding = '0.5rem';
+                    input.style.background = 'rgba(255,255,255,0.03)';
+                    input.style.marginTop = '2px';
+                    val.appendChild(input);
+                } else if (key === 'lyrics') {
+                    val.style.whiteSpace = 'pre-wrap';
+                    val.style.background = 'rgba(0,0,0,0.2)';
+                    val.style.padding = '0.75rem';
+                    val.style.borderRadius = '4px';
+                    val.style.marginTop = '0.5rem';
+                    val.style.gridColumn = '1 / span 2';
+                    label.style.gridColumn = '1 / span 2';
+                    label.style.alignSelf = 'flex-start';
                     val.innerText = value;
-                    
-                    if (key === 'lyrics') {
-                        val.style.whiteSpace = 'pre-wrap';
-                        val.style.background = 'rgba(0,0,0,0.2)';
-                        val.style.padding = '0.75rem';
-                        val.style.borderRadius = '4px';
-                        val.style.marginTop = '0.5rem';
-                        val.style.gridColumn = '1 / span 2';
-                        label.style.gridColumn = '1 / span 2';
-                    }
-                    
-                    grid.appendChild(label);
-                    grid.appendChild(val);
+                } else {
+                    val.innerText = value;
+                    val.style.padding = '0.5rem 0';
                 }
+                
+                grid.appendChild(label);
+                grid.appendChild(val);
             }
         } else {
-            console.error("Extraction failed:", data.message);
             alert('Failed: ' + data.message);
             closeDetails();
         }
     } catch (e) {
-        console.error("Fetch error:", e);
         alert('Error: ' + e.message);
         closeDetails();
+    }
+}
+
+async function saveTags() {
+    const btn = document.getElementById('btn-save-tags');
+    const editableTags = ['title', 'artist', 'album', 'year', 'genre'];
+    const tagsToUpdate = {};
+    
+    editableTags.forEach(t => {
+        const input = document.getElementById('edit-' + t);
+        if (input) {
+            tagsToUpdate[t] = input.value;
+        }
+    });
+    
+    btn.disabled = true;
+    btn.innerText = '⌛ Saving...';
+    
+    try {
+        const res = await fetch("{{ path('update_tags') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                path: currentFilePath,
+                tags: tagsToUpdate
+            })
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            window.notify('success', 'Metadata updated successfully!');
+            closeDetails();
+            // Optional: refresh page after a short delay if we want to show updated list
+            // setTimeout(() => window.location.reload(), 500);
+        } else {
+            alert('Failed to save tags: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = '💾 Save';
+        }
+    } catch (e) {
+        alert('Network error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = '💾 Save';
     }
 }
 
