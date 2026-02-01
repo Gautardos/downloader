@@ -88,6 +88,23 @@ Toute la configuration s'effectue directement dans l'interface via l'onglet **Se
 - **Genius API Token** : Pour la récupération des paroles non-synchronisées.
 - **LRCLib Token** (Optionnel) : Pour les paroles synchronisées.
 
+### 🎵 Configuration Spotify (Obligatoire pour la Musique)
+
+Pour que l'application puisse récupérer les métadonnées et télécharger de la musique, vous devez créer une application sur le portail développeur de Spotify :
+
+1.  Rendez-vous sur le [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+2.  Connectez-vous avec votre compte Spotify.
+3.  Cliquez sur **"Create app"**.
+4.  Donnez un nom et une description (ex: `My Downloader`).
+5.  Dans **Redirect URIs**, vous pouvez mettre `http://localhost:8000/callback` (bien qu'non utilisé pour cette application cli, il est requis par Spotify).
+6.  Acceptez les conditions et cliquez sur **Save**.
+7.  Sur la page de votre application, cliquez sur **Settings**.
+8.  Vous y trouverez votre **Client ID** et votre **Client Secret** (cliquez sur "View client secret").
+9.  Copiez ces deux valeurs dans l'onglet **Settings** de l'application Downloader.
+
+> [!TIP]
+> Pour plus de détails, consultez la [documentation officielle Spotify](https://developer.spotify.com/documentation/web-api/concepts/apps).
+
 ---
 
 ## Focus sur le système Alldebrid
