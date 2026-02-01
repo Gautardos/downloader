@@ -1,0 +1,7 @@
+git+https://github.com/Gautardos/zotify.git
+mutagen
+requests
+spotipy
+beautifulsoup4
+colorama
+tqdm

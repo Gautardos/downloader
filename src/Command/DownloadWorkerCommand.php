@@ -133,6 +133,8 @@ class DownloadWorkerCommand extends Command
             '--print-download-progress' => ($config['music_progress'] ?? false) ? 'True' : 'False',
             '--print-downloads' => ($config['music_print_downloads'] ?? true) ? 'True' : 'False',
             '--print-progress-info' => ($config['music_progress_info'] ?? false) ? 'True' : 'False',
+            '--client-id' => $config['spotify_client_id'] ?? '',
+            '--client-secret' => $config['spotify_client_secret'] ?? '',
         ];
 
         // Build Command using absolute paths

@@ -51,7 +51,7 @@ Une application web puissante construite avec Symfony et Python pour gérer vos 
    .\venv\Scripts\activate
    # Linux
    source venv/bin/activate
-   pip install mutagen requests spotipy beautifulsoup4 colorama tqdm
+   pip install -r cli/requirements.txt
    ```
 
 4. **Lancer le serveur de développement**
