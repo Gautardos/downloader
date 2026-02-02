@@ -24,7 +24,9 @@ class DownloadManager
         set_time_limit(0);
 
         if (!is_dir($destinationPath)) {
-            return ['success' => false, 'message' => 'Destination directory does not exist.'];
+            if (!mkdir($destinationPath, 0777, true)) {
+                return ['success' => false, 'message' => 'Failed to create destination directory: ' . $destinationPath];
+            }
         }
 
         $filePath = rtrim($destinationPath, '/\\') . DIRECTORY_SEPARATOR . $filename;

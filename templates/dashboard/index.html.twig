@@ -74,6 +74,11 @@
                             <div class="file-card" id="file-{{ pack.name|replace({'.': '_', ' ': '_', '/': '_'}) }}-{{ loop.index }}">
                                 <div class="file-info">
                                     <div class="file-name">
+                                        {% if file.subpath %}
+                                            <span style="color: var(--text-secondary); font-size: 0.8rem; display: block; margin-bottom: 2px;">
+                                                📁 {{ file.subpath }}
+                                            </span>
+                                        {% endif %}
                                         {{ file.filename }}
                                         {% if file.downloaded %}
                                             <span class="badge badge-success">Downloaded</span>
@@ -203,6 +208,9 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeBatchModal()">Cancel</button>
+                <button class="btn btn-secondary" id="btn-create-all-folders" onclick="createAllMissingFolders()" style="display: none; background: #f0ad4e; color: #000;">
+                    📁 Create All Missing Folders
+                </button>
                 <button class="btn btn-primary" id="btn-confirm-batch" onclick="confirmBatchDownloads()">Add to Queue</button>
             </div>
         </div>
@@ -319,6 +327,14 @@ function toggleAllBatch(mainCheckbox) {
     checkboxes.forEach(cb => cb.checked = mainCheckbox.checked);
 }
 
+function joinPath(base, sub) {
+    if (!sub) return base;
+    if (!base) return sub;
+    const sep = base.includes('\\') ? '\\' : '/';
+    const subNormalized = sub.replace(/[\/\\]/g, sep);
+    return base.endsWith(sep) ? base + subNormalized : base + sep + subNormalized;
+}
+
 async function downloadPack(event, packId, files) {
     if (event) event.stopPropagation();
     
@@ -326,6 +342,7 @@ async function downloadPack(event, packId, files) {
     const packContainer = document.getElementById(packId);
     const packCard = packContainer.closest('.pack-card');
     const packPath = packCard.querySelector('.pack-path-input')?.value || '';
+    const defaultPath = "{{ config.default_path|default('')|e('js') }}";
     
     // Prepare candidate list for checking
     const candidates = [];
@@ -333,9 +350,6 @@ async function downloadPack(event, packId, files) {
     const fileList = isSingle ? [files] : files;
 
     fileList.forEach((file, index) => {
-        // Find the specific file form. 
-        // If single mode, search the pack for this specific filename
-        // If batch mode, the index matches the grid order
         let fileForm;
         if (isSingle) {
             fileForm = packContainer.querySelector(`input[name="filename"][value="${file.filename.replace(/"/g, '\\"')}"]`).closest('form');
@@ -346,9 +360,13 @@ async function downloadPack(event, packId, files) {
         const individualPath = fileForm.querySelector('input[name="path"]').value;
         const individualRename = fileForm.querySelector('input[name="override_filename"]').value;
         
+        const targetBasePath = individualPath || packPath || defaultPath;
+        const targetPath = joinPath(targetBasePath, file.subpath);
+
         candidates.push({
             original: file,
-            path: individualPath || packPath || '',
+            path: targetPath,
+            basePath: targetBasePath,
             filename: individualRename || file.filename
         });
     });
@@ -402,7 +420,7 @@ async function downloadPack(event, packId, files) {
                     <div style="font-weight: 500;">${c.filename}</div>
                     <div style="font-size: 0.75rem; color: var(--text-secondary);">${c.filename !== c.original.filename ? 'Orig: ' + c.original.filename : ''}</div>
                 </td>
-                <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${resolvedPath}">
+                <td style="word-break: break-all; min-width: 250px;" title="${resolvedPath}">
                     ${resolvedPath}
                 </td>
                 <td>${folderHtml}</td>
@@ -419,6 +437,15 @@ async function downloadPack(event, packId, files) {
                 overwrite: check.exists
             });
         });
+
+        // Show/hide "Create All Missing Folders" button based on missing folders count
+        const missingFolderButtons = document.querySelectorAll('#batch-table tbody button');
+        const createAllBtn = document.getElementById('btn-create-all-folders');
+        if (missingFolderButtons.length > 0) {
+            createAllBtn.style.display = 'inline-block';
+        } else {
+            createAllBtn.style.display = 'none';
+        }
 
     } catch (e) {
         console.error("Conflict check failed", e);
@@ -454,6 +481,49 @@ async function createMissingFolder(path, btn, packId) {
         window.notify('error', "Network error while creating folder.");
         btn.disabled = false;
     }
+}
+
+async function createAllMissingFolders() {
+    const createButtons = document.querySelectorAll('#batch-table tbody button');
+    const foldersToCreate = [];
+
+    createButtons.forEach(btn => {
+        if (!btn.disabled && btn.innerText.includes('Create')) {
+            const pathMatch = btn.getAttribute('onclick')?.match(/createMissingFolder\('([^']+)'/);
+            if (pathMatch && pathMatch[1]) {
+                foldersToCreate.push({ path: pathMatch[1], btn: btn });
+            }
+        }
+    });
+
+    if (foldersToCreate.length === 0) {
+        window.notify('info', 'All folders already exist.');
+        return;
+    }
+
+    window.notify('info', `Creating ${foldersToCreate.length} folder(s)...`);
+
+    for (const item of foldersToCreate) {
+        item.btn.disabled = true;
+        item.btn.innerText = '⌛...';
+        try {
+            const res = await fetch("{{ path('create_folder') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: item.path })
+            });
+            const data = await res.json();
+            if (data.success) {
+                item.btn.parentElement.innerHTML = '<span style="color: var(--success)">✓ Created</span>';
+            } else {
+                item.btn.innerText = '❌ Failed';
+            }
+        } catch (e) {
+            item.btn.innerText = '❌ Error';
+        }
+    }
+
+    window.notify('success', `Finished creating folders.`);
 }
 
 async function confirmBatchDownloads() {

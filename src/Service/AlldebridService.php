@@ -380,12 +380,17 @@ class AlldebridService
 
             // 1. Try match by filename AND size
             $mappingKey = $filename . '|' . $size;
+            $subpath = '';
             if (isset($magnetFilesMapping[$mappingKey])) {
-                $packName = $magnetFilesMapping[$mappingKey];
+                $mapping = $magnetFilesMapping[$mappingKey];
+                $packName = $mapping['pack'];
+                $subpath = $mapping['subpath'];
             }
             // 2. Try match by filename only
             elseif (isset($magnetFilesMapping[$filename])) {
-                $packName = $magnetFilesMapping[$filename];
+                $mapping = $magnetFilesMapping[$filename];
+                $packName = $mapping['pack'];
+                $subpath = $mapping['subpath'];
             }
             // 3. Fallback to extraction
             else {
@@ -404,6 +409,9 @@ class AlldebridService
                 ];
             }
 
+            // Attach subpath to link metadata
+            $link['subpath'] = $subpath;
+
             $packs[$packName]['files'][] = $link;
             $packs[$packName]['total_size'] += $size;
             $packs[$packName]['file_count']++;
@@ -419,23 +427,32 @@ class AlldebridService
         return array_values($packs);
     }
 
-    private function flattenMagnetFiles(array $files, string $packName, array &$result, string $parentPath = ''): void
+    private function flattenMagnetFiles(array $files, string $packName, array &$result, string $parentPath = '', bool $isFirstLevel = true): void
     {
+        // If there is exactly one item at the top level and it is a folder, strip it
+        $stripRoot = $isFirstLevel && count($files) === 1 && isset($files[0]['e']);
+
         foreach ($files as $file) {
             $name = $file['n'] ?? '';
             $size = $file['s'] ?? 0;
 
             if (isset($file['e'])) {
-                $folderPath = $parentPath ? $parentPath . '/' . $name : $name;
-                $this->flattenMagnetFiles($file['e'], $packName, $result, $folderPath);
+                $folderPath = $parentPath;
+                if (!$stripRoot) {
+                    $folderPath = $parentPath ? $parentPath . '/' . $name : $name;
+                }
+                $this->flattenMagnetFiles($file['e'], $packName, $result, $folderPath, false);
             } else {
-                $finalPackName = $parentPath ?: $packName;
+                $metadata = [
+                    'pack' => $packName,
+                    'subpath' => $parentPath
+                ];
 
                 // Store with size matching key
-                $result[$name . '|' . $size] = $finalPackName;
+                $result[$name . '|' . $size] = $metadata;
 
-                // Store with name only as fallback (might be overwritten by other packs with same filename, but better than nothing)
-                $result[$name] = $finalPackName;
+                // Store with name only as fallback
+                $result[$name] = $metadata;
             }
         }
     }
