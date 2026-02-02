@@ -167,6 +167,25 @@
                     <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: var(--bg-secondary); padding: 0 1rem; color: var(--text-secondary); font-size: 0.9rem;">OR</span>
                 </div>
 
+                <!-- Torrent Database Search -->
+                <div style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">🔎 Search Torrent Database</label>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <select id="torrent-db-category" style="padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; min-width: 150px;">
+                            <option value="">Select type...</option>
+                        </select>
+                        <input type="text" id="torrent-db-query" placeholder="Search title..." 
+                               style="margin:0; flex: 1; padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;"
+                               oninput="debouncedTorrentSearch()">
+                    </div>
+                    <div id="torrent-db-results" style="max-height: 200px; overflow-y: auto; display: none;">
+                        <!-- Results will be populated here -->
+                    </div>
+                    <div id="torrent-db-loading" style="display: none; text-align: center; padding: 0.5rem; color: var(--text-secondary);">
+                        ⏳ Searching...
+                    </div>
+                </div>
+
                 <!-- Magnet Link Input -->
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Magnet Link</label>
@@ -682,6 +701,95 @@ function openUploadModal() {
     // Reset preview area
     document.getElementById('magnet-preview-area').style.display = 'none';
     document.getElementById('magnet-preview-result').innerHTML = '';
+    // Reset search
+    document.getElementById('torrent-db-query').value = '';
+    document.getElementById('torrent-db-results').style.display = 'none';
+    document.getElementById('torrent-db-results').innerHTML = '';
+    // Load categories if not already loaded
+    loadTorrentDbCategories();
+}
+
+let torrentDbCategoriesLoaded = false;
+async function loadTorrentDbCategories() {
+    if (torrentDbCategoriesLoaded) return;
+    
+    try {
+        const res = await fetch("{{ path('torrent_db_categories') }}");
+        const data = await res.json();
+        
+        if (data.success && data.categories) {
+            const select = document.getElementById('torrent-db-category');
+            data.categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name.replace(/_/g, ' ');
+                select.appendChild(option);
+            });
+            torrentDbCategoriesLoaded = true;
+        }
+    } catch (e) {
+        console.error('Failed to load torrent DB categories', e);
+    }
+}
+
+let torrentSearchTimeout = null;
+function debouncedTorrentSearch() {
+    clearTimeout(torrentSearchTimeout);
+    torrentSearchTimeout = setTimeout(searchTorrentDb, 300);
+}
+
+async function searchTorrentDb() {
+    const categoryId = document.getElementById('torrent-db-category').value;
+    const query = document.getElementById('torrent-db-query').value.trim();
+    const resultsDiv = document.getElementById('torrent-db-results');
+    const loadingDiv = document.getElementById('torrent-db-loading');
+    
+    if (!categoryId || query.length < 2) {
+        resultsDiv.style.display = 'none';
+        return;
+    }
+    
+    loadingDiv.style.display = 'block';
+    resultsDiv.style.display = 'none';
+    
+    try {
+        const res = await fetch("{{ path('torrent_db_search') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ categoryId: parseInt(categoryId), query: query })
+        });
+        const data = await res.json();
+        
+        loadingDiv.style.display = 'none';
+        
+        if (data.success && data.results && data.results.length > 0) {
+            resultsDiv.innerHTML = '';
+            data.results.forEach(item => {
+                const div = document.createElement('div');
+                div.style.cssText = 'padding: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: background 0.2s;';
+                div.innerHTML = `<span style="font-size: 0.9rem;">${item.title}</span>`;
+                div.onmouseenter = () => div.style.background = 'rgba(255,255,255,0.1)';
+                div.onmouseleave = () => div.style.background = 'transparent';
+                div.onclick = () => selectTorrentResult(item.hash, item.title);
+                resultsDiv.appendChild(div);
+            });
+            resultsDiv.style.display = 'block';
+        } else {
+            resultsDiv.innerHTML = '<div style="padding: 0.5rem; color: var(--text-secondary); font-size: 0.85rem;">No results found</div>';
+            resultsDiv.style.display = 'block';
+        }
+    } catch (e) {
+        loadingDiv.style.display = 'none';
+        resultsDiv.innerHTML = '<div style="padding: 0.5rem; color: var(--danger);">Search failed</div>';
+        resultsDiv.style.display = 'block';
+    }
+}
+
+function selectTorrentResult(hash, title) {
+    const magnetLink = `magnet:?xt=urn:btih:${hash}`;
+    document.getElementById('magnet-input').value = magnetLink;
+    document.getElementById('torrent-db-results').style.display = 'none';
+    window.notify('success', `Selected: ${title.substring(0, 50)}...`);
 }
 
 function closeUploadModal() {

@@ -7,6 +7,7 @@ use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
 use App\Service\QueueManager;
+use App\Service\TorrentDbService;
 use GuzzleHttp\Client;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -872,6 +873,34 @@ class DashboardController extends AbstractController
         } catch (\Exception $e) {
             return $this->json(['success' => false, 'message' => $e->getMessage()]);
         }
+    }
+
+    #[Route('/torrent-db/categories', name: 'torrent_db_categories', methods: ['GET'])]
+    public function torrentDbCategories(TorrentDbService $torrentDb): Response
+    {
+        return $this->json([
+            'success' => true,
+            'categories' => $torrentDb->getCategories()
+        ]);
+    }
+
+    #[Route('/torrent-db/search', name: 'torrent_db_search', methods: ['POST'])]
+    public function torrentDbSearch(Request $request, TorrentDbService $torrentDb): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        $categoryId = (int) ($data['categoryId'] ?? 0);
+        $query = $data['query'] ?? '';
+
+        if (!$categoryId || !$query) {
+            return $this->json(['success' => false, 'message' => 'Category and query required']);
+        }
+
+        $results = $torrentDb->search($categoryId, $query, 50);
+
+        return $this->json([
+            'success' => true,
+            'results' => $results
+        ]);
     }
 
     #[Route('/music/update-genres', name: 'music_update_genres', methods: ['POST'])]

@@ -6,8 +6,11 @@ Une application web puissante construite avec Symfony et Python pour gérer vos 
 
 ### 🎬 Vidéos & Torrents
 - **Upload simple** : Support des liens magnets et des fichiers `.torrent`.
+- **🔍 Moteur de recherche interne** : Intégration d'une base de données locale (CSV) pour rechercher des torrents par titre et auto-remplir les magnets.
+- **👀 Preview Magnet** : Visualisation du contenu d'un magnet (liste des fichiers, tailles, statut Alldebrid) avant l'upload.
 - **Intégration Alldebrid** : Débridage automatique des liens pour un téléchargement à vitesse maximale.
-- **Organisation intelligente** : Groupement automatique des fichiers par "packs" (séries, albums) basé sur les noms de fichiers.
+- **Organisation intelligente** : Groupement automatique des fichiers par "packs" (séries, albums) et création récursive des dossiers.
+- **📁 Création groupée de dossiers** : Bouton dédié pour créer tous les dossiers manquants en une fois lors d'un import en lot.
 - **Renommage assisté par IA** : Utilisation de Grok pour suggérer des noms de fichiers propres et normalisés.
 
 ### 🎵 Musique (Music Explorer)
