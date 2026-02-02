@@ -784,6 +784,96 @@ class DashboardController extends AbstractController
         }
     }
 
+    #[Route('/dashboard/magnet-info', name: 'magnet_info', methods: ['POST'])]
+    public function magnetInfo(Request $request, AlldebridService $debrid): Response
+    {
+        try {
+            $data = json_decode($request->getContent(), true);
+            $magnet = $data['magnet'] ?? '';
+
+            if (!$magnet) {
+                return $this->json(['success' => false, 'message' => 'No magnet provided']);
+            }
+
+            // Upload the magnet to get its ID
+            $uploadResult = $debrid->uploadMagnet([trim($magnet)]);
+            if (!$uploadResult['success']) {
+                return $this->json(['success' => false, 'message' => $uploadResult['message'] ?? 'Upload failed']);
+            }
+
+            $magnetId = $uploadResult['data']['magnets'][0]['id'] ?? null;
+            if (!$magnetId) {
+                return $this->json(['success' => false, 'message' => 'Could not get magnet ID']);
+            }
+
+            // Get magnet status
+            $saveResult = $debrid->saveMagnet((int) $magnetId);
+            $magnetData = null;
+            $magnetsData = $saveResult['data']['magnets'] ?? [];
+
+            if (isset($magnetsData['files']) || isset($magnetsData['links'])) {
+                $magnetData = $magnetsData;
+            } elseif (is_array($magnetsData)) {
+                foreach ($magnetsData as $item) {
+                    if (is_array($item) && (isset($item['files']) || isset($item['links']))) {
+                        $magnetData = $item;
+                        break;
+                    }
+                }
+            }
+
+            if (!$magnetData) {
+                return $this->json([
+                    'success' => true,
+                    'status' => 'pending',
+                    'message' => 'Torrent is being processed by Alldebrid. Files not yet available.',
+                    'files' => [],
+                    'total_size' => 0
+                ]);
+            }
+
+            // Extract files recursively
+            $extractFiles = function ($items, $parentPath = '') use (&$extractFiles) {
+                $found = [];
+                foreach ($items as $item) {
+                    $name = $item['n'] ?? $item['filename'] ?? '';
+                    $size = $item['s'] ?? 0;
+                    $link = $item['l'] ?? $item['link'] ?? null;
+
+                    if (isset($item['e']) && is_array($item['e'])) {
+                        $subPath = $parentPath ? $parentPath . '/' . $name : $name;
+                        $found = array_merge($found, $extractFiles($item['e'], $subPath));
+                    } else {
+                        $found[] = [
+                            'filename' => $name,
+                            'path' => $parentPath,
+                            'size' => $size,
+                            'has_link' => (bool) $link
+                        ];
+                    }
+                }
+                return $found;
+            };
+
+            $filesToProcess = $magnetData['files'] ?? $magnetData['links'] ?? [];
+            $files = $extractFiles($filesToProcess);
+            $totalSize = array_sum(array_column($files, 'size'));
+
+            return $this->json([
+                'success' => true,
+                'status' => $magnetData['status'] ?? 'Ready',
+                'statusCode' => $magnetData['statusCode'] ?? 4,
+                'filename' => $magnetData['filename'] ?? 'Unknown',
+                'files' => $files,
+                'total_size' => $totalSize,
+                'file_count' => count($files)
+            ]);
+
+        } catch (\Exception $e) {
+            return $this->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
     #[Route('/music/update-genres', name: 'music_update_genres', methods: ['POST'])]
     public function musicUpdateGenres(JsonStorage $storage, KernelInterface $kernel): Response
     {

@@ -170,8 +170,21 @@
                 <!-- Magnet Link Input -->
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Magnet Link</label>
-                    <textarea id="magnet-input" placeholder="magnet:?xt=urn:btih:..." rows="3"
-                              style="width: 100%; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; resize: vertical;"></textarea>
+                    <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+                        <textarea id="magnet-input" placeholder="magnet:?xt=urn:btih:..." rows="3"
+                                  style="flex: 1; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; resize: vertical;"></textarea>
+                        <button class="btn btn-secondary" id="btn-magnet-preview" onclick="previewMagnet()" style="white-space: nowrap; background: #17a2b8; height: fit-content;">
+                            🔍 Preview
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Magnet Info Preview Area -->
+                <div id="magnet-preview-area" style="word-break: break-all;display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div id="magnet-preview-loading" style="display: none; text-align: center; color: var(--text-secondary);">
+                        ⏳ Fetching magnet info from Alldebrid...
+                    </div>
+                    <div id="magnet-preview-result"></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -578,9 +591,97 @@ function startDownload(event, packId, file) {
 
 let lastUploadSuccess = false;
 
+async function previewMagnet() {
+    const magnetInput = document.getElementById('magnet-input');
+    const magnet = magnetInput.value.trim();
+    
+    if (!magnet) {
+        window.notify('warning', 'Please enter a magnet link first.');
+        return;
+    }
+    
+    const previewArea = document.getElementById('magnet-preview-area');
+    const loadingDiv = document.getElementById('magnet-preview-loading');
+    const resultDiv = document.getElementById('magnet-preview-result');
+    const btn = document.getElementById('btn-magnet-preview');
+    
+    previewArea.style.display = 'block';
+    loadingDiv.style.display = 'block';
+    resultDiv.innerHTML = '';
+    btn.disabled = true;
+    btn.innerText = '⏳...';
+    
+    try {
+        const res = await fetch("{{ path('magnet_info') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ magnet: magnet })
+        });
+        const data = await res.json();
+        
+        loadingDiv.style.display = 'none';
+        btn.disabled = false;
+        btn.innerText = '🔍 Preview';
+        
+        if (!data.success) {
+            resultDiv.innerHTML = `<div style="color: var(--danger);">❌ ${data.message}</div>`;
+            return;
+        }
+        
+        // Build status badge
+        let statusBadge = '<span class="badge badge-warning">Processing</span>';
+        if (data.statusCode === 4 || data.status === 'Ready') {
+            statusBadge = '<span class="badge badge-success">Ready</span>';
+        } else if (data.status === 'pending') {
+            statusBadge = '<span class="badge badge-warning">Pending</span>';
+        }
+        
+        // Build file list HTML
+        let filesHtml = '';
+        if (data.files && data.files.length > 0) {
+            filesHtml = '<div style="max-height: 200px; overflow-y: auto; margin-top: 1rem; font-size: 0.85rem;">';
+            data.files.forEach(f => {
+                const pathStr = f.path ? `<span style="color: var(--text-secondary); font-size: 0.75rem;">📁 ${f.path}/</span><br>` : '';
+                filesHtml += `
+                    <div style="padding: 0.3rem 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        ${pathStr}
+                        <span>${f.filename}</span>
+                        <span class="size-tag" style="float: right;">${formatSize(f.size)}</span>
+                    </div>
+                `;
+            });
+            filesHtml += '</div>';
+        } else {
+            filesHtml = '<div style="color: var(--text-secondary); margin-top: 1rem;">No files available yet. Torrent may still be processing.</div>';
+        }
+        
+        resultDiv.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                    <strong style="font-size: 1.1rem;">${data.filename || 'Unknown'}</strong>
+                    ${statusBadge}
+                </div>
+                <div style="font-size: 0.9rem; color: var(--text-secondary);">
+                    ${data.file_count || 0} file(s) • ${formatSize(data.total_size || 0)}
+                </div>
+            </div>
+            ${filesHtml}
+        `;
+        
+    } catch (e) {
+        loadingDiv.style.display = 'none';
+        btn.disabled = false;
+        btn.innerText = '🔍 Preview';
+        resultDiv.innerHTML = '<div style="color: var(--danger);">❌ Network error. Could not fetch magnet info.</div>';
+    }
+}
+
 function openUploadModal() {
     lastUploadSuccess = false;
     document.getElementById('upload-modal').style.display = 'flex';
+    // Reset preview area
+    document.getElementById('magnet-preview-area').style.display = 'none';
+    document.getElementById('magnet-preview-result').innerHTML = '';
 }
 
 function closeUploadModal() {
