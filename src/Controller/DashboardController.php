@@ -6,6 +6,7 @@ use App\Service\AlldebridService;
 use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
+use App\Service\MediaTypeHelper;
 use App\Service\QueueManager;
 use App\Service\TorrentDbService;
 use GuzzleHttp\Client;
@@ -18,8 +19,8 @@ use Symfony\Component\Routing\Annotation\Route;
 
 class DashboardController extends AbstractController
 {
-    #[Route('/video', name: 'video')]
-    public function video(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage): Response
+    #[Route('/torrent', name: 'torrent')]
+    public function torrent(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage, MediaTypeHelper $mediaTypeHelper): Response
     {
         $packs = $alldebrid->getRecentLinksGrouped();
         $recentPaths = $storage->get('recent_paths', []);
@@ -40,7 +41,8 @@ class DashboardController extends AbstractController
         return $this->render('dashboard/index.html.twig', [
             'packs' => $packs,
             'recent_paths' => $recentPaths,
-            'config' => $storage->get('config', [])
+            'config' => $storage->get('config', []),
+            'is_torrent_page' => true
         ]);
     }
 

@@ -6,18 +6,26 @@ class QueueManager
 {
     private JsonStorage $storage;
     private string $projectDir;
+    private MediaTypeHelper $mediaTypeHelper;
     private const QUEUE_KEY = 'server_queue';
     private const ACTIVE_TASK_KEY = 'active_worker_task';
 
-    public function __construct(JsonStorage $storage, string $projectDir)
+    public function __construct(JsonStorage $storage, string $projectDir, MediaTypeHelper $mediaTypeHelper)
     {
         $this->storage = $storage;
         $this->projectDir = $projectDir;
+        $this->mediaTypeHelper = $mediaTypeHelper;
     }
 
     public function enqueue(array $item, string $type = 'video'): void
     {
         $queue = $this->storage->get(self::QUEUE_KEY, []);
+
+        // If type is video (default), detect granular type
+        if ($type === 'video') {
+            $type = $this->mediaTypeHelper->getType($item['filename'] ?? '');
+        }
+
         $item['type'] = $type;
         $queue[] = $item;
         $this->storage->set(self::QUEUE_KEY, $queue);
@@ -127,10 +135,15 @@ class QueueManager
     {
         $history = $this->storage->get('history', []);
 
+        $type = $item['type'] ?? 'video';
+        if ($type === 'video') {
+            $type = $this->mediaTypeHelper->getType($item['filename'] ?? '');
+        }
+
         $history[] = [
             'download_id' => $item['download_id'] ?? bin2hex(random_bytes(8)),
             'filename' => $item['filename'] ?? 'Download',
-            'type' => $item['type'] ?? 'music',
+            'type' => $type,
             'status' => $status,
             'date' => date('Y-m-d H:i:s'),
             'path' => $item['path'] ?? '',

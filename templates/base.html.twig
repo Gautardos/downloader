@@ -604,8 +604,8 @@
 
             <div class="nav-links" id="nav-links">
                 <a href="{{ path('music') }}">🎵 Music</a>
-                <a href="{{ path('music_files') }}">📂 Downloads</a>
-                <a href="{{ path('video') }}">🎥 Video</a>
+                <a href="{{ path('music_files') }}">📂 Music Downloads</a>
+                <a href="{{ path('torrent') }}">🌊 Torrent</a>
                 <a href="{{ path('queue') }}">⚙️ Queue</a>
                 <a href="{{ path('history') }}">📜 History</a>
                 <a href="{{ path('config') }}">🛠️ Settings</a>
@@ -721,8 +721,12 @@
                 list.innerHTML = '<div class="empty-msg">Queue is empty</div>';
             } else {
                 queue.forEach((item, index) => {
-                    const typeIcon = item.type === 'music' ? '🎵' : '🎥';
-                    const typeLabel = (item.type || 'video').toUpperCase();
+                    const mediaIcons = { 
+                        'music': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
+                        'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓' 
+                    };
+                    const typeIcon = mediaIcons[item.type] || (item.type === 'music' ? '🎵' : '🎥');
+                    const typeLabel = (item.type || 'torrent').toUpperCase();
                     const div = document.createElement('div');
                     div.className = 'queued-item';
                     div.innerHTML = `
@@ -777,8 +781,12 @@
                 const progress = await res.json();
                 
                 const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
-                const typeIcon = active.type === 'music' ? '🎵' : '🎥';
-                const typeLabel = (active.type || 'video').toUpperCase();
+                const mediaIcons = { 
+                    'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
+                    'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓' 
+                };
+                const typeIcon = mediaIcons[active.type] || (active.type === 'music' || active.type === 'audio' ? '🎵' : '🎥');
+                const typeLabel = (active.type || 'torrent').toUpperCase();
                 const isMusic = active.type === 'music';
 
                 list.innerHTML = `
@@ -835,7 +843,10 @@
             
             // Rich notification formatting
             let displayHtml = '';
-            const mediaIcons = { 'music': '🎵', 'video': '🎥', 'default': '📦' };
+            const mediaIcons = { 
+                'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
+                'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓', 'default': '📦' 
+            };
             const statusEmojis = { 'success': '✅', 'error': '❌', 'info': 'ℹ️', 'Finished': '✨', 'Started': '🚀', 'Failed': '❌' };
 
             if (typeof message === 'object') {

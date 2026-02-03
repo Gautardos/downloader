@@ -28,7 +28,8 @@
                 {% for item in history %}
                     <tr class="status-{{ item.status ?? 'success' }}">
                         <td class="hide-mobile" style="font-size: 1.5rem; text-align: center;">
-                            {{ (item.type ?? 'video') == 'music' ? '🎵' : '🎥' }}
+                            {% set mediaIcons = {'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓'} %}
+                            {{ mediaIcons[item.type ?? 'other'] ?? '🎥' }}
                         </td>
                         <td class="hide-mobile" style="white-space: nowrap; color: var(--text-secondary); font-size: 0.8rem;">
                             {{ (item.date ?? item.timestamp ?? "now")|date('Y-m-d H:i:s') }}

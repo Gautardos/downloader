@@ -66,6 +66,14 @@
 <script>
 
 
+function getMediaIcon(type) {
+    const mediaIcons = { 
+        'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
+        'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓' 
+    };
+    return mediaIcons[type] || (type === 'music' || type === 'audio' ? '🎵' : '🎥');
+}
+
 async function purgeQueue() {
     if (!confirm('This will STOP all background downloads and clear the queue. Are you sure?')) return;
     try {
@@ -116,8 +124,8 @@ async function renderActive(active) {
         const progress = await res.json();
         
         const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
-        const typeIcon = active.type === 'music' ? '🎵' : '🎥';
-        const typeLabel = active.type.toUpperCase();
+        const typeIcon = getMediaIcon(active.type);
+        const typeLabel = (active.type || 'torrent').toUpperCase();
 
         container.innerHTML = `
             <div class="active-task-wrapper">
@@ -185,7 +193,7 @@ function renderQueue(queue) {
 
     tbody.innerHTML = '';
     queue.forEach((item, index) => {
-        const typeIcon = item.type === 'music' ? '🎵' : '🎥';
+        const typeIcon = getMediaIcon(item.type);
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
         tr.innerHTML = `
