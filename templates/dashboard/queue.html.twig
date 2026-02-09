@@ -105,7 +105,7 @@ async function refreshUI() {
         const data = await res.json();
         
         renderActive(data.active);
-        renderQueue(data.queue || []);
+        renderQueueTable(data.queue || []);
     } catch (e) {
         console.warn("Refresh failed", e);
     }
@@ -181,7 +181,7 @@ async function updateActiveLog() {
     }
 }
 
-function renderQueue(queue) {
+function renderQueueTable(queue) {
     const tbody = document.getElementById('queue-tbody');
     const badge = document.getElementById('queue-count-badge');
     badge.innerText = queue.length;

@@ -50,7 +50,8 @@ class ConfigController extends AbstractController
                 'genius_api_token' => $request->request->get('genius_api_token', ''),
                 'lrclib_token' => $request->request->get('lrclib_token', ''),
                 'admin_user' => $request->request->get('admin_user', 'admin'),
-                'admin_password' => $request->request->get('admin_password', 'admin')
+                'admin_password' => $request->request->get('admin_password', 'admin'),
+                'grok_renaming_prompt' => $request->request->get('grok_renaming_prompt', '')
             ]);
 
             $this->addFlash('success', 'Configuration saved.');

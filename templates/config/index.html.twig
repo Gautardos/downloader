@@ -33,6 +33,29 @@
                     <small style="color: var(--text-secondary);">Where torrent files are saved by default.</small>
                 </div>
 
+                <div style="margin-bottom: 1rem;">
+                    <label for="grok_renaming_prompt">AI Renaming Prompt</label>
+                    <textarea id="grok_renaming_prompt" name="grok_renaming_prompt" style="width:100%; height:200px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.grok_renaming_prompt|default(
+"1. Use the CONTEXT to identify the Category (Movie, Series, Music, Ebook), Title, and metadata (Season, Year, Artist, Album).
+2. Standardize filenames based on category:
+   - Series: \"Showname.SxxExx.OptionalTitle.ext\".
+   - Anime: \"Showname.SxxExx.OptionalTitle.ext\".
+   - Movies: \"Movie Name (Year).ext\".
+   - Music: \"XX - Song Name.ext\" (XX = track number, identify from filename).
+   - Ebooks: \"Clean Book Title.ext\".
+3. Identify episode/track numbers from individual filenames (e.g., \"01.mkv\" is Episode 1).
+4. Rules for \"path\":
+   - Series: \"Video/TV Shows/Series Name/Season XX/\" (e.g. \"Video/TV Shows/The Sopranos/Season 02/\").
+   - Anime: \"Video/Anime/Series Name/Season XX/\" (e.g. \"Video/Anime/Naruto/Season 01/\").
+   - Movies: \"Video/Movies/Movie Name (Year)/\" (e.g. \"Video/Movies/Inception (2010)/\").
+   - Music: \"Music/Artist Name/Album Name/\" (e.g. \"Music/Pink Floyd/The Wall/\").
+   - Ebooks: \"Ebooks/Series Name/\" or \"Ebooks/Author Name/\" (e.g. \"Ebooks/Harry Potter/\"). use a T in front of the volume number when required. Only keep the name of the book (and the series if there is one) in the filename.
+5. Return a JSON object where keys are ORIGINAL filenames and values are another JSON object containing \"filename\" and \"path\".
+6. For ebooks NEVER change the language of the book title.
+7. Maintain the exact original file extension.") }}</textarea>
+                    <small style="color: var(--text-secondary);">System instructions for Grok regarding file renaming and path generation.</small>
+                </div>
+
                 <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Spotify API (Metadata)</h3>
                 <div style="margin-bottom: 1rem;">
                     <label for="spotify_client_id">Spotify Client ID</label>

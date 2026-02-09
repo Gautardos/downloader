@@ -400,6 +400,9 @@ async function downloadPack(event, packId, files) {
     const packPath = packCard.querySelector('.pack-path-input')?.value || '';
     const defaultPath = "{{ config.default_path|default('')|e('js') }}";
     
+    // Reset the batch queue for this new session
+    pendingBatchQueue = [];
+    
     // Prepare candidate list for checking
     const candidates = [];
     const isSingle = !Array.isArray(files);
