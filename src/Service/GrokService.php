@@ -25,7 +25,7 @@ class GrokService
     /**
      * Suggests a standardized filename for media files.
      */
-    public function suggestFilename(string $packName, string $fileName): ?string
+    public function suggestFilename(string $packName, string $fileName): mixed
     {
         $suggestions = $this->suggestFilenames($packName, [$fileName]);
         return $suggestions[$fileName] ?? null;
@@ -48,12 +48,23 @@ class GrokService
                 $prompt .= "- \"$name\"\n";
             }
             $prompt .= "\nINSTRUCTIONS:\n";
-            $prompt .= "1. Use the CONTEXT to identify the Series/Movie title and Season/Year.\n";
-            $prompt .= "2. For series, use format: \"Showname.SxxExx.OptionalTitle.ext\".\n";
-            $prompt .= "3. For movies, use format: \"Movie Name (Year).ext\".\n";
-            $prompt .= "4. Identify episode numbers from the individual filenames (e.g., \"01.mkv\" is Episode 1).\n";
-            $prompt .= "5. Return a JSON object where keys are ORIGINAL filenames and values are the NEW suggested filenames.\n";
-            $prompt .= "6. Maintain the exact original file extension.";
+            $prompt .= "1. Use the CONTEXT to identify the Category (Movie, Series, Music, Ebook), Title, and metadata (Season, Year, Artist, Album).\n";
+            $prompt .= "2. Standardize filenames based on category:\n";
+            $prompt .= "   - Series: \"Showname.SxxExx.OptionalTitle.ext\".\n";
+            $prompt .= "   - Anime: \"Showname.SxxExx.OptionalTitle.ext\".\n";
+            $prompt .= "   - Movies: \"Movie Name (Year).ext\".\n";
+            $prompt .= "   - Music: \"XX - Song Name.ext\" (XX = track number, identify from filename).\n";
+            $prompt .= "   - Ebooks: \"Clean Book Title.ext\".\n";
+            $prompt .= "3. Identify episode/track numbers from individual filenames (e.g., \"01.mkv\" is Episode 1).\n";
+            $prompt .= "4. Rules for \"path\":\n";
+            $prompt .= "   - Series: \"Video/TV Shows/Series Name/Season XX/\" (e.g. \"Video/TV Shows/The Sopranos/Season 02/\").\n";
+            $prompt .= "   - Anime: \"Video/Anime/Series Name/Season XX/\" (e.g. \"Video/Anime/Naruto/Season 01/\").\n";
+            $prompt .= "   - Movies: \"Video/Movies/Movie Name (Year)/\" (e.g. \"Video/Movies/Inception (2010)/\").\n";
+            $prompt .= "   - Music: \"Music/Artist Name/Album Name/\" (e.g. \"Music/Pink Floyd/The Wall/\").\n";
+            $prompt .= "   - Ebooks: \"Ebooks/Series Name/\" or \"Ebooks/Author Name/\" (e.g. \"Ebooks/Harry Potter/\"). use a T in front of the volume number when required. Only keep the name of the book (and the series if there is one) in the filename.\n";
+            $prompt .= "5. Return a JSON object where keys are ORIGINAL filenames and values are another JSON object containing \"filename\" and \"path\".\n";
+            $prompt .= "6. For ebooks NEVER change the language of the book title.\n";
+            $prompt .= "7. Maintain the exact original file extension.";
 
             $config = $this->storage->get('config', []);
             $model = $config['grok_model'] ?? 'grok-4-fast-non-reasoning';

@@ -103,6 +103,7 @@ class DownloadWorkerCommand extends Command
 
                 // Add failed task to history - for music, we try to preserve the expected tracks list
                 $details = $type === 'music' ? ['missing_tracks' => $item['expected_tracks'] ?? []] : ['type' => $type];
+                $details['message'] = $e->getMessage();
                 $this->queueManager->recordHistory($item, 'error', 0, $details);
                 $this->addServerNotification($storage, 'error', "Failed $type download", 'Failed', ($item['filename'] ?? 'unknown'), $type);
             }

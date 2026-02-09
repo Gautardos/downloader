@@ -64,7 +64,12 @@
                         <td>
                             {% if (item.status ?? 'success') == 'error' %}
                                 <span class="badge" style="background: var(--danger); color: white;">FAILED</span>
-                            {% elseif (item.status ?? 'success') == 'warning' %}
+                                {% if item.error_message is defined and item.error_message %}
+                                    <div style="font-size: 0.7rem; color: var(--danger); margin-top: 0.4rem; font-weight: 500; line-height: 1.2; max-width: 200px; word-break: break-word;">
+                                        ⚠️ {{ item.error_message }}
+                                    </div>
+                                {% endif %}
+{% elseif (item.status ?? 'success') == 'warning' %}
                                 <span class="badge" style="background: #f59e0b; color: white;">WARNING</span>
                             {% elseif (item.status ?? 'success') == 'canceled' %}
                                 <span class="badge" style="background: var(--text-secondary); color: white;">CANCELED</span>

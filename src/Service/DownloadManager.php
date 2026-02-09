@@ -112,18 +112,21 @@ class DownloadManager
             ]);
 
             $source = @fopen($url, 'r', false, $ctx);
-            if (!$source)
-                throw new \Exception("Could not open source URL.");
+            if (!$source) {
+                $error = error_get_last();
+                throw new \Exception("Could not open source URL: " . ($error['message'] ?? 'Unknown error'));
+            }
 
             $dest = @fopen($filePath, 'w');
             if (!$dest) {
+                $error = error_get_last();
                 fclose($source);
-                throw new \Exception("Could not open destination file.");
+                throw new \Exception("Could not open destination file: " . ($error['message'] ?? 'Unknown error'));
             }
 
             $bytes = stream_copy_to_stream($source, $dest);
             fclose($source);
-            fclose($dest);
+            fclose($lastErrorDest = $dest);
 
             // Sanity check (Alldebrid sometimes returns HTML errors as small files)
             if ($bytes < 50000) {

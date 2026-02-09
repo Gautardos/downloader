@@ -208,7 +208,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
-                <button class="btn btn-primary" id="btn-upload" onclick="submitUpload()">Upload</button>
+                <button class="btn btn-primary" id="btn-upload" onclick="submitUpload()">Debrid</button>
             </div>
         </div>
     </div>
@@ -284,6 +284,11 @@ async function suggestNames(packId, packName, files, btn = null) {
             }
 
             // Fill fields
+            const packCard = packId ? document.getElementById(packId).closest('.pack-card') : null;
+            const packPathInput = packCard ? packCard.querySelector('.pack-path-input') : null;
+            const isPackPathEmpty = packPathInput && !packPathInput.value;
+            let packPathPopulated = false;
+
             for (const [original, suggestion] of Object.entries(data.suggestions)) {
                 if (!suggestion) continue;
                 
@@ -294,7 +299,26 @@ async function suggestNames(packId, packName, files, btn = null) {
                     if (input.value === original) {
                         const form = input.closest('form');
                         if (form) {
-                            form.querySelector('input[name="override_filename"]').value = suggestion;
+                            if (typeof suggestion === 'object') {
+                                if (suggestion.filename) form.querySelector('input[name="override_filename"]').value = suggestion.filename;
+                                if (suggestion.path) {
+                                    if (isPackPathEmpty) {
+                                        if (!packPathPopulated) {
+                                            const defaultPath = "{{ config.default_path|default('')|e('js') }}";
+                                            packPathInput.value = joinPath(defaultPath, suggestion.path);
+                                            packPathPopulated = true;
+                                        }
+                                    } else {
+                                        const packPath = packPathInput?.value || '';
+                                        const defaultPath = "{{ config.default_path|default('')|e('js') }}";
+                                        const basePath = packPath || defaultPath;
+                                        form.querySelector('input[name="path"]').value = joinPath(basePath, suggestion.path);
+                                    }
+                                }
+                            } else {
+                                // Fallback for old/simple format
+                                form.querySelector('input[name="override_filename"]').value = suggestion;
+                            }
                         }
                     }
                 }
@@ -858,7 +882,7 @@ async function submitUpload() {
     }
 
     btn.disabled = true;
-    btn.innerText = 'Uploading...';
+    btn.innerText = 'Debriding...';
     let data;
 
     try {
@@ -915,7 +939,7 @@ async function submitUpload() {
     } finally {
         if (!data || !data.links || data.links.length === 0) {
             btn.disabled = false;
-            btn.innerText = 'Upload';
+            btn.innerText = 'Debrid';
         }
     }
 }
@@ -1214,7 +1238,6 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 
 .pack-files {
-    max-height: 2000px;
     overflow: hidden;
     transition: max-height 0.3s ease;
 }

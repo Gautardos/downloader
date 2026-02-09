@@ -429,29 +429,42 @@ class AlldebridService
 
     private function flattenMagnetFiles(array $files, string $packName, array &$result, string $parentPath = '', bool $isFirstLevel = true): void
     {
-        // If there is exactly one item at the top level and it is a folder, strip it
-        $stripRoot = $isFirstLevel && count($files) === 1 && isset($files[0]['e']);
+        // 1. Root Stripping Logic
+        $strictStripRoot = $isFirstLevel && count($files) === 1 && isset($files[0]['e']);
 
         foreach ($files as $file) {
             $name = $file['n'] ?? '';
             $size = $file['s'] ?? 0;
 
             if (isset($file['e'])) {
+                // Heuristic: skip if it's the root folder (matches packName at first level or strict strip)
+                $isPackRootFolder = $isFirstLevel && ($name === $packName || $strictStripRoot);
+
                 $folderPath = $parentPath;
-                if (!$stripRoot) {
+                if (!$isPackRootFolder) {
                     $folderPath = $parentPath ? $parentPath . '/' . $name : $name;
                 }
                 $this->flattenMagnetFiles($file['e'], $packName, $result, $folderPath, false);
             } else {
+                // 2. Redundant Subpath Stripping (e.g. Movie/Movie.mkv -> subpath should be empty)
+                $finalSubpath = $parentPath;
+                if ($parentPath !== '') {
+                    $filenameWithoutExt = pathinfo($name, PATHINFO_FILENAME);
+                    $pathParts = explode('/', $parentPath);
+                    $lastFolder = end($pathParts);
+
+                    if ($lastFolder === $filenameWithoutExt) {
+                        array_pop($pathParts);
+                        $finalSubpath = implode('/', $pathParts);
+                    }
+                }
+
                 $metadata = [
                     'pack' => $packName,
-                    'subpath' => $parentPath
+                    'subpath' => $finalSubpath
                 ];
 
-                // Store with size matching key
                 $result[$name . '|' . $size] = $metadata;
-
-                // Store with name only as fallback
                 $result[$name] = $metadata;
             }
         }
