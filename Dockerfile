@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y \
     redis-server \
     && rm -rf /var/lib/apt/lists/*
 
+# Fix permissions: map www-data to host user UID/GID 1000
+RUN usermod -u 1000 www-data && groupmod -g 1000 www-data
+
 # Configurer et installer les extensions PHP
 RUN pecl install redis \
     && docker-php-ext-enable redis
