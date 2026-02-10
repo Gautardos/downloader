@@ -11,6 +11,18 @@ use Symfony\Component\Routing\RouterInterface;
 
 class AuthSubscriber implements EventSubscriberInterface
 {
+    /**
+     * Routes that should NOT trigger a session/auth check.
+     * These are polling/API endpoints that fire every few seconds.
+     * Checking auth on them causes session lock contention under Apache prefork.
+     */
+    private const STATELESS_ROUTES = [
+        'notifications_poll',
+        'queue_status',
+        'queue_active_log',
+        'progress',
+    ];
+
     public function __construct(
         private AuthService $auth,
         private RouterInterface $router
@@ -26,8 +38,13 @@ class AuthSubscriber implements EventSubscriberInterface
         $request = $event->getRequest();
         $route = $request->attributes->get('_route');
 
-        // Allow login route and static assets (if any)
-        if ($route === 'login' || str_starts_with($route, '_')) {
+        // Allow login route and static assets
+        if ($route === 'login' || str_starts_with($route ?? '', '_')) {
+            return;
+        }
+
+        // Skip auth check for high-frequency polling routes to avoid session lock storms
+        if (in_array($route, self::STATELESS_ROUTES, true)) {
             return;
         }
 

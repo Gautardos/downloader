@@ -6,14 +6,14 @@ framework:
 
     # Enable session support
     session:
-        handler_id: session.handler.native_file   # IMPORTANT : force le handler fichier natif de Symfony
+        handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler
         cookie_secure: auto
         cookie_samesite: lax
-        cookie_domain: null   # ou 'localhost' si besoin
+        cookie_domain: null
         cookie_path: /
-        save_path: '%kernel.project_dir%/var/sessions'   # sera respecté maintenant
+        save_path: 'redis://localhost:6379'
         gc_maxlifetime: 7200                             # 2 heures (optionnel mais utile)
-        gc_probability: 1
+        gc_probability: 0
 
     #php_errors:
     #    log: true

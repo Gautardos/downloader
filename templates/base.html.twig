@@ -970,8 +970,8 @@
         }
 
         syncWithServer();
-        setInterval(syncWithServer, 2000);
-        setInterval(pollServerNotifications, 3000); // Poll more frequently
+        setInterval(syncWithServer, 3000);
+        setInterval(pollServerNotifications, 5000);
 
         if (Notification.permission === "granted") {
             const btn = document.getElementById('btn-browser-notif');

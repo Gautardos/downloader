@@ -25,3 +25,14 @@ services:
     App\Service\TorrentDbService:
         arguments:
             $projectDir: '%kernel.project_dir%'
+
+    # Redis Session Configuration
+    Redis:
+        class: Redis
+        calls:
+            - connect: ['127.0.0.1', 6379]
+
+    Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler:
+        arguments:
+            - '@Redis'
+            - { prefix: 'downloader_sess_', ttl: 86400 }

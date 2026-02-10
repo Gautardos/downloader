@@ -16,9 +16,13 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libonig-dev \
     ffmpeg \
+    redis-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Configurer et installer les extensions PHP
+RUN pecl install redis \
+    && docker-php-ext-enable redis
+
 RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
     && docker-php-ext-install \
     pdo \
@@ -55,6 +59,14 @@ RUN { \
     echo 'MaxKeepAliveRequests 200'; \
     echo 'Timeout 300'; \
     } >> /etc/apache2/apache2.conf
+
+RUN { \
+    echo "session.save_handler = redis"; \
+    echo "session.save_path = \"tcp://127.0.0.1:6379?persistent=1\""; \
+    echo "redis.session.locking_enabled = 1"; \
+    echo "redis.session.lock_retries = -1"; \
+    echo "redis.session.lock_wait_time = 10000"; \
+    } > /usr/local/etc/php/conf.d/zz-redis-sessions.ini
 
 # Ajout des directives KeepAlive dans le bloc MPM_prefork (prioritaire)
 RUN echo '' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
