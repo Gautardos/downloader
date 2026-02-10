@@ -34,6 +34,12 @@
                 </div>
 
                 <div style="margin-bottom: 1rem;">
+                    <label for="history_retention_limit">History Retention Limit</label>
+                    <input type="number" id="history_retention_limit" name="history_retention_limit" value="{{ config.history_retention_limit|default(500) }}" min="10" max="1000" required>
+                    <small style="color: var(--text-secondary);">Maximum number of history items to keep (default: 500).</small>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
                     <label for="grok_renaming_prompt">AI Renaming Prompt</label>
                     <textarea id="grok_renaming_prompt" name="grok_renaming_prompt" style="width:100%; height:200px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.grok_renaming_prompt|default(
 "1. Use the CONTEXT to identify the Category (Movie, Series, Music, Ebook), Title, and metadata (Season, Year, Artist, Album).
@@ -129,13 +135,13 @@
 
                 <div style="margin-bottom: 1rem;">
                     <label for="music_creds">JSON Credentials Path</label>
-                    <input type="text" id="music_creds" name="music_creds" value="{{ config.music_creds|default('') }}">
+                    <input type="text" id="music_creds" name="music_creds" value="{{ config.music_creds|default('/var/www/html/var/home/.local/credentials.json') }}">
                     <small style="color: var(--text-secondary);">Path to your music provider credentials file.</small>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
                     <label for="music_archive">History Archive File</label>
-                    <input type="text" id="music_archive" name="music_archive" value="{{ config.music_archive|default('') }}">
+                    <input type="text" id="music_archive" name="music_archive" value="{{ config.music_archive|default('/var/www/html/var/home/log/archive.txt') }}">
                     <small style="color: var(--text-secondary);">Path to log previously downloaded songs.</small>
                 </div>
 

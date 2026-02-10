@@ -98,7 +98,8 @@ class QueueManager
             return null;
         }
 
-        return $this->storage->get(self::ACTIVE_TASK_KEY);
+        // Pass null as default so we can distinguish between empty file and actual data
+        return $this->storage->get(self::ACTIVE_TASK_KEY, null);
     }
 
     public function purgeQueue(): void
@@ -156,6 +157,17 @@ class QueueManager
             'missing_tracks' => $stats['missing_tracks'] ?? [],
             'error_message' => $stats['message'] ?? null
         ];
+
+        // Enforce history limit
+        $config = $this->storage->get('config', []);
+        $limit = (int) ($config['history_retention_limit'] ?? 100);
+        if ($limit < 10)
+            $limit = 10; // Safety minimum
+
+        if (count($history) > $limit) {
+            $history = array_slice($history, -$limit);
+        }
+
         $this->storage->set('history', array_values($history));
     }
 

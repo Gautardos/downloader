@@ -647,7 +647,17 @@ class DashboardController extends AbstractController
                 'message' => 'Processed ' . count($results) . ' files into ' . $libraryPath,
                 'details' => $results
             ];
-            $storage->set('history', array_slice($history, -100));
+
+            // Enforce history limit
+            $limit = (int) ($config['history_retention_limit'] ?? 100);
+            if ($limit < 10)
+                $limit = 10;
+
+            if (count($history) > $limit) {
+                $history = array_slice($history, -$limit);
+            }
+
+            $storage->set('history', array_values($history));
 
             // Server-side notification
             $notifs = $storage->get('server_notifications', []);

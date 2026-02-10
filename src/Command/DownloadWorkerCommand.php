@@ -49,6 +49,7 @@ class DownloadWorkerCommand extends Command
         }
 
         $log('Starting Download Worker...');
+        $this->queueManager->setActiveTask(null); // Clear any stale active task
 
         while (true) {
             // Heartbeat loop
@@ -57,13 +58,14 @@ class DownloadWorkerCommand extends Command
             $item = $this->queueManager->pop();
 
             if (!$item) {
-                usleep(500000);
-                $item = $this->queueManager->pop();
-                if (!$item) {
-                    $log('Queue empty. Worker exiting.');
-                    $storage->set('worker_heartbeat', 0);
-                    break;
-                }
+                // Queue empty, wait and retry instead of exiting
+                // Ensure no ghost task is lingering if we are idle
+                $this->queueManager->setActiveTask(null);
+
+                // Update heartbeat to keep QueueManager from spawning a new worker
+                $storage->set('worker_heartbeat', time());
+                sleep(2);
+                continue;
             }
 
             $type = $item['type'] ?? 'video';
