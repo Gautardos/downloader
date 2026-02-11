@@ -302,6 +302,48 @@
             align-items: center;
         }
 
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            pointer-events: none;
+        }
+
+        .toast {
+            padding: 1rem 1.5rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 300px;
+            max-width: 450px;
+            animation: toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            border-left: 4px solid var(--accent);
+            pointer-events: auto;
+            position: relative;
+        }
+
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
+
+        @keyframes toast-in {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes toast-out {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+
         .notif-content {
             flex: 1;
             overflow-y: auto;
@@ -603,12 +645,17 @@
             </div>
 
             <div class="nav-links" id="nav-links">
-                <a href="{{ path('music') }}">🎵 Music</a>
-                <a href="{{ path('music_files') }}">📂 Music Downloads</a>
-                <a href="{{ path('torrent') }}">🌊 Torrent</a>
-                <a href="{{ path('queue') }}">⚙️ Queue</a>
-                <a href="{{ path('history') }}">📜 History</a>
-                <a href="{{ path('config') }}">🛠️ Settings</a>
+                {% if storage.isConfigured() %}
+                    <a href="{{ path('music') }}">🎵 Music</a>
+                    <a href="{{ path('music_files') }}">📂 Music Downloads</a>
+                    <a href="{{ path('torrent') }}">🌊 Torrent</a>
+                    <a href="{{ path('queue') }}">⚙️ Queue</a>
+                    <a href="{{ path('history') }}">📜 History</a>
+                    <a href="{{ path('config') }}">🛠️ Settings</a>
+                {% else %}
+                    <a href="{{ path('config') }}">🛠️ Setup</a>
+                {% endif %}
+                
                 <a href="{{ path('logout') }}" style="color: var(--danger); display: flex; align-items: center; gap: 0.5rem;">
                     <span style="font-size: 1.1rem;">🏃</span> Logout
                 </a>
@@ -634,6 +681,7 @@
     {% endif %}
 
     <div class="container">
+        <div class="toast-container" id="toast-container"></div>
         {% for message in app.flashes('success') %}
             <div class="alert alert-success">
                 {{ message }}
@@ -888,6 +936,28 @@
             if (!sidebar.classList.contains('open')) {
                 dot.style.display = 'block';
             }
+
+            // Show Toast
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            let toastEmoji = 'ℹ️';
+            if (type === 'success' || type === 'Finished') toastEmoji = '✅';
+            if (type === 'error' || type === 'Failed') toastEmoji = '❌';
+
+            const toastBody = typeof message === 'object' ? (message.item || message.message) : message;
+
+            toast.innerHTML = `
+                <span style="font-size: 1.25rem;">${toastEmoji}</span>
+                <div style="font-size: 0.9rem; font-weight: 500;">${toastBody}</div>
+            `;
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'toast-out 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
 
             // Native Browser Notification
             if (Notification.permission === "granted" && typeof message === 'object') {

@@ -17,6 +17,13 @@
             </div>
         {% endif %}
 
+        {% if not is_configured %}
+            <div style="background: rgba(0, 153, 255, 0.1); border: 1px solid rgba(0, 153, 255, 0.2); color: #0099ff; padding: 0.75rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.85rem; text-align: center;">
+                <strong>First execution?</strong><br>
+                Default credentials: <code>admin</code> / <code>admin</code>
+            </div>
+        {% endif %}
+
         <form action="{{ path('login') }}" method="POST">
             <div style="margin-bottom: 1.25rem;">
                 <label style="display: block; margin-bottom: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Username</label>

@@ -22,6 +22,33 @@ class AlldebridService
         return $config['api_key'] ?? null;
     }
 
+    public function validateApiKey(): bool|string
+    {
+        $apiKey = $this->getApiKey();
+        if (!$apiKey) {
+            return 'API Key missing in settings.';
+        }
+
+        try {
+            $response = $this->client->get('user', [
+                'query' => [
+                    'agent' => 'downloader-app',
+                    'apikey' => $apiKey
+                ]
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if (($data['status'] ?? '') === 'success') {
+                return true;
+            }
+
+            return $data['error']['message'] ?? 'Invalid API Key or Alldebrid error.';
+        } catch (\Exception $e) {
+            return 'Connection error: ' . $e->getMessage();
+        }
+    }
+
     public function getRecentLinks(): array
     {
         $apiKey = $this->getApiKey();

@@ -12,7 +12,7 @@
                 <h3 style="color: var(--accent); margin-bottom: 1rem;">Global Settings</h3>
                 <div style="margin-bottom: 1rem;">
                     <label for="api_key">Alldebrid API Key</label>
-                    <input type="text" id="api_key" name="api_key" value="{{ config.api_key|default('') }}" placeholder="Enter your API Key" required>
+                    <input type="text" id="api_key" name="api_key" value="{{ config.api_key|default('') }}" placeholder="Enter your API Key">
                     <small style="color: var(--text-secondary);">Your personal Alldebrid API token.</small>
                 </div>
 
@@ -28,15 +28,15 @@
                 </div>
                 
                 <div style="margin-bottom: 1rem;">
-                    <label for="default_path">Default Torrent Path</label>
-                    <input type="text" id="default_path" name="default_path" value="{{ config.default_path|default('') }}" placeholder="C:\Users\Downloads\Torrents" required>
-                    <small style="color: var(--text-secondary);">Where torrent files are saved by default.</small>
+                    <label for="default_path">Default Torrent Download Path</label>
+                    <input type="text" id="default_path" name="default_path" value="{{ config.default_path|default('') }}" placeholder="/nas/downloads/">
+                    <small style="color: var(--text-secondary);">Where torrent files are saved by default (can be overidden when downloading a file).</small>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
                     <label for="history_retention_limit">History Retention Limit</label>
                     <input type="number" id="history_retention_limit" name="history_retention_limit" value="{{ config.history_retention_limit|default(500) }}" min="10" max="1000" required>
-                    <small style="color: var(--text-secondary);">Maximum number of history items to keep (default: 500).</small>
+                    <small style="color: var(--text-secondary);">Maximum number of history entries to keep (default: 500).</small>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
@@ -91,14 +91,14 @@
                 
                 <div style="margin-bottom: 1rem;">
                     <label for="music_venv_path">Venv Path (Relative)</label>
-                    <input type="text" id="music_venv_path" name="music_venv_path" value="{{ config.music_venv_path|default('venv') }}">
+                    <input type="text" id="music_venv_path" name="music_venv_path" value="{{ config.music_venv_path|default('/opt/venv') }}">
                     <small style="color: var(--text-secondary);">Path to python virtual environment folder.</small>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
                     <label for="music_binary">Music Command Binary</label>
-                    <input type="text" id="music_binary" name="music_binary" value="{{ config.music_binary|default('musicdownload') }}">
-                    <small style="color: var(--text-secondary);">The command to run (e.g., spotdl, musicdownload).</small>
+                    <input type="text" id="music_binary" name="music_binary" value="{{ config.music_binary|default('zotify') }}">
+                    <small style="color: var(--text-secondary);">The command to run (e.g., spotdl, zotify).</small>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
@@ -200,13 +200,64 @@
 
                 <div style="margin-bottom: 1rem;">
                     <label for="music_genre_grok_prompt">AI Tagging Prompt</label>
-                    <textarea id="music_genre_grok_prompt" name="music_genre_grok_prompt" style="width:100%; height:150px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.music_genre_grok_prompt|default('') }}</textarea>
+                    <textarea id="music_genre_grok_prompt" name="music_genre_grok_prompt" style="width:100%; height:150px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.music_genre_grok_prompt|default("Tu es un expert en classification musicale. Ton objectif est de déterminer le genre musical d'une chanson à partir de son artiste et de son titre, en respectant strictement une catégorisation spécifique. 
+            Les genres peuvent être cumulables : si un morceau appartient à plusieurs catégories, sépare les genres par le caractère ' / '. 
+            Rap & Hip-Hop n'est cumulable qu'avec Latin sinon il est dominant
+            
+            Voici les règles précises que tu dois suivre :
+            - \"Rap & Hip-Hop\" : Pour tous les morceaux de rap et hip-hop avec des paroles dans une langue autre que le français.
+            - \"Rap Français\" : Pour tous les morceaux de rap avec des paroles en français.
+            - \"Electro\" : Pour tous les morceaux de musique électronique (techno, trance, EDM, etc.), sauf la house.
+            - \"House\" : Pour tous les types de house (deep house, progressive house, tech house, etc.).
+            - \"Reggaeton\" : Pour tous les morceaux de reggaeton.
+            - \"Variété Américaine\" : Pour tous les morceaux de chanson (hors rap, hip-hop, electro, house, reggaeton, pop, rock) d'artistes américains ou avec des paroles en anglais américain.
+            - \"Variété Internationale\" : Pour tous les morceaux de chanson (hors rap, hip-hop, electro, house, reggaeton, pop, rock) dans une langue autre que le français ou l'anglais américain.
+            - \"Variété Française\" : Pour tous les morceaux de chanson (hors rap, hip-hop, electro, house, reggaeton, pop, rock) avec des paroles en français.
+            - \"Pop\" : Pour tous les morceaux de pop, quelle que soit la langue.
+            - \"Rock\" : Pour tous les morceaux de rock ou apparentés (rock alternatif, punk, metal, grunge, etc.).
+            - \"Latin\" : Pour tous les morceaux de musique latine (salsa, bachata, cumbia, etc.), hors reggaeton.
+            - \"Instrumental / Trip-Hop\" : Pour tous les morceaux sans paroles d'abstract hip-hop, trip-hop ou instrumentaux dans ce style.
+            - \"Ambiance\" : Pour tous les morceaux d'ambiance (chill, downtempo, lounge, etc.).
+            - \"Classical\" : Pour tous les morceaux orchestraux ou de musique classique.
+            - \"Funk\" : Pour tous les morceaux de funk ou genres apparentés
+            - \"Jazz\" : Pour tous les morceaux de jazz ou genres apparentés
+            - \"Soul\" : Pour tous les morceaux de soul ou genres apparentés
+
+            Instructions :
+            - Si tu as un doute sur la langue ou le style, base-toi sur les informations typiquement associées à l'artiste ou à l'album.
+            - Réponds UNIQUEMENT par le nom du ou des genres, sans aucun autre texte, commentaire ou explication (exemple : \"Pop / Rock\").") }}</textarea>
                     <small style="color: var(--text-secondary);">System prompt for Grok classification.</small>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
                     <label for="music_genre_mapping">Regex Genre Mapping (JSON)</label>
-                    <textarea id="music_genre_mapping" name="music_genre_mapping" style="width:100%; height:150px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.music_genre_mapping|default('') }}</textarea>
+                    <textarea id="music_genre_mapping" name="music_genre_mapping" style="width:100%; height:150px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.music_genre_mapping|default('{
+    "genre_patterns": {
+        "(?i)^(?!(.*french|.*fran\\u00e7ais|.*rap.*hip.*hop|.*instrumental)).*\\\\s*rap\\\\s*": "Rap & Hip-Hop",
+        "(?i)^(?!(.*rap.*hip.*hop|.*instrumental)).*\\\\s*hip[- ]?hop\\\\s*": "Rap & Hip-Hop",
+        "(?i)g[ -]?funk": "Rap & Hip-Hop",
+        "(?i)dembow|afropop|afroswing|grime|horrorcore|phonk|uk drill|comedy": "Rap & Hip-Hop",
+        "(?i)downtempo|psytrance|^edm$": "Electro",
+        "(?i)trip[- ]?hop|^idm$|chillstep": "Instrumental / Trip-Hop",
+        "(?i)retro soul": "Soul",
+        "(?i)pop urbaine": "Rap Fr\\u00e7ais",
+        "(?i)french pop|chanson": "Vari\\u00e9t\\u00e9 Fran\\u00e7aise",
+        "(?i)soft pop|europop|psychedelic pop|hyperpop|folk pop|alternative dance|art pop|baroque pop|bedroom pop|britpop": "Pop",
+        "(?i)post-grunge|nu metal|glam metal|grunge": "Rock",
+        "(?i)nueva trova|fado": "Latin",
+        "(?i)amapiano": "Afrobeats",
+        "(?i)^ebm$": "Techno",
+        "(?i)\\\\s*rock\\\\s*": "Rock",
+        "(?i)\\\\s*punk\\\\s*": "Rock",
+        "(?i)\\\\s*house\\\\s*": "House",
+        "(?i)\\\\s*lo-fi\\\\s*": "Instrumental / Trip-Hop",
+        "(?i)\\\\s*techno\\\\s*": "Techno",
+        "(?i)\\\\s*jazz\\\\s*": "Jazz",
+        "(?i)\\\\s*latin\\\\s*": "Latin",
+        "(?i)\\\\s*electro\\\\s*": "Electro",
+        "(?i)\\\\s*r&b\\\\s*": "R&B"
+    }
+}') }}</textarea>
                     <small style="color: var(--text-secondary);">JSON object mapping regex patterns to genres.</small>
                 </div>
             </section>

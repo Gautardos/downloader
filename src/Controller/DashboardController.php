@@ -22,6 +22,28 @@ class DashboardController extends AbstractController
     #[Route('/torrent', name: 'torrent')]
     public function torrent(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage, MediaTypeHelper $mediaTypeHelper): Response
     {
+        if (!$storage->hasAlldebrid() || !$storage->hasDefaultTorrentPath()) {
+            return $this->render('dashboard/locked.html.twig', [
+                'title' => 'Configuration Required',
+                'message' => 'The torrent management screen requires both an Alldebrid API key and a default download path.',
+                'requirements' => [
+                    'Alldebrid API Key (Settings > Global Settings)',
+                    'Default Torrent Download Path (Settings > Global Settings)'
+                ]
+            ]);
+        }
+
+        $validation = $alldebrid->validateApiKey();
+        if ($validation !== true) {
+            return $this->render('dashboard/locked.html.twig', [
+                'title' => 'Alldebrid API Error',
+                'message' => 'Could not connect to Alldebrid. ' . $validation,
+                'requirements' => [
+                    'Please check your Alldebrid API Key in Settings'
+                ]
+            ]);
+        }
+
         $packs = $alldebrid->getRecentLinksGrouped();
         $recentPaths = $storage->get('recent_paths', []);
 
@@ -42,7 +64,8 @@ class DashboardController extends AbstractController
             'packs' => $packs,
             'recent_paths' => $recentPaths,
             'config' => $storage->get('config', []),
-            'is_torrent_page' => true
+            'is_torrent_page' => true,
+            'is_grok_configured' => $storage->hasGrok()
         ]);
     }
 
@@ -121,6 +144,28 @@ class DashboardController extends AbstractController
     #[Route('/', name: 'music')]
     public function music(JsonStorage $storage): Response
     {
+        if (!$storage->hasMusicPath()) {
+            return $this->render('dashboard/locked.html.twig', [
+                'title' => 'Music Configuration Required',
+                'message' => 'The music downloader requires a existing download path to be configured.',
+                'requirements' => [
+                    'Music Download Path (Settings > Music Settings)'
+                ]
+            ]);
+        }
+
+        if (!$storage->hasSpotify()) {
+            return $this->render('dashboard/locked.html.twig', [
+                'title' => 'Spotify Credentials Required',
+                'message' => 'The music search screen requires Spotify API credentials and a valid credentials file path.',
+                'requirements' => [
+                    'Spotify Client ID',
+                    'Spotify Client Secret',
+                    'Music Credentials Path (existing file)'
+                ]
+            ]);
+        }
+
         return $this->render('dashboard/music.html.twig', [
             'config' => $storage->get('config', [])
         ]);
@@ -129,12 +174,22 @@ class DashboardController extends AbstractController
     #[Route('/music-files', name: 'music_files')]
     public function musicFiles(JsonStorage $storage, KernelInterface $kernel): Response
     {
+        if (!$storage->hasMusicPath()) {
+            return $this->render('dashboard/locked.html.twig', [
+                'title' => 'Music Configuration Required',
+                'message' => 'The music file management screen requires a valid and accessible download path.',
+                'requirements' => [
+                    'Music Download Path (Settings > Music Settings)'
+                ]
+            ]);
+        }
+
         $config = $storage->get('config', []);
         $root = $config['music_root_path'] ?? '';
         $files = [];
 
         if (!empty($root) && is_dir($root)) {
-            $venvPath = $config['music_venv_path'] ?? 'venv';
+            $venvPath = $config['music_venv_path'] ?? '/opt/venv';
             $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'music_downloader.py';
 
             $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
@@ -260,6 +315,20 @@ class DashboardController extends AbstractController
     #[Route('/music-add', name: 'music_add', methods: ['POST'])]
     public function musicAdd(Request $request, QueueManager $queueManager, JsonStorage $storage, \App\Service\SpotifyService $spotify): Response
     {
+        if (!$storage->hasSpotify()) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Spotify credentials or credentials file missing. Please check your settings.'
+            ]);
+        }
+
+        if (!$spotify->testCredentials()) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Spotify authentication failed. Please check your Client ID and Client Secret in Settings.'
+            ]);
+        }
+
         $urls = $request->request->get('urls');
         if (!$urls) {
             return $this->json(['success' => false, 'message' => 'No URLs provided.']);

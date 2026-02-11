@@ -53,9 +53,11 @@
                             {% if pack.file_count > 1 %}
                                 <div class="pack-actions-buttons">
                                     <div style="display: flex; gap: 0.5rem; width: 100%;">
+                                        {% if is_grok_configured %}
                                         <button class="btn btn-secondary btn-icon" onclick="suggestNames('pack-{{ loop.index }}', '{{ pack.name|e('js') }}', {{ pack.files|json_encode|e('html_attr') }})" title="AI Rename All">
                                             ✨
                                         </button>
+                                        {% endif %}
                                         <input type="text" class="pack-path-input" 
                                                placeholder="Common folder (optional)" 
                                                list="recent-paths-list"
@@ -108,9 +110,11 @@
                                                 list="recent-paths-list" class="input-path">
                                          <div class="rename-group">
                                              <input type="text" name="override_filename" placeholder="Rename to..." class="input-rename">
+                                             {% if is_grok_configured %}
                                              <button type="button" class="btn btn-secondary btn-icon" onclick="suggestNames('pack-{{ loop.parent.loop.index }}', '{{ pack.name|e('js') }}', [{filename: '{{ file.filename|e('js') }}'}], this)" title="AI Rename">
                                                  ✨
                                              </button>
+                                             {% endif %}
                                          </div>
                                      </div>
                                      

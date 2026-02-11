@@ -1,0 +1,26 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Screen Locked - Downloader{% endblock %}
+
+{% block body %}
+    <div style="max-width: 600px; margin: 4rem auto; text-align: center;">
+        <div style="font-size: 4rem; margin-bottom: 1.5rem;">🔒</div>
+        <h1 style="color: var(--text-primary); margin-bottom: 1rem;">{{ title|default('Access Restricted') }}</h1>
+        <p style="color: var(--text-secondary); font-size: 1.1rem; line-height: 1.6; margin-bottom: 2rem;">
+            {{ message|default('This screen is not available because some required configurations are missing.') }}
+        </p>
+        
+        <div class="card" style="background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.2); text-align: left; padding: 1.5rem;">
+            <h3 style="color: var(--danger); font-size: 0.9rem; text-transform: uppercase; margin-bottom: 0.75rem;">Required Setup:</h3>
+            <ul style="color: var(--text-primary); margin: 0; padding-left: 1.5rem;">
+                {% for req in requirements %}
+                    <li style="margin-bottom: 0.5rem;">{{ req }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <a href="{{ path('config') }}" class="btn btn-primary" style="margin-top: 2.5rem; padding: 0.75rem 2rem;">
+            Go to Settings
+        </a>
+    </div>
+{% endblock %}

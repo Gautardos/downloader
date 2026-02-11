@@ -25,6 +25,11 @@ class SpotifyService
         return $this->logs;
     }
 
+    public function testCredentials(): bool
+    {
+        return $this->getAccessToken() !== null;
+    }
+
     private function getAccessToken(): ?string
     {
         if ($this->accessToken && time() < $this->tokenExpiresAt) {

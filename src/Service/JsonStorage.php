@@ -58,4 +58,45 @@ class JsonStorage
     {
         return $this->storageDir;
     }
+
+    public function isConfigured(): bool
+    {
+        $config = $this->get('config', []);
+        return !empty($config);
+    }
+
+    public function hasAlldebrid(): bool
+    {
+        $config = $this->get('config', []);
+        return !empty($config['api_key']);
+    }
+
+    public function hasMusicPath(): bool
+    {
+        $config = $this->get('config', []);
+        $path = $config['music_root_path'] ?? '';
+        return !empty($path) && is_dir($path);
+    }
+
+    public function hasDefaultTorrentPath(): bool
+    {
+        $config = $this->get('config', []);
+        return !empty($config['default_path']);
+    }
+
+    public function hasGrok(): bool
+    {
+        $config = $this->get('config', []);
+        return !empty($config['grok_api_key']);
+    }
+
+    public function hasSpotify(): bool
+    {
+        $config = $this->get('config', []);
+        $creds = $config['music_creds'] ?? '';
+        return !empty($config['spotify_client_id']) &&
+            !empty($config['spotify_client_secret']) &&
+            !empty($creds) &&
+            file_exists($creds);
+    }
 }
