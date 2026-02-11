@@ -52,9 +52,24 @@ RUN python3 -m venv /opt/venv
 RUN /opt/venv/bin/pip install --upgrade pip && \
     /opt/venv/bin/pip install -r cli/requirements.txt
 
+RUN cd var && \
+    git clone https://github.com/Gautardos/librespot-auth.git && \
+    cd librespot-auth && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    export PATH="$HOME/.cargo/bin:$PATH" && \
+    cargo build --release
+
 # Config Apache + Symfony public/
 RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf \
     && a2enmod rewrite
+
+# Change le port Apache
+RUN sed -i 's/Listen 80/Listen 8000/' /etc/apache2/ports.conf && \
+    sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/' /etc/apache2/sites-available/000-default.conf && \
+    sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/' /etc/apache2/sites-available/default-ssl.conf 2>/dev/null || true
+
+# Optionnel : expose pour la doc
+EXPOSE 8000
 
 RUN { \
     echo 'KeepAlive On'; \

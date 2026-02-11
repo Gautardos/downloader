@@ -102,6 +102,12 @@
                 </div>
 
                 <div style="margin-bottom: 1rem;">
+                    <label for="music_librespot_auth_binary">Librespot Auth Binary</label>
+                    <input type="text" id="music_librespot_auth_binary" name="music_librespot_auth_binary" value="{{ config.music_librespot_auth_binary|default('/var/www/html/var/librespot-auth/target/release/librespot-auth') }}">
+                    <small style="color: var(--text-secondary);">Path to the librespot-auth binary (used for generating credentials).</small>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
                     <label for="music_root_path">Music Download Root</label>
                     <input type="text" id="music_root_path" name="music_root_path" value="{{ config.music_root_path|default('') }}">
                     <small style="color: var(--text-secondary);">Base directory for music files.</small>
@@ -135,8 +141,17 @@
 
                 <div style="margin-bottom: 1rem;">
                     <label for="music_creds">JSON Credentials Path</label>
-                    <input type="text" id="music_creds" name="music_creds" value="{{ config.music_creds|default('/var/www/html/var/home/.local/credentials.json') }}">
+                    <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+                        <div style="flex-grow: 1;">
+                            <input type="text" id="music_creds" name="music_creds" value="{{ config.music_creds|default('/var/www/html/var/home/.local/credentials.json') }}">
+                        </div>
+                        <button type="button" id="btn-generate-auth" class="btn btn-secondary" style="white-space: nowrap; padding: 0.75rem 1rem; {{ creds_exists ? 'display: none;' : '' }}">
+                           <span id="auth-btn-text">⚡ Auth</span>
+                           <span id="auth-btn-spinner" style="display: none;">⏳...</span>
+                        </button>
+                    </div>
                     <small style="color: var(--text-secondary);">Path to your music provider credentials file.</small>
+                    <div id="auth-status" style="margin-top: 0.5rem; font-size: 0.85rem; display: none;"></div>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
@@ -266,4 +281,77 @@
         <button type="submit" class="btn btn-primary btn-full" style="margin-top: 2rem;">Save All Settings</button>
     </form>
 </div>
+{% endblock %}
+
+{% block javascripts %}
+<script>
+document.getElementById('btn-generate-auth').addEventListener('click', async function() {
+    const btn = this;
+    const btnText = document.getElementById('auth-btn-text');
+    const btnSpinner = document.getElementById('auth-btn-spinner');
+    const statusDiv = document.getElementById('auth-status');
+
+    if (!confirm('This will execute the librespot-auth command. You might need to check the logs or external browser to complete authentication. Continue?')) {
+        return;
+    }
+
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnSpinner.style.display = 'inline';
+    statusDiv.style.display = 'block';
+    statusDiv.style.color = 'var(--accent)';
+    statusDiv.innerText = 'Executing librespot-auth... (this may take a while)';
+
+    try {
+        const response = await fetch("{{ path('config_spotify_auth') }}", {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            statusDiv.style.color = 'var(--success)';
+            statusDiv.innerText = '✅ ' + result.message;
+            // Hide the button since file now exists
+            btn.style.display = 'none';
+            // Update the path field
+            const credsInput = document.getElementById('music_creds');
+            if (credsInput) {
+                credsInput.value = result.path;
+            }
+        } else {
+            statusDiv.style.color = 'var(--danger)';
+            let errHtml = '❌ ' + result.message;
+            
+            if (result.debug) {
+                errHtml += '<div style="margin-top:0.5rem; font-family:monospace; font-size:0.75rem; background:rgba(0,0,0,0.3); padding:0.5rem; border-radius:4px; border:1px solid var(--accent);">';
+                errHtml += '<strong>Environment:</strong><br>';
+                errHtml += 'User: ' + result.debug.user + '<br>';
+                errHtml += 'PHP CWD: ' + (result.debug.php_cwd || 'unknown') + '<br>';
+                errHtml += 'Home Writable: ' + result.debug.home_writable + '<br>';
+                errHtml += 'Binary Executable: ' + result.debug.binary_executable + '<br>';
+                errHtml += 'Binary Path: ' + result.debug.binary_path + '<br>';
+                errHtml += 'Expected File: ' + result.debug.expected_file + '</div>';
+            }
+
+            if (result.command) {
+                errHtml += '<div style="margin-top:0.5rem; font-family:monospace; font-size:0.75rem; background:rgba(0,0,0,0.3); padding:0.5rem; border-radius:4px; border:1px solid var(--danger);">';
+                errHtml += '<strong>Command:</strong><br>' + result.command + '<br><br>';
+                errHtml += '<strong>Output:</strong><br>' + (result.output || '(no output)') + '</div>';
+            }
+            statusDiv.innerHTML = errHtml;
+        }
+    } catch (e) {
+        statusDiv.style.color = 'var(--danger)';
+        statusDiv.innerText = '❌ Error: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btnText.style.display = 'inline';
+        btnSpinner.style.display = 'none';
+    }
+});
+</script>
 {% endblock %}
