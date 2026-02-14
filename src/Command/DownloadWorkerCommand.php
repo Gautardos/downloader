@@ -41,28 +41,28 @@ class DownloadWorkerCommand extends Command
 
         $log('Checking for existing worker...');
 
-        // --- Single Worker Mutex ---
-        $lastHeartbeat = $storage->get('worker_heartbeat', 0);
-        if ((time() - $lastHeartbeat) < 25) {
-            $log('Another worker is already running (heartbeat: ' . (time() - $lastHeartbeat) . 's ago). Exiting.');
+        // --- Robust flock Mutex ---
+        $lockFile = $storage->getStorageDir() . '/worker.lock';
+        $lockFp = fopen($lockFile, 'c+');
+        if (!$lockFp || !flock($lockFp, LOCK_EX | LOCK_NB)) {
+            $log('Another worker is already running (lock acquired by other process). Exiting.');
+            if ($lockFp)
+                fclose($lockFp);
             return Command::SUCCESS;
         }
 
         $log('Starting Download Worker...');
-        $this->queueManager->setActiveTask(null); // Clear any stale active task
+        // Note: we DO NOT clear the active task unconditionally anymore, 
+        // as the QueueManager should be handling that or the worker will update it.
 
         while (true) {
-            // Heartbeat loop
+            // Heartbeat loop (UI visibility only)
             $storage->set('worker_heartbeat', time());
 
             $item = $this->queueManager->pop();
 
             if (!$item) {
-                // Queue empty, wait and retry instead of exiting
-                // Ensure no ghost task is lingering if we are idle
                 $this->queueManager->setActiveTask(null);
-
-                // Update heartbeat to keep QueueManager from spawning a new worker
                 $storage->set('worker_heartbeat', time());
                 sleep(2);
                 continue;
@@ -81,12 +81,12 @@ class DownloadWorkerCommand extends Command
                     $this->processMusicTask($item, $storage, $log);
                 } else {
                     $result = $this->downloadManager->downloadFile(
-                        $item['url'],
-                        $item['filename'] ?? 'undefined',
-                        $item['path'],
-                        $item['download_id'],
-                        $item['overwrite'] ?? false,
-                        fn() => $storage->set('worker_heartbeat', time()) // Heartbeat callback
+                        $url = $item['url'],
+                        $filename = $item['filename'] ?? 'undefined',
+                        $path = $item['path'],
+                        $downloadId = $item['download_id'],
+                        $overwrite = $item['overwrite'] ?? false,
+                        $heartbeatCallback = fn() => $storage->set('worker_heartbeat', time()) // Heartbeat callback
                     );
 
                     if (!$result['success']) {
@@ -103,7 +103,7 @@ class DownloadWorkerCommand extends Command
                 $log('Error: ' . $e->getMessage());
                 $log('Stack trace: ' . $e->getTraceAsString());
 
-                // Add failed task to history - for music, we try to preserve the expected tracks list
+                // Add failed task to history
                 $details = $type === 'music' ? ['missing_tracks' => $item['expected_tracks'] ?? []] : ['type' => $type];
                 $details['message'] = $e->getMessage();
                 $this->queueManager->recordHistory($item, 'error', 0, $details);
@@ -114,6 +114,9 @@ class DownloadWorkerCommand extends Command
             usleep(100000);
         }
 
+        // Technically unreachable due to while(true), but for completeness:
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
         return Command::SUCCESS;
     }
 
@@ -186,7 +189,7 @@ class DownloadWorkerCommand extends Command
         $missingTracks = $expectedTracks;
         $validatedCount = 0;
 
-        // Execute using shell
+        // Execute using non-blocking start to maintain heartbeat
         try {
             $process = \Symfony\Component\Process\Process::fromShellCommandline($cmdStr);
             $process->setTimeout(3600); // 1 hour max
@@ -197,26 +200,44 @@ class DownloadWorkerCommand extends Command
                 'PYTHONUNBUFFERED' => '1'
             ]);
 
-            $process->run(function ($type, $buffer) use ($activeLogFile, $historyLogFile, $progressFile, $storage, &$lastLine) {
-                // Write to logs
-                file_put_contents($activeLogFile, $buffer, FILE_APPEND);
-                file_put_contents($historyLogFile, $buffer, FILE_APPEND);
+            $process->start();
 
-                // Update heartbeat
+            while ($process->isRunning()) {
+                // Update heartbeat every iteration
                 $storage->set('worker_heartbeat', time());
 
-                // Extract last line for progress
-                $lines = explode("\n", trim($buffer));
-                if (!empty($lines)) {
-                    $lastLine = end($lines);
-                    file_put_contents($progressFile, json_encode([
-                        'status' => 'downloading',
-                        'percentage' => 100, // We don't have real percentage, just show 100 or spinning
-                        'filename' => $lastLine,
-                        'speed' => 'STREAMING'
-                    ]));
+                // Read incremental output
+                $out = $process->getIncrementalOutput();
+                $err = $process->getIncrementalErrorOutput();
+                $buffer = $out . $err;
+
+                if ($buffer !== '') {
+                    file_put_contents($activeLogFile, $buffer, FILE_APPEND);
+                    file_put_contents($historyLogFile, $buffer, FILE_APPEND);
+
+                    // Extract last line for progress
+                    $lines = explode("\n", trim($buffer));
+                    if (!empty($lines)) {
+                        $lastLine = end($lines);
+                        file_put_contents($progressFile, json_encode([
+                            'status' => 'downloading',
+                            'percentage' => 100,
+                            'filename' => $lastLine,
+                            'speed' => 'STREAMING'
+                        ]));
+                    }
                 }
-            });
+
+                usleep(500000); // 0.5s
+            }
+
+            // Final check for remaining output
+            $buffer = $process->getIncrementalOutput() . $process->getIncrementalErrorOutput();
+            if ($buffer !== '') {
+                file_put_contents($activeLogFile, $buffer, FILE_APPEND);
+                file_put_contents($historyLogFile, $buffer, FILE_APPEND);
+            }
+
         } catch (\Throwable $e) {
             $startupError = "Failed to start process: " . $e->getMessage();
             file_put_contents($activeLogFile, "\n[STARTUP ERROR]\n" . $startupError, FILE_APPEND);

@@ -77,6 +77,34 @@ class AlldebridService
         }
     }
 
+    public function purgeHistory(): array
+    {
+        $apiKey = $this->getApiKey();
+        if (!$apiKey) {
+            return ['success' => false, 'message' => 'No API key'];
+        }
+
+        try {
+            $response = $this->client->get('user/history/delete', [
+                'query' => [
+                    'agent' => 'downloader-app',
+                    'apikey' => $apiKey,
+                    'all' => 'true'
+                ]
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if (($data['status'] ?? '') === 'success') {
+                return ['success' => true];
+            }
+            return ['success' => false, 'message' => $data['error']['message'] ?? 'Unknown error'];
+
+        } catch (\Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
     public function getMagnets(): array
     {
         $apiKey = $this->getApiKey();

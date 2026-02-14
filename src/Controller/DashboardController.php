@@ -448,13 +448,23 @@ class DashboardController extends AbstractController
     #[Route('/delete-path', name: 'delete_path', methods: ['POST'])]
     public function deletePath(Request $request, JsonStorage $storage): Response
     {
-        $pathToDelete = $request->request->get('path');
-        if ($pathToDelete) {
-            $recentPaths = $storage->get('recent_paths', []);
-            $recentPaths = array_values(array_filter($recentPaths, fn($p) => $p !== $pathToDelete));
-            $storage->set('recent_paths', $recentPaths);
+        $path = $request->request->get('path');
+        if (!$path) {
+            return $this->json(['success' => false, 'message' => 'Path missing'], 400);
         }
+
+        $recentPaths = $storage->get('recent_paths', []);
+        $recentPaths = array_values(array_filter($recentPaths, fn($p) => $p !== $path));
+        $storage->set('recent_paths', $recentPaths);
+
         return $this->json(['success' => true]);
+    }
+
+    #[Route('/purge-history', name: 'purge_history', methods: ['POST'])]
+    public function purgeHistory(AlldebridService $debrid): Response
+    {
+        $result = $debrid->purgeHistory();
+        return $this->json($result);
     }
 
     #[Route('/rename-ai', name: 'post_rename_ai', methods: ['POST'])]

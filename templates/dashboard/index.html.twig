@@ -1,30 +1,32 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Torrent Downloader{% endblock %}
+{% block title %}Debrid Downloader{% endblock %}
 
 {% block body %}
 <div class="container">
     <h1>📥 Downloads</h1>
+
+    <!-- Global Controls -->
+    <datalist id="recent-paths-list">
+        {% for path in recent_paths %}
+            <option value="{{ path }}">
+        {% endfor %}
+    </datalist>
+
+    <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-bottom: 2rem;">
+        <button class="btn btn-secondary" onclick="purgeHistory()" style="display: flex; align-items: center; gap: 0.5rem; background: var(--danger);">
+            <span>🧹</span> Purge AllDebrid History
+        </button>
+        <button class="btn btn-primary" onclick="openUploadModal()" style="display: flex; align-items: center; gap: 0.5rem;">
+            <span>☁️</span>Add New Magnet / Link
+        </button>
+    </div>
 
     {% if packs is empty %}
         <p style="text-align: center; color: var(--text-secondary); margin: 3rem 0;">
             No recent downloads found. Configure your API key to get started.
         </p>
     {% else %}
-        <!-- Recent Paths Datalist -->
-        <datalist id="recent-paths-list">
-            {% for path in recent_paths %}
-                <option value="{{ path }}">
-            {% endfor %}
-        </datalist>
-
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 2rem;">
-            <button class="btn btn-primary" onclick="openUploadModal()" style="display: flex; align-items: center; gap: 0.5rem;">
-                <span>☁️</span>Add New Torrent / Magnet / Link
-            </button>
-        </div>
-
-
         <div class="packs-grid">
             {% for pack in packs %}
                 <div class="pack-card">
@@ -152,7 +154,7 @@
     <div id="upload-modal" class="modal-overlay">
         <div class="modal-container" style="max-width: 600px;">
             <div class="modal-header">
-                <h2>☁️ Upload Torrent / Magnet / Link</h2>
+                <h2>☁️ Add Magnet / Link</h2>
                 <button class="btn-close-modal" onclick="closeUploadModal()">×</button>
             </div>
             <div class="modal-body" style="padding: 2rem;">
@@ -161,7 +163,7 @@
                      onclick="document.getElementById('torrent-file-input').click()"
                      ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
                     <div style="font-size: 3rem; margin-bottom: 1rem;">📄</div>
-                    <h3 style="margin: 0 0 0.5rem 0;">Click or Drop .torrent file here</h3>
+                    <h3 style="margin: 0 0 0.5rem 0;">Click or Drop .torrent file</h3>
                     <p style="color: var(--text-secondary); margin: 0;">Supports single .torrent file upload</p>
                     <input type="file" id="torrent-file-input" accept=".torrent" style="display: none" onchange="handleFileSelect(this)">
                 </div>
@@ -244,6 +246,7 @@
                         <tr>
                             <th><input type="checkbox" id="select-all-batch" checked onchange="toggleAllBatch(this)"></th>
                             <th>Filename</th>
+                            <th>Keep Folders</th>
                             <th>Target Destination</th>
                             <th>Folder</th>
                             <th>Size</th>
@@ -383,6 +386,8 @@ function togglePack(packId) {
 }
 
 let pendingBatchQueue = [];
+let currentBatchCandidates = [];
+let currentPackId = null;
 
 function formatSize(bytes) {
     if (bytes === null || bytes === undefined) return '0 B';
@@ -452,6 +457,7 @@ async function downloadPack(event, packId, files) {
     const tableBody = document.querySelector('#batch-table tbody');
     const modalLoading = document.getElementById('modal-loading-msg');
     
+    currentPackId = packId;
     tableBody.innerHTML = '';
     modalLoading.style.display = 'block';
     modal.style.display = 'flex';
@@ -466,67 +472,127 @@ async function downloadPack(event, packId, files) {
         
         modalLoading.style.display = 'none';
         
-        const defaultPath = "{{ config.default_path|default('')|e('js') }}";
+        currentBatchCandidates = candidates;
+        pendingBatchQueue = [];
 
         candidates.forEach((c, idx) => {
             const check = data.results[idx];
-            const row = document.createElement('tr');
-            if (check.exists) row.className = 'conflict-error';
-
-            let statusHtml = '<span style="color: var(--success)">✓ Ready</span>';
-            if (check.exists) {
-                const sameSize = check.currentSize === c.original.size;
-                statusHtml = `
-                    <div class="conflict-warning" title="${check.fullPath}">
-                        ⚠️ Existing (${formatSize(check.currentSize)})
-                        ${sameSize ? '<span class="badge badge-success">Same size</span>' : '<span class="badge badge-warning">Diff size</span>'}
-                    </div>
-                `;
-            }
-
-            let folderHtml = check.folderExists 
-                ? '<span style="color: var(--success)">✓ Exists</span>' 
-                : `<button class="btn btn-secondary btn-icon" style="width: auto; padding: 0 0.5rem; height: 24px; font-size: 0.7rem; background: var(--danger)" onclick="createMissingFolder('${(c.path || defaultPath).replace(/\\/g, '\\\\')}', this, '${packId}')">📁 Create</button>`;
-
-            const resolvedPath = c.path || defaultPath || '(No path set)';
-
-            row.innerHTML = `
-                <td><input type="checkbox" class="batch-file-checkbox" checked data-index="${idx}"></td>
-                <td>
-                    <div style="font-weight: 500;">${c.filename}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-secondary);">${c.filename !== c.original.filename ? 'Orig: ' + c.original.filename : ''}</div>
-                </td>
-                <td style="word-break: break-all; min-width: 250px;" title="${resolvedPath}">
-                    ${resolvedPath}
-                </td>
-                <td>${folderHtml}</td>
-                <td><span class="size-tag">${formatSize(c.original.size)}</span></td>
-                <td>${statusHtml}</td>
-            `;
-            tableBody.appendChild(row);
-
-            pendingBatchQueue.push({
-                link: c.original.link,
-                filename: c.original.filename,
-                override_filename: c.filename !== c.original.filename ? c.filename : null,
-                path: c.path,
-                overwrite: check.exists
-            });
+            renderBatchRow(c, check, idx);
         });
 
-        // Show/hide "Create All Missing Folders" button based on missing folders count
-        const missingFolderButtons = document.querySelectorAll('#batch-table tbody button');
-        const createAllBtn = document.getElementById('btn-create-all-folders');
-        if (missingFolderButtons.length > 0) {
-            createAllBtn.style.display = 'inline-block';
-        } else {
-            createAllBtn.style.display = 'none';
-        }
+        updateCreateFoldersButtonVisibility();
 
     } catch (e) {
         console.error("Conflict check failed", e);
         closeBatchModal();
         window.notify('error', "Conflict check failed. Server might be down.");
+    }
+}
+
+function renderBatchRow(c, check, idx) {
+    const tableBody = document.querySelector('#batch-table tbody');
+    let row = tableBody.querySelector(`tr[data-index="${idx}"]`);
+    if (!row) {
+        row = document.createElement('tr');
+        row.setAttribute('data-index', idx);
+        tableBody.appendChild(row);
+    }
+    
+    row.className = check.exists ? 'conflict-error' : '';
+
+    let statusHtml = '<span style="color: var(--success)">✓ Ready</span>';
+    if (check.exists) {
+        const sameSize = check.currentSize === c.original.size;
+        statusHtml = `
+            <div class="conflict-warning" title="${check.fullPath}">
+                ⚠️ Existing (${formatSize(check.currentSize)})
+                ${sameSize ? '<span class="badge badge-success">Same size</span>' : '<span class="badge badge-warning">Diff size</span>'}
+            </div>
+        `;
+    }
+
+    const defaultPath = "{{ config.default_path|default('')|e('js') }}";
+    let folderHtml = check.folderExists 
+        ? '<span style="color: var(--success)">✓ Exists</span>' 
+        : `<button class="btn btn-secondary btn-icon" style="width: auto; padding: 0 0.5rem; height: 24px; font-size: 0.7rem; background: var(--danger)" onclick="createMissingFolder('${(c.path || defaultPath).replace(/\\/g, '\\\\')}', this, '${currentPackId}')">📁 Create</button>`;
+
+    const resolvedPath = c.path || defaultPath || '(No path set)';
+
+    row.innerHTML = `
+        <td><input type="checkbox" class="batch-file-checkbox" checked data-index="${idx}"></td>
+        <td>
+            <div style="font-weight: 500;">${c.filename}</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary);">${c.filename !== c.original.filename ? 'Orig: ' + c.original.filename : ''}</div>
+        </td>
+        <td style="text-align: center;">
+            <input type="checkbox" class="keep-folders-checkbox" checked onchange="updateBatchRow(this, ${idx})" data-index="${idx}">
+        </td>
+        <td style="word-break: break-all; min-width: 250px;" title="${resolvedPath}">
+            ${resolvedPath}
+        </td>
+        <td>${folderHtml}</td>
+        <td><span class="size-tag">${formatSize(c.original.size)}</span></td>
+        <td>${statusHtml}</td>
+    `;
+
+    // Update the pending queue at the same index
+    pendingBatchQueue[idx] = {
+        link: c.original.link,
+        filename: c.original.filename,
+        override_filename: c.filename !== c.original.filename ? c.filename : null,
+        path: c.path,
+        overwrite: check.exists
+    };
+}
+
+async function updateBatchRow(checkbox, index) {
+    const candidate = currentBatchCandidates[index];
+    const keepFolders = checkbox.checked;
+    
+    // Recalculate path
+    const targetPath = keepFolders 
+        ? joinPath(candidate.basePath, candidate.original.subpath) 
+        : candidate.basePath;
+    
+    candidate.path = targetPath;
+    
+    // Show local loading spinner for this row's status/folder columns
+    const row = document.querySelector(`#batch-table tbody tr[data-index="${index}"]`);
+    const pathCell = row.cells[3];
+    const folderCell = row.cells[4];
+    const statusCell = row.cells[6];
+    
+    pathCell.innerHTML = '⏳ ...';
+    folderCell.innerHTML = '⏳ ...';
+    statusCell.innerHTML = '⏳ ...';
+
+    try {
+        const res = await fetch("{{ path('check_files') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: [{ path: targetPath, filename: candidate.filename }] })
+        });
+        const data = await res.json();
+        const check = data.results[0];
+        
+        renderBatchRow(candidate, check, index);
+        // Restore the checkbox state (it gets overwritten by innerHTML)
+        row.querySelector('.keep-folders-checkbox').checked = keepFolders;
+        
+        updateCreateFoldersButtonVisibility();
+    } catch (e) {
+        console.error("Row update failed", e);
+        window.notify('error', "Failed to check file status.");
+    }
+}
+
+function updateCreateFoldersButtonVisibility() {
+    const missingFolderButtons = document.querySelectorAll('#batch-table tbody button');
+    const createAllBtn = document.getElementById('btn-create-all-folders');
+    if (missingFolderButtons.length > 0) {
+        createAllBtn.style.display = 'inline-block';
+    } else {
+        createAllBtn.style.display = 'none';
     }
 }
 
@@ -754,11 +820,11 @@ function showLinkPreview(info, isMagnet) {
         div.innerHTML = `
             <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid #ff9800; padding: 12px; border-radius: 6px;">
                 <div style="font-weight: bold; color: #ff9800; display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                    ⏳ En cours de traitement
+                    ⏳ Processing...
                 </div>
                 <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                    Ce torrent est actuellement en cours de téléchargement par Alldebrid. 
-                    Les fichiers seront visibles ici une fois que Alldebrid aura fini de l'analyser.
+                    This torrent is currently being downloaded by Alldebrid. 
+                    Files will be visible here once Alldebrid has finished analyzing it.
                 </div>
             </div>
         `;
@@ -908,10 +974,18 @@ async function searchTorrentDb() {
 
 function selectTorrentResult(hash, title) {
     const magnetLink = `magnet:?xt=urn:btih:${hash}`;
-    document.getElementById('magnet-input').value = magnetLink;
+    const input = document.getElementById('magnet-input');
+    const currentVal = input.value.trim();
+    
+    if (currentVal) {
+        input.value = currentVal + '\n' + magnetLink;
+    } else {
+        input.value = magnetLink;
+    }
+    
     document.getElementById('btn-link-preview').style.display = '';
     document.getElementById('torrent-db-results').style.display = 'none';
-    window.notify('success', `Selected: ${title.substring(0, 50)}...`);
+    window.notify('success', `Added to list: ${title.substring(0, 50)}...`);
 }
 
 function closeUploadModal() {
@@ -1059,6 +1133,11 @@ async function submitLinks() {
             }
         }
 
+        // Add final instruction message
+        if (lastUploadSuccess) {
+            appendMessage('✅ Debrid completed. Please close this window to configure the download of the newly added media.', 'var(--success)', 'debrid-results-list');
+        }
+
     } catch (e) {
         console.error("General Error:", e);
         window.notify('error', 'An unexpected error occurred.');
@@ -1072,9 +1151,9 @@ async function submitLinks() {
 // Handle .torrent file upload (unchanged logic mostly, but use new display)
 async function submitTorrentFile() {
     const btn = document.getElementById('btn-upload');
-    const resultArea = document.getElementById('upload-results-area');
-    const resultList = document.getElementById('upload-results-list');
-    const loadingDiv = document.getElementById('upload-results-loading');
+    const resultArea = document.getElementById('debrid-results-area');
+    const resultList = document.getElementById('debrid-results-list');
+    const loadingDiv = document.getElementById('debrid-results-loading');
 
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -1100,6 +1179,10 @@ async function submitTorrentFile() {
             } else {
                 appendMessage('ℹ️ Torrent added to Alldebrid (downloading...)', 'var(--text-secondary)');
             }
+            // Reset selected file so next "Debrid" click doesn't trigger torrent upload again
+            selectedFile = null;
+            // Add final instruction message
+            appendMessage('✅ Debrid completed. Please close this window to configure the download of the newly added media.', 'var(--success)', 'debrid-results-list');
         } else {
             appendMessage(`❌ Upload failed: ${data.message}`, 'var(--danger)');
         }
@@ -1197,6 +1280,24 @@ function appendResults(links) {
         `;
         list.appendChild(div);
     });
+}
+
+async function purgeHistory() {
+    if (!confirm('Are you sure you want to purge your AllDebrid history? This will clear all recent links from the dashboard.')) return;
+    
+    try {
+        const res = await fetch("{{ path('purge_history') }}", { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.success) {
+            window.notify('success', 'History purged successfully!');
+            location.reload();
+        } else {
+            window.notify('error', `Failed to purge history: ${data.message}`);
+        }
+    } catch (e) {
+        window.notify('error', "Network error while purging history.");
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

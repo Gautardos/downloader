@@ -40,28 +40,46 @@ class QueueManager
             return;
         }
 
+        $lockFile = $this->storage->getStorageDir() . '/worker.lock';
+        $fp = @fopen($lockFile, 'c+');
+        if (!$fp) {
+            return;
+        }
+
+        // Try to acquire an exclusive lock without blocking.
+        // If it fails, another worker is already running.
+        if (!flock($fp, LOCK_EX | LOCK_NB)) {
+            fclose($fp);
+            return; // Already running
+        }
+
+        // We got the lock! But we don't want to keep it in the web process.
+        // We close it and let the CLI worker take its own lock.
+        // However, there is a tiny race condition here. To minimize it,
+        // we check the heartbeat as a secondary fallback.
         $lastHeartbeat = $this->storage->get('worker_heartbeat', 0);
+        if ((time() - $lastHeartbeat) <= 10) {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+            return;
+        }
 
-        if ((time() - $lastHeartbeat) > 25) {
-            $consolePath = $this->projectDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'console';
-            $phpPath = PHP_BINARY;
+        flock($fp, LOCK_UN);
+        fclose($fp);
 
-            // In web context, PHP_BINARY might be 'php-fpm' or 'php-cgi'. 
-            // We need the CLI version 'php'.
-            if (!str_contains($phpPath, 'bin/php') && !str_ends_with($phpPath, 'php.exe')) {
-                $phpPath = 'php';
-            }
+        $consolePath = $this->projectDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'console';
+        $phpPath = PHP_BINARY;
 
-            if (str_starts_with(PHP_OS, 'WIN') && !str_contains(getenv('SHELL') ?: '', 'bash')) {
-                // Windows Native: start /B "" "$php" "$console" command
-                $cmd = "start /B \"\" \"$phpPath\" \"$consolePath\" app:download-worker";
-                @pclose(@popen($cmd, "r"));
-            } else {
-                // Linux / WSL / Bash: Detach process properly
-                // nohup allows it to survive the web request termination
-                $cmd = "nohup \"$phpPath\" \"$consolePath\" app:download-worker > /dev/null 2>&1 &";
-                @exec($cmd);
-            }
+        if (!str_contains($phpPath, 'bin/php') && !str_ends_with($phpPath, 'php.exe')) {
+            $phpPath = 'php';
+        }
+
+        if (str_starts_with(PHP_OS, 'WIN') && !str_contains(getenv('SHELL') ?: '', 'bash')) {
+            $cmd = "start /B \"\" \"$phpPath\" \"$consolePath\" app:download-worker";
+            @pclose(@popen($cmd, "r"));
+        } else {
+            $cmd = "nohup \"$phpPath\" \"$consolePath\" app:download-worker > /dev/null 2>&1 &";
+            @exec($cmd);
         }
     }
 
@@ -92,14 +110,24 @@ class QueueManager
 
     public function getActiveTask(): ?array
     {
-        // Resiliency: if worker is dead, the task is a ghost
-        $lastHeartbeat = $this->storage->get('worker_heartbeat', 0);
-        if ((time() - $lastHeartbeat) > 60) {
+        $active = $this->storage->get(self::ACTIVE_TASK_KEY, null);
+        if (!$active) {
             return null;
         }
 
-        // Pass null as default so we can distinguish between empty file and actual data
-        return $this->storage->get(self::ACTIVE_TASK_KEY, null);
+        // Resiliency: if worker is dead, the task is a ghost
+        $lastHeartbeat = $this->storage->get('worker_heartbeat', 0);
+        $type = $active['type'] ?? 'video';
+
+        // Music tasks can be VERY long and silent. We give them 1 hour.
+        // Standard tasks get 2 minutes.
+        $threshold = ($type === 'music') ? 3600 : 120;
+
+        if ((time() - $lastHeartbeat) > $threshold) {
+            return null;
+        }
+
+        return $active;
     }
 
     public function purgeQueue(): void
