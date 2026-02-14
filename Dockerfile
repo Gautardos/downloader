@@ -1,7 +1,9 @@
 FROM php:8.3-apache
 
-# Installer toutes les dépendances système (ajout libonig-dev pour mbstring)
-RUN apt-get update && apt-get install -y \
+# ────────────────────────────────────────────────
+# 1. Paquets système + nettoyage
+# ────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     zip \
     unzip \
@@ -17,18 +19,22 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     ffmpeg \
     redis-server \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Fix permissions: map www-data to host user UID/GID 1000
+# ────────────────────────────────────────────────
+# 2. Permissions www-data → UID/GID 1000 (souvent utilisé localement)
+# ────────────────────────────────────────────────
 RUN usermod -u 1000 www-data && groupmod -g 1000 www-data
 
-# Configurer et installer les extensions PHP
+# ────────────────────────────────────────────────
+# 3. Extensions PHP
+# ────────────────────────────────────────────────
 RUN pecl install redis \
     && docker-php-ext-enable redis
 
 RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
-    && docker-php-ext-install \
-    pdo \
+    && docker-php-ext-install -j$(nproc) \
     pdo_mysql \
     zip \
     gd \
@@ -36,41 +42,62 @@ RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
     curl \
     mbstring
 
-# Installer Composer
-RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && \
-    php composer-setup.php --install-dir=/usr/local/bin --filename=composer && \
-    rm composer-setup.php
+# ────────────────────────────────────────────────
+# 4. Composer
+# ────────────────────────────────────────────────
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
+# ────────────────────────────────────────────────
+# 5. Répertoire de travail
+# ────────────────────────────────────────────────
 WORKDIR /var/www/html
 
-COPY . .
+# ────────────────────────────────────────────────
+# 6. Copie sélective → on n'inclut PAS var/
+# ────────────────────────────────────────────────
+COPY .env composer.json composer.lock ./
+COPY src/            src/
+COPY public/         public/
+COPY config/         config/
+COPY templates/      templates/
+COPY cli/            cli/
+COPY bin/            bin/
 
-RUN composer install --no-dev --optimize-autoloader
+# Installation des dépendances PHP (sans dev)
+RUN composer install --no-dev --optimize-autoloader --classmap-authoritative --no-interaction
 
-# Python venv
+# ────────────────────────────────────────────────
+# 7. Environnement Python
+# ────────────────────────────────────────────────
 RUN python3 -m venv /opt/venv
-RUN /opt/venv/bin/pip install --upgrade pip && \
-    /opt/venv/bin/pip install -r cli/requirements.txt
+RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r cli/requirements.txt
 
-RUN cd var && \
-    git clone https://github.com/Gautardos/librespot-auth.git && \
-    cd librespot-auth && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    export PATH="$HOME/.cargo/bin:$PATH" && \
-    cargo build --release
+# ────────────────────────────────────────────────
+# 8. Compilation de librespot-auth (Rust)
+# ────────────────────────────────────────────────
+RUN mkdir -p /var/www/html/var/librespot-auth \
+    && cd /var/www/html/var/librespot-auth \
+    && git clone https://github.com/Gautardos/librespot-auth.git . \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && . "$HOME/.cargo/env" \
+    && cargo build --release \
+    && rm -rf /root/.cargo /root/.rustup   # on nettoie le plus possible
 
-# Config Apache + Symfony public/
+# ────────────────────────────────────────────────
+# 9. Configuration Apache + Symfony
+# ────────────────────────────────────────────────
 RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf \
     && a2enmod rewrite
 
-# Change le port Apache
-RUN sed -i 's/Listen 80/Listen 8000/' /etc/apache2/ports.conf && \
-    sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/' /etc/apache2/sites-available/000-default.conf && \
-    sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/' /etc/apache2/sites-available/default-ssl.conf 2>/dev/null || true
+# Port 8000 au lieu de 80
+RUN sed -i 's/Listen 80/Listen 8000/' /etc/apache2/ports.conf \
+    && sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/g' /etc/apache2/sites-available/000-default.conf \
+    && sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/g' /etc/apache2/sites-available/default-ssl.conf 2>/dev/null || true
 
-# Optionnel : expose pour la doc
-EXPOSE 8000
-
+# ────────────────────────────────────────────────
+# 10. Optimisations KeepAlive / sessions Redis
+# ────────────────────────────────────────────────
 RUN { \
     echo 'KeepAlive On'; \
     echo 'KeepAliveTimeout 300'; \
@@ -79,35 +106,35 @@ RUN { \
     } >> /etc/apache2/apache2.conf
 
 RUN { \
-    echo "session.save_handler = redis"; \
-    echo "session.save_path = \"tcp://127.0.0.1:6379?persistent=1\""; \
-    echo "redis.session.locking_enabled = 1"; \
-    echo "redis.session.lock_retries = -1"; \
-    echo "redis.session.lock_wait_time = 10000"; \
+    echo 'session.save_handler = redis'; \
+    echo 'session.save_path = "tcp://127.0.0.1:6379?persistent=1"'; \
+    echo 'redis.session.locking_enabled = 1'; \
+    echo 'redis.session.lock_retries = -1'; \
+    echo 'redis.session.lock_wait_time = 10000'; \
     } > /usr/local/etc/php/conf.d/zz-redis-sessions.ini
 
-# Ajout des directives KeepAlive dans le bloc MPM_prefork (prioritaire)
+# MPM prefork tuning
 RUN echo '' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
     && echo '    KeepAlive On' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
     && echo '    KeepAliveTimeout 300' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
     && echo '    MaxKeepAliveRequests 200' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
     && echo '    Timeout 300' >> /etc/apache2/mods-enabled/mpm_prefork.conf
 
-# Permissions var/
-RUN chown -R www-data:www-data var \
+# ────────────────────────────────────────────────
+# 11. Dossiers de runtime (créés vides dans l’image)
+# ────────────────────────────────────────────────
+RUN mkdir -p var/storage var/sessions var/cache var/log \
+    && chown -R www-data:www-data var \
     && chmod -R 775 var
 
-# Config session PHP
-RUN mkdir -p /var/www/html/var/sessions \
-    && chown -R www-data:www-data /var/www/html/var/sessions \
-    && chmod -R 770 /var/www/html/var/sessions \
-    && echo "session.save_path = /var/www/html/var/sessions" >> /usr/local/etc/php/conf.d/session.ini \
-    && echo "session.gc_probability = 0" >> /usr/local/etc/php/conf.d/session.ini \
-    && echo "session.gc_maxlifetime = 1440" >> /usr/local/etc/php/conf.d/session.ini \
-    && echo "session.cookie_lifetime = 0" >> /usr/local/etc/php/conf.d/session.ini
-
+# ────────────────────────────────────────────────
+# 12. Fichiers de configuration finale
+# ────────────────────────────────────────────────
 COPY supervisord.conf /etc/supervisord.conf
 
-EXPOSE 80
+# ────────────────────────────────────────────────
+# Ports & démarrage
+# ────────────────────────────────────────────────
+EXPOSE 8000
 
-CMD ["/usr/bin/supervisord"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
