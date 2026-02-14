@@ -866,6 +866,57 @@ class DashboardController extends AbstractController
         }
     }
 
+    #[Route('/dashboard/upload-direct-link', name: 'upload_direct_link', methods: ['POST'])]
+    public function uploadDirectLink(Request $request, AlldebridService $debrid): Response
+    {
+        try {
+            $data = json_decode($request->getContent(), true);
+            $links = $data['links'] ?? [];
+
+            if (empty($links)) {
+                return $this->json(['success' => false, 'message' => 'No links provided']);
+            }
+
+            $linksRecap = [];
+            $errors = [];
+
+            foreach ($links as $rawLink) {
+                $rawLink = trim($rawLink);
+                if (empty($rawLink))
+                    continue;
+
+                $unlocked = $debrid->unlockLinkFull($rawLink);
+                if ($unlocked) {
+                    $streamingLink = $debrid->getStreamingLink($unlocked['link']);
+                    $linksRecap[] = [
+                        'filename' => $unlocked['filename'],
+                        'filesize' => $unlocked['filesize'],
+                        'host' => $unlocked['host'],
+                        'unlocked' => $unlocked['link'],
+                        'streaming' => $streamingLink ?: $unlocked['link'],
+                    ];
+                } else {
+                    $errors[] = $rawLink;
+                }
+            }
+
+            $message = count($linksRecap) . ' link(s) unlocked successfully.';
+            if (!empty($errors)) {
+                $message .= ' ' . count($errors) . ' link(s) failed: ' . implode(', ', array_map(fn($e) => substr($e, 0, 60) . '...', $errors));
+            }
+
+            return $this->json([
+                'success' => !empty($linksRecap),
+                'message' => $message,
+                'links' => $linksRecap,
+                'errors' => $errors,
+            ]);
+
+        } catch (\Exception $e) {
+            return $this->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
     #[Route('/dashboard/magnet-info', name: 'magnet_info', methods: ['POST'])]
     public function magnetInfo(Request $request, AlldebridService $debrid): Response
     {
@@ -907,10 +958,12 @@ class DashboardController extends AbstractController
             if (!$magnetData) {
                 return $this->json([
                     'success' => true,
-                    'status' => 'pending',
-                    'message' => 'Torrent is being processed by Alldebrid. Files not yet available.',
-                    'files' => [],
-                    'total_size' => 0
+                    'data' => [
+                        'status' => 'pending',
+                        'message' => 'Torrent is being processed by Alldebrid. Files not yet available.',
+                        'files' => [],
+                        'total_size' => 0
+                    ]
                 ]);
             }
 
@@ -943,12 +996,14 @@ class DashboardController extends AbstractController
 
             return $this->json([
                 'success' => true,
-                'status' => $magnetData['status'] ?? 'Ready',
-                'statusCode' => $magnetData['statusCode'] ?? 4,
-                'filename' => $magnetData['filename'] ?? 'Unknown',
-                'files' => $files,
-                'total_size' => $totalSize,
-                'file_count' => count($files)
+                'data' => [
+                    'status' => $magnetData['status'] ?? 'Ready',
+                    'statusCode' => $magnetData['statusCode'] ?? 4,
+                    'filename' => $magnetData['filename'] ?? 'Unknown',
+                    'files' => $files,
+                    'total_size' => $totalSize,
+                    'file_count' => count($files)
+                ]
             ]);
 
         } catch (\Exception $e) {

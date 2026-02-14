@@ -340,6 +340,42 @@ class AlldebridService
         }
     }
 
+    /**
+     * Unlock a link and return full metadata (link, filename, filesize).
+     */
+    public function unlockLinkFull(string $link): ?array
+    {
+        $apiKey = $this->getApiKey();
+        if (!$apiKey) {
+            return null;
+        }
+
+        try {
+            $response = $this->client->get('link/unlock', [
+                'query' => [
+                    'agent' => 'downloader-app',
+                    'apikey' => $apiKey,
+                    'link' => $link
+                ]
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if (($data['status'] ?? '') === 'success' && isset($data['data']['link'])) {
+                return [
+                    'link' => $data['data']['link'],
+                    'filename' => $data['data']['filename'] ?? basename(parse_url($link, PHP_URL_PATH) ?: 'unknown'),
+                    'filesize' => $data['data']['filesize'] ?? 0,
+                    'host' => $data['data']['host'] ?? '',
+                ];
+            }
+
+            return null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
     public function getStreamingLink(string $link): ?string
     {
         $apiKey = $this->getApiKey();

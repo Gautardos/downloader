@@ -20,7 +20,7 @@
 
         <div style="display: flex; justify-content: flex-end; margin-bottom: 2rem;">
             <button class="btn btn-primary" onclick="openUploadModal()" style="display: flex; align-items: center; gap: 0.5rem;">
-                <span>☁️</span> Upload Torrent / Magnet
+                <span>☁️</span>Add New Torrent / Magnet / Link
             </button>
         </div>
 
@@ -152,7 +152,7 @@
     <div id="upload-modal" class="modal-overlay">
         <div class="modal-container" style="max-width: 600px;">
             <div class="modal-header">
-                <h2>☁️ Upload Torrent / Magnet</h2>
+                <h2>☁️ Upload Torrent / Magnet / Link</h2>
                 <button class="btn-close-modal" onclick="closeUploadModal()">×</button>
             </div>
             <div class="modal-body" style="padding: 2rem;">
@@ -173,7 +173,7 @@
 
                 <!-- Torrent Database Search -->
                 <div style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">🔎 Search Torrent Database</label>
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">🔎 Search Download Database</label>
                     <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
                         <select id="torrent-db-category" style="padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; min-width: 150px;">
                             <option value="">Select type...</option>
@@ -190,29 +190,42 @@
                     </div>
                 </div>
 
-                <!-- Magnet Link Input -->
+                <!-- Unified Link Input -->
                 <div style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Magnet Link</label>
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">🔗 Magnet / Link</label>
+                    <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0 0 0.5rem 0;">Paste a magnet link or hosting URLs (1fichier, Uptobox, etc.). One per line.</p>
                     <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
-                        <textarea id="magnet-input" placeholder="magnet:?xt=urn:btih:..." rows="3"
-                                  style="flex: 1; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; resize: vertical;"></textarea>
-                        <button class="btn btn-secondary" id="btn-magnet-preview" onclick="previewMagnet()" style="white-space: nowrap; background: #17a2b8; height: fit-content;">
+                        <textarea id="magnet-input" placeholder="magnet:?xt=urn:btih:...&#10;https://1fichier.com/?abc123" rows="3"
+                                  style="flex: 1; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; resize: vertical;"
+                                  oninput="document.getElementById('btn-link-preview').style.display = this.value.trim().length > 0 ? '' : 'none'"></textarea>
+                        <button class="btn btn-secondary" id="btn-link-preview" onclick="previewLinks()" style="display: none; white-space: nowrap; background: #17a2b8; height: fit-content;">
                             🔍 Preview
                         </button>
                     </div>
-                </div>
-                
-                <!-- Magnet Info Preview Area -->
-                <div id="magnet-preview-area" style="word-break: break-all;display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-                    <div id="magnet-preview-loading" style="display: none; text-align: center; color: var(--text-secondary);">
-                        ⏳ Fetching magnet info from Alldebrid...
+
+                    <!-- Preview Results Area (Above Debrid Button) -->
+                    <div id="preview-results-area" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div id="preview-results-loading" style="display: none; text-align: center; color: var(--text-secondary); margin-bottom: 1rem;">
+                            ⏳ Loading preview... 
+                        </div>
+                        <div id="preview-results-list"></div>
                     </div>
-                    <div id="magnet-preview-result"></div>
+
+                    <button class="btn btn-primary" id="btn-upload" onclick="submitLinks()" style="margin-top: 0.5rem; width: 100%;">
+                        🔓 Debrid
+                    </button>
+
+                    <!-- Debrid Results Area (Below Debrid Button) -->
+                    <div id="debrid-results-area" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div id="debrid-results-loading" style="display: none; text-align: center; color: var(--text-secondary); margin-bottom: 1rem;">
+                            ⏳ Processing links...
+                        </div>
+                        <div id="debrid-results-list"></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
-                <button class="btn btn-primary" id="btn-upload" onclick="submitUpload()">Debrid</button>
             </div>
         </div>
     </div>
@@ -641,97 +654,174 @@ function startDownload(event, packId, file) {
 
 let lastUploadSuccess = false;
 
-async function previewMagnet() {
-    const magnetInput = document.getElementById('magnet-input');
-    const magnet = magnetInput.value.trim();
+async function previewLinks() {
+    const rawText = document.getElementById('magnet-input').value.trim();
+    if (!rawText) return;
+
+    const { magnets, directLinks } = parseInputLines(rawText);
+
+    // UI Setup
+    const resultArea = document.getElementById('preview-results-area');
+    const resultList = document.getElementById('preview-results-list');
+    const loadingDiv = document.getElementById('preview-results-loading');
     
-    if (!magnet) {
-        window.notify('warning', 'Please enter a magnet link first.');
-        return;
-    }
-    
-    const previewArea = document.getElementById('magnet-preview-area');
-    const loadingDiv = document.getElementById('magnet-preview-loading');
-    const resultDiv = document.getElementById('magnet-preview-result');
-    const btn = document.getElementById('btn-magnet-preview');
-    
-    previewArea.style.display = 'block';
+    // Clear previous previews
+    resultList.innerHTML = '';
+    resultArea.style.display = 'block';
+    resultList.innerHTML = '<h4 style="margin: 0 0 10px 0; color: var(--accent);">🔍 Preview Results</h4>';
     loadingDiv.style.display = 'block';
-    resultDiv.innerHTML = '';
+
+    const btn = document.getElementById('btn-link-preview');
     btn.disabled = true;
-    btn.innerText = '⏳...';
-    
+    btn.innerText = '⏳ ...';
+
     try {
-        const res = await fetch("{{ path('magnet_info') }}", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ magnet: magnet })
-        });
-        const data = await res.json();
-        
+        // Preview Magnets
+        if (magnets.length > 0) {
+            for (const magnet of magnets) {
+                try {
+                    const res = await fetch("{{ path('magnet_info') }}", {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ magnet: magnet })
+                    });
+                    
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        appendMessage(`❌ Magnet info failed (HTTP ${res.status}): ${errorText.substring(0, 100)}`, 'var(--danger)', 'preview-results-list');
+                        continue;
+                    }
+                    
+                    const data = await res.json();
+                    if (data.success) {
+                        showLinkPreview(data.data, true);
+                    } else {
+                        appendMessage(`❌ Magnet info failed: ${data.message}`, 'var(--danger)', 'preview-results-list');
+                    }
+                } catch (e) {
+                     console.error("Magnet info error:", e);
+                     appendMessage(`❌ Magnet error: ${e.message}`, 'var(--danger)', 'preview-results-list');
+                }
+            }
+        }
+
+        // Preview Direct Links (using unlock to get metadata)
+        if (directLinks.length > 0) {
+           try {
+                const res = await fetch("{{ path('upload_direct_link') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ links: directLinks })
+                });
+                const data = await res.json();
+                
+                if (data.success && data.links) {
+                    data.links.forEach(link => {
+                        showLinkPreview({
+                            filename: link.filename,
+                            size: link.filesize,
+                            host: link.host,
+                            link: link.unlocked
+                        }, false);
+                    });
+                }
+                
+                if (data.errors) {
+                    data.errors.forEach(err => appendMessage(`❌ Link failed: ${err}`, 'var(--danger)', 'preview-results-list'));
+                }
+           } catch (e) {
+                appendMessage('❌ Direct link network error', 'var(--danger)', 'preview-results-list');
+           }
+        }
+
+    } catch (e) {
+        console.error(e);
+        window.notify('error', 'Preview failed');
+    } finally {
         loadingDiv.style.display = 'none';
         btn.disabled = false;
         btn.innerText = '🔍 Preview';
-        
-        if (!data.success) {
-            resultDiv.innerHTML = `<div style="color: var(--danger);">❌ ${data.message}</div>`;
-            return;
-        }
-        
-        // Build status badge
-        let statusBadge = '<span class="badge badge-warning">Processing</span>';
-        if (data.statusCode === 4 || data.status === 'Ready') {
-            statusBadge = '<span class="badge badge-success">Ready</span>';
-        } else if (data.status === 'pending') {
-            statusBadge = '<span class="badge badge-warning">Pending</span>';
-        }
-        
-        // Build file list HTML
-        let filesHtml = '';
-        if (data.files && data.files.length > 0) {
-            filesHtml = '<div style="max-height: 200px; overflow-y: auto; margin-top: 1rem; font-size: 0.85rem;">';
-            data.files.forEach(f => {
-                const pathStr = f.path ? `<span style="color: var(--text-secondary); font-size: 0.75rem;">📁 ${f.path}/</span><br>` : '';
-                filesHtml += `
-                    <div style="padding: 0.3rem 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                        ${pathStr}
-                        <span>${f.filename}</span>
-                        <span class="size-tag" style="float: right;">${formatSize(f.size)}</span>
-                    </div>
-                `;
-            });
-            filesHtml += '</div>';
-        } else {
-            filesHtml = '<div style="color: var(--text-secondary); margin-top: 1rem;">No files available yet. Torrent may still be processing.</div>';
-        }
-        
-        resultDiv.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                <div>
-                    <strong style="font-size: 1.1rem;">${data.filename || 'Unknown'}</strong>
-                    ${statusBadge}
+    }
+}
+
+function showLinkPreview(info, isMagnet) {
+    const list = document.getElementById('preview-results-list');
+    const div = document.createElement('div');
+    div.style.cssText = 'margin-bottom: 15px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);';
+    
+    // Handle Pending Status (Magnet being processed by Alldebrid)
+    if (isMagnet && info.status === 'pending') {
+        div.innerHTML = `
+            <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid #ff9800; padding: 12px; border-radius: 6px;">
+                <div style="font-weight: bold; color: #ff9800; display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                    ⏳ En cours de traitement
                 </div>
-                <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                    ${data.file_count || 0} file(s) • ${formatSize(data.total_size || 0)}
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                    Ce torrent est actuellement en cours de téléchargement par Alldebrid. 
+                    Les fichiers seront visibles ici une fois que Alldebrid aura fini de l'analyser.
                 </div>
             </div>
-            ${filesHtml}
         `;
-        
-    } catch (e) {
-        loadingDiv.style.display = 'none';
-        btn.disabled = false;
-        btn.innerText = '🔍 Preview';
-        resultDiv.innerHTML = '<div style="color: var(--danger);">❌ Network error. Could not fetch magnet info.</div>';
+        list.appendChild(div);
+        return;
     }
+
+    // Support both total_size (magnets) and size (direct links)
+    const displaySize = info.total_size || info.size || 0;
+    
+    // Status Badge
+    let statusBadge = '';
+    if (info.status) {
+        const color = info.statusCode === 4 ? 'var(--success)' : 'var(--warning)';
+        statusBadge = `<span style="background: ${color}; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px;">${info.status}</span>`;
+    }
+
+    let content = `
+        <div style="font-weight: bold; color: var(--accent); margin-bottom: 5px; word-break: break-all; display: flex; align-items: center; flex-wrap: wrap;">
+            <span style="margin-right: 5px;">${isMagnet ? '🧲' : '🔗'}</span>
+            <span>${info.filename || 'Unknown Filename'}</span>
+            ${statusBadge}
+        </div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">
+            ${displaySize ? formatSize(typeof displaySize === 'number' ? displaySize : 0) : ''}
+            ${info.host ? ` • ${info.host}` : ''}
+        </div>
+    `;
+
+    if (isMagnet && info.files) {
+        content += `<div style="max-height: 150px; overflow-y: auto; font-size: 0.75rem; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px;">`;
+        info.files.forEach(f => {
+            // Support both backend normalized properties and raw Alldebrid properties
+            const valName = f.filename || f.n;
+            const valSize = f.size || f.s;
+            const valPath = f.path || ''; // Parent path from backend
+            
+            // Construct full display path: "Folder/Subfolder/Filename"
+            // If valPath is empty, it's root, so just filename
+            const fullDisplayName = valPath ? `${valPath}/${valName}` : valName;
+            
+            content += `<div style="padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between;">
+                <span style="word-break: break-all; margin-right: 10px;">${fullDisplayName}</span>
+                <span style="white-space: nowrap; color: var(--text-secondary);">${formatSize(valSize)}</span>
+            </div>`;
+        });
+        content += `</div>`;
+    }
+
+    div.innerHTML = content;
+    list.appendChild(div);
 }
 
 function openUploadModal() {
     lastUploadSuccess = false;
     document.getElementById('upload-modal').style.display = 'flex';
-    // Reset preview area
-    document.getElementById('magnet-preview-area').style.display = 'none';
-    document.getElementById('magnet-preview-result').innerHTML = '';
+    // Reset link input
+    document.getElementById('magnet-input').value = '';
+    // Reset results
+    document.getElementById('preview-results-area').style.display = 'none';
+    document.getElementById('preview-results-list').innerHTML = '';
+    document.getElementById('debrid-results-area').style.display = 'none';
+    document.getElementById('debrid-results-list').innerHTML = '';
     // Reset search
     document.getElementById('torrent-db-query').value = '';
     document.getElementById('torrent-db-results').style.display = 'none';
@@ -819,6 +909,7 @@ async function searchTorrentDb() {
 function selectTorrentResult(hash, title) {
     const magnetLink = `magnet:?xt=urn:btih:${hash}`;
     document.getElementById('magnet-input').value = magnetLink;
+    document.getElementById('btn-link-preview').style.display = '';
     document.getElementById('torrent-db-results').style.display = 'none';
     window.notify('success', `Selected: ${title.substring(0, 50)}...`);
 }
@@ -874,81 +965,238 @@ function handleFiles(files) {
     }
 }
 
-async function submitUpload() {
-    const magnet = document.getElementById('magnet-input').value;
+async function submitLinks() {
+    const rawText = document.getElementById('magnet-input').value.trim();
     const btn = document.getElementById('btn-upload');
-    const formData = new FormData();
 
-    if (magnet) {
-        formData.append('magnet', magnet);
-    } else if (selectedFile) {
-        formData.append('file', selectedFile);
-    } else {
-        alert('Please provide a magnet link or select a file.');
+    // If a .torrent file was selected, use the torrent upload flow
+    if (selectedFile) {
+        return submitTorrentFile();
+    }
+
+    if (!rawText) {
+        window.notify('warning', 'Please enter at least one link or select a .torrent file.');
         return;
     }
 
+    // Parse lines using smart helper
+    const { magnets, directLinks } = parseInputLines(rawText);
+
+    // Close preview area on debrid click
+    document.getElementById('preview-results-area').style.display = 'none';
+    document.getElementById('preview-results-list').innerHTML = '';
+
+    // UI Setup
+    const resultArea = document.getElementById('debrid-results-area');
+    const resultList = document.getElementById('debrid-results-list');
+    const loadingDiv = document.getElementById('debrid-results-loading');
+    
+    resultArea.style.display = 'block';
+    resultList.innerHTML = '<h4 style="margin: 0 0 10px 0; color: var(--accent);">🔓 Results</h4>';
+    loadingDiv.style.display = 'block';
     btn.disabled = true;
-    btn.innerText = 'Debriding...';
-    let data;
+    btn.innerText = '⏳ Debriding...';
+
+    try {
+        // Process magnets (one at a time)
+        if (magnets.length > 0) {
+            for (const magnet of magnets) {
+                const formData = new FormData();
+                formData.append('magnet', magnet);
+
+                try {
+                    const res = await fetch("{{ path('upload_torrent') }}", {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        lastUploadSuccess = true;
+                        if (data.links && data.links.length > 0) {
+                            appendResults(data.links);
+                        } else {
+                           appendMessage('ℹ️ Magnet added to Alldebrid (downloading...)', 'var(--text-secondary)');
+                        }
+                    } else {
+                        appendMessage(`❌ Magnet failed: ${data.message}`, 'var(--danger)');
+                    }
+                } catch (e) {
+                    appendMessage('❌ Magnet network error', 'var(--danger)');
+                }
+            }
+        }
+
+        // Process direct hosting links (batch)
+        if (directLinks.length > 0) {
+            try {
+                const res = await fetch("{{ path('upload_direct_link') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ links: directLinks })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    lastUploadSuccess = true;
+                    if (data.links && data.links.length > 0) {
+                        appendResults(data.links);
+                    }
+                }
+                
+                if (data.errors && data.errors.length > 0) {
+                    data.errors.forEach(err => {
+                        appendMessage(`❌ Failed link: ${err}`, 'var(--danger)');
+                    });
+                }
+                
+                if (!data.success && (!data.errors || data.errors.length === 0)) {
+                     appendMessage(`❌ Direct links failed: ${data.message}`, 'var(--danger)');
+                }
+
+            } catch (e) {
+                appendMessage('❌ Direct links network error', 'var(--danger)');
+            }
+        }
+
+    } catch (e) {
+        console.error("General Error:", e);
+        window.notify('error', 'An unexpected error occurred.');
+    } finally {
+        loadingDiv.style.display = 'none';
+        btn.disabled = false;
+        btn.innerText = '🔓 Debrid';
+    }
+}
+
+// Handle .torrent file upload (unchanged logic mostly, but use new display)
+async function submitTorrentFile() {
+    const btn = document.getElementById('btn-upload');
+    const resultArea = document.getElementById('upload-results-area');
+    const resultList = document.getElementById('upload-results-list');
+    const loadingDiv = document.getElementById('upload-results-loading');
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    resultArea.style.display = 'block';
+    resultList.innerHTML = '<h4 style="margin: 0 0 10px 0; color: var(--accent);">🔓 Results</h4>';
+    loadingDiv.style.display = 'block';
+    btn.disabled = true;
+    btn.innerText = '⏳ Debriding...';
 
     try {
         const res = await fetch("{{ path('upload_torrent') }}", {
             method: 'POST',
             body: formData
         });
-        data = await res.json();
-        console.log("Upload Response Data:", data);
+        const data = await res.json();
 
         if (data.success) {
             lastUploadSuccess = true;
             window.notify('success', 'Upload successful!');
-            
             if (data.links && data.links.length > 0) {
-                // Show recap
-                const dropZone = document.getElementById('drop-zone');
-                let linksHtml = `
-                    <div style="text-align: left; margin-top: 1rem; max-height: 300px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
-                        <h4 style="margin-bottom: 10px; color: var(--accent);">Generated Links:</h4>
-                        <ul style="list-style: none; padding: 0;">
-                `;
-                
-                data.links.forEach(link => {
-                    linksHtml += `
-                        <li style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
-                            <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 5px;">${link.filename}</div>
-                            <div style="display: flex; flex-direction: column; gap: 5px;">
-                                <a href="${link.streaming}" target="_blank" style="color: var(--success); font-size: 0.8rem; text-decoration: none; word-break: break-all;">
-                                    Download / Stream
-                                </a>
-                                <div style="color: var(--text-secondary); font-size: 0.7rem; cursor: pointer;" onclick="navigator.clipboard.writeText('${link.streaming}').then(() => window.notify('success', 'Copied to clipboard!'))">
-                                    Copy link
-                                </div>
-                            </div>
-                        </li>
-                    `;
-                });
-                
-                linksHtml += `</ul></div>`;
-                dropZone.innerHTML = linksHtml;
-                btn.style.display = 'none';
+                appendResults(data.links);
             } else {
-                console.warn("No links found in response.");
-                window.notify('info', 'Success, but no individual links were generated.');
+                appendMessage('ℹ️ Torrent added to Alldebrid (downloading...)', 'var(--text-secondary)');
             }
         } else {
-            console.error("Upload failed:", data.message);
-            alert('Upload failed: ' + (data.message || 'Unknown error'));
+            appendMessage(`❌ Upload failed: ${data.message}`, 'var(--danger)');
         }
     } catch (e) {
-        console.error("Fetch Error:", e);
-        alert('Upload failed: Network error');
+        appendMessage('❌ Upload network error', 'var(--danger)');
     } finally {
-        if (!data || !data.links || data.links.length === 0) {
-            btn.disabled = false;
-            btn.innerText = 'Debrid';
+        loadingDiv.style.display = 'none';
+        btn.disabled = false;
+        btn.innerText = '🔓 Debrid';
+    }
+}
+
+function appendMessage(msg, color, targetListId = 'debrid-results-list') {
+    const list = document.getElementById(targetListId);
+    if (!list) return;
+    const div = document.createElement('div');
+    div.style.cssText = `margin-bottom: 8px; font-size: 0.85rem; color: ${color}; word-break: break-all; padding: 4px; border-bottom: 1px solid rgba(255,255,255,0.05);`;
+    div.innerText = msg;
+    list.appendChild(div);
+}
+
+function parseInputLines(rawText) {
+    const lines = rawText.split('\n');
+    const magnets = [];
+    const directLinks = [];
+    let currentBuffer = '';
+
+    lines.forEach(line => {
+        const l = line.trim();
+        if (!l) return;
+
+        // Check if line starts with a known protocol or schema
+        const isNewLink = l.toLowerCase().startsWith('magnet:') ||
+                          l.toLowerCase().startsWith('http://') ||
+                          l.toLowerCase().startsWith('https://') ||
+                          l.toLowerCase().startsWith('www.');
+
+        if (isNewLink) {
+            // Push previous buffer
+            if (currentBuffer) {
+                if (currentBuffer.toLowerCase().startsWith('magnet:')) {
+                    magnets.push(currentBuffer);
+                } else {
+                    directLinks.push(currentBuffer);
+                }
+            }
+            // Start new buffer
+            currentBuffer = l;
+        } else {
+            // Continuation of previous buffer (or orphan text)
+            if (currentBuffer) {
+                currentBuffer += l;
+            } else {
+                // If it doesn't look like a link start but we have no buffer,
+                // it might be a naked domain or just garbage.
+                // Let's assume it's a direct link if it has a dot? Or just treat as direct link.
+                // But for safety, if it looks like part of a magnet (xt=...), maybe we should have checked that?
+                // Given the issue, let's treat orphans as new direct links if they don't look lik params.
+                currentBuffer = l;
+            }
+        }
+    });
+
+    // Push last buffer
+    if (currentBuffer) {
+        if (currentBuffer.toLowerCase().startsWith('magnet:')) {
+            magnets.push(currentBuffer);
+        } else {
+            directLinks.push(currentBuffer);
         }
     }
+
+    return { magnets, directLinks };
+}
+
+function appendResults(links) {
+    const list = document.getElementById('debrid-results-list');
+    links.forEach(link => {
+        const div = document.createElement('div');
+        div.style.cssText = 'margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;';
+        div.innerHTML = `
+            <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 5px;">${link.filename}</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">
+                ${link.host ? '<span class="badge" style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">' + link.host + '</span>' : ''}
+                ${link.filesize ? formatSize(link.filesize) : ''}
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+                <a href="${link.streaming}" target="_blank" style="color: var(--success); font-size: 0.8rem; text-decoration: none; word-break: break-all;">
+                    Download / Stream
+                </a>
+                <div style="color: var(--text-secondary); font-size: 0.7rem; cursor: pointer;" onclick="navigator.clipboard.writeText('${link.streaming}').then(() => window.notify('success', 'Copied to clipboard!'))">
+                    📋 Copy link
+                </div>
+            </div>
+        `;
+        list.appendChild(div);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
