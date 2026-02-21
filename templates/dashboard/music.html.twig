@@ -63,13 +63,115 @@
                       style="width: 100%; height: 200px; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: var(--text-primary); font-family: monospace; font-size: 0.9rem; resize: vertical; box-sizing: border-box;"></textarea>
         </div>
 
-        <button id="btn-add-music" class="btn btn-primary btn-full" onclick="addMusicToQueue()">
-            Add to Queue
-        </button>
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+            <button id="btn-add-music" class="btn btn-primary" style="flex: 1;" onclick="addMusicToQueue()">
+                Add to Queue
+            </button>
+            <label for="csv-upload" class="btn btn-secondary" style="margin-bottom: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary);">
+                <span>📁 Import CSV</span>
+                <input type="file" id="csv-upload" accept=".csv" style="display: none;" onchange="handleCsvUpload(this)">
+            </label>
+        </div>
+    </div>
+
+    <!-- Info Box for Chosic Fallback -->
+    <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; display: flex; gap: 1rem; align-items: flex-start;">
+        <span style="font-size: 1.5rem;">💡</span>
+        <div>
+            <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--accent);">Playlist Error?</h3>
+            <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5; margin: 0;">
+                If you encounter errors with Spotify playlists, you can use 
+                <a href="https://www.chosic.com/spotify-playlist-exporter/" target="_blank" style="color: var(--accent); text-decoration: underline;">Chosic Playlist Exporter</a> 
+                to export your playlist as a CSV file. Then, use the <strong>Import CSV</strong> button above to automatically populate the list.
+            </p>
+        </div>
     </div>
 </div>
 
 <script>
+function handleCsvUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.split(/\r?\n/);
+        if (lines.length < 2) {
+            window.notify('error', 'CSV file seems empty or invalid.');
+            return;
+        }
+
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        let trackIdIndex = headers.findIndex(h => h.toLowerCase() === 'spotify track id');
+        
+        const trackIds = new Set();
+        // Regex for Spotify Track ID (22 alphanumeric chars)
+        const spotifyIdRegex = /^[a-zA-Z0-9]{22}$/;
+
+        // Start from line 1 (skip headers)
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const cols = parseCsvLine(line);
+            
+            // Priority 1: Use specific column if found
+            if (trackIdIndex !== -1 && cols[trackIdIndex]) {
+                const id = cols[trackIdIndex].trim().replace(/^"|"$/g, '');
+                if (spotifyIdRegex.test(id)) {
+                    trackIds.add(id);
+                    continue;
+                }
+            }
+
+            // Priority 2: Robust regex search on all columns
+            for (const col of cols) {
+                const val = col.trim().replace(/^"|"$/g, '');
+                if (spotifyIdRegex.test(val)) {
+                    trackIds.add(val);
+                }
+            }
+        }
+
+        if (trackIds.size === 0) {
+            window.notify('error', 'No Spotify Track IDs found in CSV.');
+            return;
+        }
+
+        const textarea = document.getElementById('music-links');
+        const existingContent = textarea.value.trim();
+        const newUrls = Array.from(trackIds).map(id => `https://open.spotify.com/track/${id}`).join('\n');
+        
+        textarea.value = (existingContent ? existingContent + '\n' : '') + newUrls;
+        window.notify('success', `Successfully imported ${trackIds.size} tracks from CSV!`);
+        input.value = ''; // Reset input
+    };
+    reader.readAsText(file);
+}
+
+/**
+ * Simple CSV line parser that handles quoted values containing commas
+ */
+function parseCsvLine(line) {
+    const result = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            result.push(cur);
+            cur = '';
+        } else {
+            cur += char;
+        }
+    }
+    result.push(cur);
+    return result;
+}
+
 async function addMusicToQueue() {
     const textarea = document.getElementById('music-links');
     const btn = document.getElementById('btn-add-music');
