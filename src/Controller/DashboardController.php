@@ -6,9 +6,9 @@ use App\Service\AlldebridService;
 use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
-use App\Service\MediaTypeHelper;
 use App\Service\QueueManager;
 use App\Service\TorrentDbService;
+use App\Service\MediaTypeHelper;
 use GuzzleHttp\Client;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -1046,6 +1046,59 @@ class DashboardController extends AbstractController
         return $this->json([
             'success' => true,
             'results' => $results
+        ]);
+    }
+
+    #[Route('/torrent-db/preview', name: 'torrent_db_preview', methods: ['POST'])]
+    public function torrentDbPreview(Request $request, AlldebridService $debrid): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        $hash = $data['hash'] ?? null;
+
+        if (!$hash) {
+            return $this->json(['success' => false, 'message' => 'Hash is required']);
+        }
+
+        // 1. Upload the hash (as a minimal magnet link) to get an ID
+        $magnetLink = "magnet:?xt=urn:btih:" . $hash;
+        $result = $debrid->uploadMagnet([$magnetLink]);
+
+        if (!$result['success']) {
+            return $this->json(['success' => false, 'message' => $result['message']]);
+        }
+
+        $magnetId = $result['data']['magnets'][0]['id'] ?? null;
+        if (!$magnetId) {
+            return $this->json(['success' => false, 'message' => 'No magnet ID returned from Alldebrid']);
+        }
+
+        // 2. Fetch full status via v4.1 endpoint (consistent with magnetInfo)
+        $statusResult = $debrid->saveMagnet((int) $magnetId);
+        $magnetData = $statusResult['data']['magnets'] ?? null;
+
+        if (!$magnetData) {
+            return $this->json(['success' => false, 'message' => 'No status returned from Alldebrid']);
+        }
+
+        // If returned as a list, pick the first one
+        if (!isset($magnetData['statusCode']) && is_array($magnetData)) {
+            foreach ($magnetData as $item) {
+                if (is_array($item) && isset($item['statusCode'])) {
+                    $magnetData = $item;
+                    break;
+                }
+            }
+        }
+
+        $statusCode = $magnetData['statusCode'] ?? 0;
+        $isReady = ($statusCode === 4);
+
+        return $this->json([
+            'success' => true,
+            'filename' => $magnetData['filename'] ?? 'Unknown',
+            'size' => $magnetData['size'] ?? 0,
+            'status' => $magnetData['status'] ?? ($isReady ? 'Ready' : 'Not Ready'),
+            'isReady' => $isReady
         ]);
     }
 

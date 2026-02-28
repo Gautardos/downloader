@@ -79,7 +79,7 @@ RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
 RUN mkdir -p /var/www/html/var/librespot-auth \
     && cd /var/www/html/var/librespot-auth \
     && git clone https://github.com/Gautardos/librespot-auth.git . \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path \
     && . "$HOME/.cargo/env" \
     && cargo build --release \
     && rm -rf /root/.cargo /root/.rustup   # on nettoie le plus possible
@@ -123,9 +123,10 @@ RUN echo '' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
 # ────────────────────────────────────────────────
 # 11. Dossiers de runtime (créés vides dans l’image)
 # ────────────────────────────────────────────────
-RUN mkdir -p var/storage var/sessions var/cache var/log \
-    && chown -R www-data:www-data var \
-    && chmod -R 775 var
+RUN mkdir -p var/storage var/sessions var/cache var/log var/composer_home \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 var vendor \
+    && find /var/www/html/var/librespot-auth -type f -name "librespot-auth" -exec chmod +x {} +
 
 # ────────────────────────────────────────────────
 # 12. Fichiers de configuration finale

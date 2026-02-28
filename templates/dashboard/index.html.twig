@@ -162,7 +162,6 @@
                 <div id="drop-zone" style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 3rem 2rem; text-align: center; transition: all 0.2s; cursor: pointer; margin-bottom: 2rem;"
                      onclick="document.getElementById('torrent-file-input').click()"
                      ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">📄</div>
                     <h3 style="margin: 0 0 0.5rem 0;">Click or Drop .torrent file</h3>
                     <p style="color: var(--text-secondary); margin: 0;">Supports single .torrent file upload</p>
                     <input type="file" id="torrent-file-input" accept=".torrent" style="display: none" onchange="handleFileSelect(this)">
@@ -184,7 +183,7 @@
                                style="margin:0; flex: 1; padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;"
                                oninput="debouncedTorrentSearch()">
                     </div>
-                    <div id="torrent-db-results" style="max-height: 200px; overflow-y: auto; display: none;">
+                    <div id="torrent-db-results" style="max-height: 300px; overflow-y: auto; overflow-x: hidden; display: none; margin-top: 0.5rem; border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;">
                         <!-- Results will be populated here -->
                     </div>
                     <div id="torrent-db-loading" style="display: none; text-align: center; padding: 0.5rem; color: var(--text-secondary);">
@@ -948,16 +947,29 @@ async function searchTorrentDb() {
         const data = await res.json();
         
         loadingDiv.style.display = 'none';
+        resultsDiv.innerHTML = '';
         
         if (data.success && data.results && data.results.length > 0) {
-            resultsDiv.innerHTML = '';
             data.results.forEach(item => {
                 const div = document.createElement('div');
-                div.style.cssText = 'padding: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: background 0.2s;';
-                div.innerHTML = `<span style="font-size: 0.9rem;">${item.title}</span>`;
-                div.onmouseenter = () => div.style.background = 'rgba(255,255,255,0.1)';
+                div.id = `torrent-result-${item.hash}`;
+                div.style.cssText = 'padding: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; position: relative; width: 100%; box-sizing: border-box;';
+                
+                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; width: 100%;">
+                        <div style="flex: 1; cursor: pointer; min-width: 0;" onclick="selectTorrentResult('${item.hash}', \`${item.title.replace(/`/g, '\\`').replace(/\${/g, '\\${')}\`)">
+                            <span style="font-size: 0.9rem; font-weight: 500; display: block; margin-bottom: 4px; overflow-wrap: anywhere; line-height: 1.4;">${item.title}</span>
+                            <span style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">Hash: ${item.hash.substring(0, 16)}...</span>
+                        </div>
+                        <button onclick="previewHash('${item.hash}', 'preview-area-${item.hash}')" class="btn btn-secondary" style="flex-shrink: 0; padding: 4px 10px; font-size: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); white-space: nowrap;">
+                            🔍 Preview
+                        </button>
+                    </div>
+                    <div id="preview-area-${item.hash}" style="margin-top: 10px; display: none; width: 100%;"></div>
+                `;
+                
+                div.onmouseenter = () => div.style.background = 'rgba(255,255,255,0.03)';
                 div.onmouseleave = () => div.style.background = 'transparent';
-                div.onclick = () => selectTorrentResult(item.hash, item.title);
                 resultsDiv.appendChild(div);
             });
             resultsDiv.style.display = 'block';
@@ -969,6 +981,62 @@ async function searchTorrentDb() {
         loadingDiv.style.display = 'none';
         resultsDiv.innerHTML = '<div style="padding: 0.5rem; color: var(--danger);">Search failed</div>';
         resultsDiv.style.display = 'block';
+    }
+}
+
+async function previewHash(hash, targetId) {
+    const area = document.getElementById(targetId);
+    const btn = event.currentTarget;
+    
+    if (area.style.display === 'block') {
+        area.style.display = 'none';
+        btn.innerText = '🔍 Preview';
+        return;
+    }
+    
+    area.innerHTML = '<div style="font-size: 0.75rem; color: var(--text-secondary); padding: 5px;"><span class="spinner" style="width:12px; height:12px; border-width:2px; vertical-align:middle; display:inline-block; margin-right:8px;"></span>Checking Alldebrid status...</div>';
+    area.style.display = 'block';
+    btn.disabled = true;
+    btn.innerText = '⌛...';
+    
+    try {
+        const res = await fetch("{{ path('torrent_db_preview') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hash: hash })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            const statusColor = data.isReady ? 'var(--success)' : 'var(--warning)';
+            const statusBg = data.isReady ? 'rgba(40, 167, 69, 0.1)' : 'rgba(255, 152, 0, 0.1)';
+            
+            area.innerHTML = `
+                <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; font-size: 0.8rem;">
+                    <div style="margin-bottom: 6px; color: var(--text-secondary); font-size: 0.75rem;">
+                        <span style="font-weight: bold; color: var(--accent);">Filename:</span> ${data.filename}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div>
+                            <span style="font-weight: bold; color: var(--accent); margin-right: 4px;">Size:</span> 
+                            <span class="size-tag">${formatSize(data.size)}</span>
+                        </div>
+                        <div style="background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusColor}; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">
+                             Status: ${data.status}
+                        </div>
+                    </div>
+                </div>
+            `;
+            btn.innerText = '❌ Close';
+        } else {
+            area.innerHTML = `<div style="color: var(--danger); font-size: 0.75rem; padding: 5px;">❌ ${data.message}</div>`;
+            btn.innerText = '🔍 Preview';
+        }
+    } catch (e) {
+        area.innerHTML = '<div style="color: var(--danger); font-size: 0.75rem; padding: 5px;">❌ Failed to fetch preview</div>';
+        btn.innerText = '🔍 Preview';
+    } finally {
+        btn.disabled = false;
     }
 }
 

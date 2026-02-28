@@ -276,6 +276,27 @@
                     <small style="color: var(--text-secondary);">JSON object mapping regex patterns to genres.</small>
                 </div>
             </section>
+
+            <!-- Maintenance & Database -->
+            <section style="grid-column: span 2; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <h3 style="color: var(--accent); margin-bottom: 1rem;">Maintenance & Database</h3>
+                <div style="background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 2rem;">
+                        <div style="flex: 1;">
+                            <h4 style="margin: 0 0 0.5rem 0;">Update Torrent Database</h4>
+                            <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">
+                                Triggers a <code>composer update gautardos/hash-db</code> to fetch the latest torrent hashes from the repository. 
+                                This operation might take several minutes depending on your connection.
+                            </p>
+                        </div>
+                        <button type="button" id="btn-update-hash-db" class="btn btn-secondary" style="min-width: 200px; background: #17a2b8;">
+                            <span id="update-db-text">🔄 Update Database</span>
+                            <span id="update-db-spinner" style="display: none;">⏳ Updating...</span>
+                        </button>
+                    </div>
+                    <div id="update-db-status" style="margin-top: 1rem; padding: 1rem; border-radius: 6px; display: none; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; max-height: 200px; overflow-y: auto;"></div>
+                </div>
+            </section>
         </div>
 
         <button type="submit" class="btn btn-primary btn-full" style="margin-top: 2rem;">Save All Settings</button>
@@ -300,7 +321,19 @@ document.getElementById('btn-generate-auth').addEventListener('click', async fun
     btnSpinner.style.display = 'inline';
     statusDiv.style.display = 'block';
     statusDiv.style.color = 'var(--accent)';
-    statusDiv.innerText = 'Executing librespot-auth... (this may take a while)';
+    
+    // Generate a temporary device name to show while loading (matches PHP logic)
+    const tempName = "Speaker xxx";
+    statusDiv.innerHTML = `
+        <div style="background: rgba(23, 162, 184, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid #17a2b8; margin-bottom: 1rem;">
+            <p style="margin: 0 0 0.5rem 0; font-weight: bold; color: #17a2b8;">🎧 Action Required: Spotify Connect Login</p>
+            <p style="margin: 0; font-size: 0.9rem;">
+                Please open your Spotify app on your phone or computer (on the same network).<br>
+                Select the device named <strong>"${tempName}"</strong> from the available devices list to complete the authentication.
+            </p>
+        </div>
+        <p style="text-align: center; color: var(--text-secondary); font-size: 0.8rem;">⌛ Waiting for connection from Spotify...</p>
+    `;
 
     try {
         const response = await fetch("{{ path('config_spotify_auth') }}", {
@@ -346,6 +379,57 @@ document.getElementById('btn-generate-auth').addEventListener('click', async fun
         }
     } catch (e) {
         statusDiv.style.color = 'var(--danger)';
+        statusDiv.innerText = '❌ Error: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btnText.style.display = 'inline';
+        btnSpinner.style.display = 'none';
+    }
+});
+
+document.getElementById('btn-update-hash-db').addEventListener('click', async function() {
+    const btn = this;
+    const btnText = document.getElementById('update-db-text');
+    const btnSpinner = document.getElementById('update-db-spinner');
+    const statusDiv = document.getElementById('update-db-status');
+
+    if (!confirm('This will trigger a composer update for the torrent database. It might take a while and could potentially slow down the app. Continue?')) {
+        return;
+    }
+
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnSpinner.style.display = 'inline';
+    statusDiv.style.display = 'block';
+    statusDiv.style.background = 'rgba(255,255,255,0.05)';
+    statusDiv.style.color = 'var(--text-secondary)';
+    statusDiv.innerText = 'Starting update... please wait.';
+
+    try {
+        const response = await fetch("{{ path('config_update_hash_db') }}", {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            statusDiv.style.background = 'rgba(40, 167, 69, 0.1)';
+            statusDiv.style.color = 'var(--success)';
+            statusDiv.style.border = '1px solid var(--success)';
+            statusDiv.innerText = '✅ ' + result.message + '\n\n' + (result.output || '');
+        } else {
+            statusDiv.style.background = 'rgba(220, 53, 69, 0.1)';
+            statusDiv.style.color = 'var(--danger)';
+            statusDiv.style.border = '1px solid var(--danger)';
+            statusDiv.innerText = '❌ ' + result.message + '\n\n' + (result.details || '');
+        }
+    } catch (e) {
+        statusDiv.style.background = 'rgba(220, 53, 69, 0.1)';
+        statusDiv.style.color = 'var(--danger)';
+        statusDiv.style.border = '1px solid var(--danger)';
         statusDiv.innerText = '❌ Error: ' + e.message;
     } finally {
         btn.disabled = false;

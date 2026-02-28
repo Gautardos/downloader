@@ -74,61 +74,99 @@ class TorrentDbService
         $results = [];
         $files = glob($this->dataPath . DIRECTORY_SEPARATOR . 'category_' . $categoryId . '_*.csv');
 
-        if (empty($files)) {
-            return $results;
-        }
+        // 1. Search in standard category files
+        if (!empty($files)) {
+            $file = $files[0];
 
-        $file = $files[0];
+            // Normalize query for permissive search
+            $normalizedQuery = $this->normalize($query);
+            $queryParts = preg_split('/\s+/', $normalizedQuery, -1, PREG_SPLIT_NO_EMPTY);
 
-        // Normalize query for permissive search
-        $normalizedQuery = $this->normalize($query);
-        $queryParts = preg_split('/\s+/', $normalizedQuery, -1, PREG_SPLIT_NO_EMPTY);
+            if (!empty($queryParts)) {
+                $handle = fopen($file, 'r');
+                if ($handle) {
+                    // Skip header
+                    fgets($handle);
 
-        if (empty($queryParts)) {
-            return $results;
-        }
+                    while (($line = fgets($handle)) !== false && count($results) < $limit) {
+                        $parts = str_getcsv($line, ';');
 
-        $handle = fopen($file, 'r');
-        if (!$handle) {
-            return $results;
-        }
+                        if (count($parts) < 5) {
+                            continue;
+                        }
 
-        // Skip header
-        fgets($handle);
+                        $title = $parts[3] ?? '';
+                        $hash = $parts[4] ?? '';
 
-        while (($line = fgets($handle)) !== false && count($results) < $limit) {
-            $parts = str_getcsv($line, ';');
-
-            if (count($parts) < 5) {
-                continue;
-            }
-
-            $title = $parts[3] ?? '';
-            $hash = $parts[4] ?? '';
-
-            // Normalize title for matching
-            $normalizedTitle = $this->normalize($title);
-
-            // Check if all query parts match
-            $allMatch = true;
-            foreach ($queryParts as $qp) {
-                if (stripos($normalizedTitle, $qp) === false) {
-                    $allMatch = false;
-                    break;
+                        if ($this->matchesQuery($title, $queryParts)) {
+                            $results[] = [
+                                'title' => trim($title, '"'),
+                                'hash' => trim($hash)
+                            ];
+                        }
+                    }
+                    fclose($handle);
                 }
             }
+        }
 
-            if ($allMatch) {
-                $results[] = [
-                    'title' => trim($title, '"'),
-                    'hash' => trim($hash)
-                ];
+        // 2. Search in tos_all_hash.txt (custom format: Title###Hash###Size###Type)
+        $tosFile = $this->dataPath . DIRECTORY_SEPARATOR . 'tos_all_hash.txt';
+        if (file_exists($tosFile) && count($results) < $limit) {
+            $typeMatch = null;
+            if (in_array($categoryId, [2178, 2183])) {
+                $typeMatch = 'movie';
+            } elseif (in_array($categoryId, [2179, 2184])) {
+                $typeMatch = 'tv';
+            }
+
+            if ($typeMatch) {
+                // Reuse query parts if already built, otherwise build them
+                if (!isset($queryParts)) {
+                    $normalizedQuery = $this->normalize($query);
+                    $queryParts = preg_split('/\s+/', $normalizedQuery, -1, PREG_SPLIT_NO_EMPTY);
+                }
+
+                if (!empty($queryParts)) {
+                    $handle = fopen($tosFile, 'r');
+                    if ($handle) {
+                        while (($line = fgets($handle)) !== false && count($results) < $limit) {
+                            $parts = explode('###', trim($line));
+                            if (count($parts) < 4)
+                                continue;
+
+                            $title = $parts[0];
+                            $hash = $parts[1];
+                            $type = strtolower($parts[3]);
+
+                            if ($type === $typeMatch && $this->matchesQuery($title, $queryParts)) {
+                                $results[] = [
+                                    'title' => $title,
+                                    'hash' => $hash
+                                ];
+                            }
+                        }
+                        fclose($handle);
+                    }
+                }
             }
         }
 
-        fclose($handle);
-
         return $results;
+    }
+
+    /**
+     * Check if a title matches all query parts.
+     */
+    private function matchesQuery(string $title, array $queryParts): bool
+    {
+        $normalizedTitle = $this->normalize($title);
+        foreach ($queryParts as $qp) {
+            if (stripos($normalizedTitle, $qp) === false) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

@@ -6,6 +6,8 @@ use App\Service\JsonStorage;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Routing\Annotation\Route;
 
 class ConfigController extends AbstractController
@@ -150,7 +152,60 @@ class ConfigController extends AbstractController
         return $this->json([
             'success' => true,
             'message' => 'Spotify credentials generated and stored successfully!',
-            'path' => $targetPath
+            'path' => $targetPath,
+            'deviceName' => $name
         ]);
+    }
+
+    #[Route('/config/update-hash-db', name: 'config_update_hash_db', methods: ['POST'])]
+    public function updateHashDb(KernelInterface $kernel): Response
+    {
+        try {
+            $projectDir = $kernel->getProjectDir();
+            $composerHome = $projectDir . '/var/composer_home';
+
+            // Ensure composer home directory exists
+            if (!is_dir($composerHome)) {
+                mkdir($composerHome, 0777, true);
+            }
+
+            // Check if project root is writable (needed to update composer.lock)
+            if (!is_writable($projectDir) || (file_exists($projectDir . '/composer.lock') && !is_writable($projectDir . '/composer.lock'))) {
+                return $this->json([
+                    'success' => false,
+                    'message' => 'Project directory or composer.lock is not writable by the web server. Please fix permissions (e.g., chmod 777 composer.lock) to allow updates from the UI.'
+                ]);
+            }
+
+            // Run composer update for the hash-db package
+            // We use --no-interaction to avoid hanging
+            $cmd = ['composer', 'update', 'gautardos/hash-db', '--no-interaction', '--no-scripts', '--no-plugins'];
+
+            $process = new Process($cmd);
+            $process->setWorkingDirectory($projectDir);
+            $process->setEnv([
+                'COMPOSER_HOME' => $composerHome,
+                'HOME' => $composerHome
+            ]);
+            $process->setTimeout(600); // 10 minutes max for DB update
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                return $this->json([
+                    'success' => false,
+                    'message' => 'Composer update failed.',
+                    'details' => $process->getErrorOutput(),
+                    'output' => $process->getOutput()
+                ]);
+            }
+
+            return $this->json([
+                'success' => true,
+                'message' => 'Torrent database updated successfully!',
+                'output' => $process->getOutput()
+            ]);
+        } catch (\Exception $e) {
+            return $this->json(['success' => false, 'message' => $e->getMessage()]);
+        }
     }
 }

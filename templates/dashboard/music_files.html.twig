@@ -452,6 +452,8 @@ async function viewDetails(path, name) {
     loading.style.display = 'block';
     content.style.display = 'none';
     btnSave.style.display = 'none';
+    btnSave.disabled = false;
+    btnSave.innerHTML = '💾 Save';
     grid.innerHTML = '';
 
     try {
@@ -562,6 +564,8 @@ async function saveTags() {
         const data = await res.json();
         if (data.success) {
             window.notify('success', 'Metadata updated successfully!');
+            btn.disabled = false;
+            btn.innerHTML = '💾 Save';
             closeDetails();
             // Optional: refresh page after a short delay if we want to show updated list
             // setTimeout(() => window.location.reload(), 500);
