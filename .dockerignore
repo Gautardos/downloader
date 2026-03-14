@@ -1,0 +1,15 @@
+var/
+vendor/
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+.env.local
+.env.local.php
+.env.test
+.env.test.local
+tests/
+.phpunit.result.cache
+phpunit.xml.dist
