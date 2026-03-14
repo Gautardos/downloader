@@ -175,19 +175,26 @@
                 <!-- Torrent Database Search -->
                 <div style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">🔎 Search Download Database</label>
-                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-                        <select id="torrent-db-category" style="padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; min-width: 150px;">
-                            <option value="">Select type...</option>
-                        </select>
-                        <input type="text" id="torrent-db-query" placeholder="Search title..." 
-                               style="margin:0; flex: 1; padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;"
-                               oninput="debouncedTorrentSearch()">
+                    <div id="torrent-db-search-container">
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <select id="torrent-db-category" style="padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; min-width: 150px;">
+                                <option value="">Select type...</option>
+                            </select>
+                            <input type="text" id="torrent-db-query" placeholder="Search title..." 
+                                   style="margin:0; flex: 1; padding: 0.5rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;"
+                                   oninput="debouncedTorrentSearch()">
+                        </div>
+                        <div id="torrent-db-results" style="max-height: 300px; overflow-y: auto; overflow-x: hidden; display: none; margin-top: 0.5rem; border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;">
+                            <!-- Results will be populated here -->
+                        </div>
+                        <div id="torrent-db-loading" style="display: none; text-align: center; padding: 0.5rem; color: var(--text-secondary);">
+                            ⏳ Searching...
+                        </div>
                     </div>
-                    <div id="torrent-db-results" style="max-height: 300px; overflow-y: auto; overflow-x: hidden; display: none; margin-top: 0.5rem; border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;">
-                        <!-- Results will be populated here -->
-                    </div>
-                    <div id="torrent-db-loading" style="display: none; text-align: center; padding: 0.5rem; color: var(--text-secondary);">
-                        ⏳ Searching...
+                    <div id="torrent-db-init-container" style="display: none; text-align: center;">
+                        <button class="btn btn-warning" onclick="initTorrentDb()" style="margin-top: 0.5rem; width: 100%; font-weight: 600;">
+                            ⚙️ Initialiser la base de données
+                        </button>
                     </div>
                 </div>
 
@@ -263,6 +270,23 @@
                     📁 Create All Missing Folders
                 </button>
                 <button class="btn btn-primary" id="btn-confirm-batch" onclick="confirmBatchDownloads()">Add to Queue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Description Overlay Modal -->
+    <div id="description-modal" class="modal-overlay" style="z-index: 2050;">
+        <div class="modal-container" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>ℹ️ Description</h2>
+                <button class="btn-close-modal" onclick="closeDescriptionModal()">×</button>
+            </div>
+            <div class="modal-body" style="padding: 2rem; background: #fff; color: #333; border-radius: 0 0 16px 16px;">
+                <div id="description-loading" style="text-align: center; color: #666; display: none;">
+                    ⏳ Chargement de la description...
+                </div>
+                <div id="description-content" style="max-height: 50vh; overflow-y: auto; font-family: sans-serif; font-size: 0.95rem;">
+                </div>
             </div>
         </div>
     </div>
@@ -903,18 +927,56 @@ async function loadTorrentDbCategories() {
         const res = await fetch("{{ path('torrent_db_categories') }}");
         const data = await res.json();
         
+        if (!data.success && data.error === 'db_not_found') {
+            document.getElementById('torrent-db-search-container').style.display = 'none';
+            document.getElementById('torrent-db-init-container').style.display = 'block';
+            return;
+        }
+
         if (data.success && data.categories) {
+            document.getElementById('torrent-db-search-container').style.display = 'block';
+            document.getElementById('torrent-db-init-container').style.display = 'none';
             const select = document.getElementById('torrent-db-category');
             data.categories.forEach(cat => {
                 const option = document.createElement('option');
-                option.value = cat.id;
-                option.textContent = cat.name.replace(/_/g, ' ');
+                option.value = cat.parent_category + '-' + cat.category;
+                option.textContent = cat.category_slug;
                 select.appendChild(option);
             });
             torrentDbCategoriesLoaded = true;
         }
     } catch (e) {
         console.error('Failed to load torrent DB categories', e);
+    }
+}
+
+async function initTorrentDb() {
+    const btn = event.currentTarget;
+    const originalText = btn.innerText;
+    
+    btn.disabled = true;
+    btn.innerText = '⌛ Initialisation en cours...';
+    
+    try {
+        const res = await fetch("{{ path('config_update_hash_db') }}", {
+            method: 'POST'
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            window.notify('success', 'Base de données initialisée avec succès !');
+            // Reload categories and flip UI
+            await loadTorrentDbCategories();
+        } else {
+            window.notify('error', 'Échec de l\'initialisation : ' + (data.message || 'Erreur inconnue'));
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+    } catch (e) {
+        console.error(e);
+        window.notify('error', 'Erreur réseau lors de l\'initialisation.');
+        btn.disabled = false;
+        btn.innerText = originalText;
     }
 }
 
@@ -942,7 +1004,7 @@ async function searchTorrentDb() {
         const res = await fetch("{{ path('torrent_db_search') }}", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ categoryId: parseInt(categoryId), query: query })
+            body: JSON.stringify({ categoryId: categoryId, query: query })
         });
         const data = await res.json();
         
@@ -955,13 +1017,29 @@ async function searchTorrentDb() {
                 div.id = `torrent-result-${item.hash}`;
                 div.style.cssText = 'padding: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; position: relative; width: 100%; box-sizing: border-box;';
                 
+                let sizeDisplay = '';
+                if (item.size) {
+                    const sizeGo = (item.size / (1024 * 1024 * 1024)).toFixed(2);
+                    sizeDisplay = `<span style="color: var(--text-secondary); font-size: 0.8rem; white-space: nowrap; flex-shrink: 0; font-weight: normal;">(${sizeGo} Go)</span>`;
+                }
+
+                let descIcon = '';
+                if (item.has_description) {
+                    descIcon = `<button onclick="showDescription(event, '${item.hash}')" class="btn btn-secondary btn-icon" style="padding: 0; margin-left: 8px; font-size: 1rem; background: transparent; border: none; height: 20px; width: 20px; display: inline-flex; align-items: center; justify-content: center;" title="Voir la description">📄</button>`;
+                }
+
                 div.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; width: 100%;">
                         <div style="flex: 1; cursor: pointer; min-width: 0;" onclick="selectTorrentResult('${item.hash}', \`${item.title.replace(/`/g, '\\`').replace(/\${/g, '\\${')}\`)">
-                            <span style="font-size: 0.9rem; font-weight: 500; display: block; margin-bottom: 4px; overflow-wrap: anywhere; line-height: 1.4;">${item.title}</span>
+                            <div style="font-size: 0.9rem; font-weight: 500; margin-bottom: 4px; line-height: 1.4; display: flex; align-items: flex-start; gap: 8px;">
+                                <span style="flex: 1; overflow-wrap: anywhere;">${item.title}</span>
+                                <span style="display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                                    ${sizeDisplay}${descIcon}
+                                </span>
+                            </div>
                             <span style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">Hash: ${item.hash.substring(0, 16)}...</span>
                         </div>
-                        <button onclick="previewHash('${item.hash}', 'preview-area-${item.hash}')" class="btn btn-secondary" style="flex-shrink: 0; padding: 4px 10px; font-size: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); white-space: nowrap;">
+                        <button onclick="previewHash('${item.hash}', 'preview-area-${item.hash}')" class="btn btn-secondary" style="flex-shrink: 0; padding: 4px 12px; font-size: 0.75rem; white-space: nowrap; font-weight: 600;">
                             🔍 Preview
                         </button>
                     </div>
@@ -1038,6 +1116,43 @@ async function previewHash(hash, targetId) {
     } finally {
         btn.disabled = false;
     }
+}
+
+async function showDescription(event, hash) {
+    if (event) event.stopPropagation();
+
+    const modal = document.getElementById('description-modal');
+    const content = document.getElementById('description-content');
+    const loading = document.getElementById('description-loading');
+    
+    modal.style.display = 'flex';
+    content.innerHTML = '';
+    loading.style.display = 'block';
+
+    try {
+        const res = await fetch("{{ path('torrent_db_description') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hash: hash })
+        });
+        const data = await res.json();
+        
+        loading.style.display = 'none';
+
+        if (data.success && data.description) {
+            content.innerHTML = data.description;
+        } else {
+            content.innerHTML = `<span style="color: red;">Failed to load description or description is empty.</span>`;
+        }
+    } catch (e) {
+        loading.style.display = 'none';
+        content.innerHTML = `<span style="color: red;">Network error.</span>`;
+    }
+}
+
+function closeDescriptionModal() {
+    document.getElementById('description-modal').style.display = 'none';
+    document.getElementById('description-content').innerHTML = '';
 }
 
 function selectTorrentResult(hash, title) {

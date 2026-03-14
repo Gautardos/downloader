@@ -55,6 +55,7 @@ class ConfigController extends AbstractController
                 'admin_password' => $request->request->get('admin_password', 'admin'),
                 'history_retention_limit' => (int) $request->request->get('history_retention_limit', 500),
                 'grok_renaming_prompt' => $request->request->get('grok_renaming_prompt', ''),
+                'allow_xxx_search' => $request->request->get('allow_xxx_search') === '1',
                 'music_librespot_auth_binary' => $request->request->get('music_librespot_auth_binary', '/var/www/html/var/librespot-auth/target/release/librespot-auth')
             ]);
 
@@ -169,25 +170,14 @@ class ConfigController extends AbstractController
                 mkdir($composerHome, 0777, true);
             }
 
-            // Check if project root is writable (needed to update composer.lock)
-            if (!is_writable($projectDir) || (file_exists($projectDir . '/composer.lock') && !is_writable($projectDir . '/composer.lock'))) {
-                return $this->json([
-                    'success' => false,
-                    'message' => 'Project directory or composer.lock is not writable by the web server. Please fix permissions (e.g., chmod 777 composer.lock) to allow updates from the UI.'
-                ]);
-            }
-
-            // Run composer update for the hash-db package
-            // We use --no-interaction to avoid hanging
+            // Run composer update
+            // Since composer.json now uses a static "package" repository for gautardos/hash-db,
+            // it will download a ZIP directly from GitHub, bypassing Git and SSH entirely.
             $cmd = ['composer', 'update', 'gautardos/hash-db', '--no-interaction', '--no-scripts', '--no-plugins'];
-
             $process = new Process($cmd);
             $process->setWorkingDirectory($projectDir);
-            $process->setEnv([
-                'COMPOSER_HOME' => $composerHome,
-                'HOME' => $composerHome
-            ]);
-            $process->setTimeout(600); // 10 minutes max for DB update
+            $process->setEnv(['COMPOSER_HOME' => $composerHome]);
+            $process->setTimeout(600);
             $process->run();
 
             if (!$process->isSuccessful()) {
@@ -199,10 +189,122 @@ class ConfigController extends AbstractController
                 ]);
             }
 
+            $vendorDbPath = $projectDir . '/vendor/gautardos/hash-db/torrents.db';
+            $vendorSplitPath = $projectDir . '/vendor/gautardos/hash-db/torrents.zip.001';
+            $localDbDir = $projectDir . '/var/db';
+            $localDbPath = $localDbDir . '/torrents.db';
+
+            if (!is_dir($localDbDir)) {
+                mkdir($localDbDir, 0777, true);
+            }
+            @chmod($localDbDir, 0777);
+
+            $diagnostics = [
+                'vendor_db_exists' => file_exists($vendorDbPath),
+                'vendor_split_exists' => file_exists($vendorSplitPath),
+                'local_db_exists_before' => file_exists($localDbPath),
+            ];
+
+            // Copy or Extract DB if it doesn't exist
+            if (!file_exists($localDbPath)) {
+                if (file_exists($vendorDbPath)) {
+                    copy($vendorDbPath, $localDbPath);
+                } elseif (file_exists($vendorSplitPath)) {
+                    // Handle split 7zip archive
+                    $tempZip = $localDbDir . '/torrents_temp.7z';
+
+                    $cmd = "(" .
+                        "cat " . $projectDir . "/vendor/gautardos/hash-db/torrents.zip.00* > " . escapeshellarg($tempZip) .
+                        " && 7z e " . escapeshellarg($tempZip) . " -o" . escapeshellarg($localDbDir) . " -y" .
+                        " && rm " . escapeshellarg($tempZip) .
+                        ")";
+
+                    $processExtract = Process::fromShellCommandline($cmd);
+                    $processExtract->run();
+
+                    $diagnostics['extract_success'] = $processExtract->isSuccessful();
+                    $diagnostics['extract_error'] = $processExtract->getErrorOutput();
+                    $diagnostics['extract_output'] = $processExtract->getOutput();
+
+                    if (!$processExtract->isSuccessful() && !file_exists($localDbPath)) {
+                        return $this->json([
+                            'success' => false,
+                            'message' => 'Failed to extract database archive. Please ensure 7zip is installed (did you rebuild the docker image?).',
+                            'diagnostics' => $diagnostics
+                        ]);
+                    }
+                } else {
+                    return $this->json([
+                        'success' => false,
+                        'message' => 'Database source not found in vendor. Did you run composer update?',
+                        'diagnostics' => $diagnostics
+                    ]);
+                }
+            }
+
+            if (file_exists($localDbPath)) {
+                @chmod($localDbPath, 0666);
+            }
+
+            // Parse CSV and insert into SQLite
+            $inserted = 0;
+            $ignored = 0;
+            $csvPath = $projectDir . '/vendor/gautardos/hash-db/tos_all_hash.txt';
+
+            if (file_exists($localDbPath) && file_exists($csvPath)) {
+                $pdo = new \PDO('sqlite:' . $localDbPath);
+                $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+                // Ensure unique constraint
+                $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hash_info ON torrents(hash_info)');
+
+                $stmt = $pdo->prepare('INSERT OR IGNORE INTO torrents (name, hash_info, parent_category, category) VALUES (:name, :hash_info, 2145, NULL)');
+
+                $handle = fopen($csvPath, 'r');
+                if ($handle) {
+                    $pdo->beginTransaction();
+                    try {
+                        while (($line = fgets($handle)) !== false) {
+                            $parts = explode('###', trim($line));
+                            if (count($parts) >= 2) {
+                                $name = $parts[0];
+                                $hashInfo = $parts[1];
+
+                                $stmt->execute([
+                                    ':name' => $name,
+                                    ':hash_info' => $hashInfo
+                                ]);
+
+                                if ($stmt->rowCount() > 0) {
+                                    $inserted++;
+                                } else {
+                                    $ignored++;
+                                }
+                            }
+                        }
+                        $pdo->commit();
+                    } catch (\Exception $e) {
+                        $pdo->rollBack();
+                        throw $e;
+                    }
+                    fclose($handle);
+                }
+            }
+
+            if (!file_exists($localDbPath)) {
+                return $this->json([
+                    'success' => false,
+                    'message' => 'Initialization completed but the database file is still missing in var/db/.',
+                    'diagnostics' => $diagnostics
+                ]);
+            }
+
+            $summary = sprintf("\n--- Database Update ---\nImported: %d\nIgnored (already exists): %d", $inserted, $ignored);
+
             return $this->json([
                 'success' => true,
-                'message' => 'Torrent database updated successfully!',
-                'output' => $process->getOutput()
+                'message' => 'Torrent database updated successfully!' . $summary,
+                'diagnostics' => $diagnostics
             ]);
         } catch (\Exception $e) {
             return $this->json(['success' => false, 'message' => $e->getMessage()]);

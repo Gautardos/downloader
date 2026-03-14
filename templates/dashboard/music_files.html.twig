@@ -10,7 +10,7 @@
             <span style="font-size: 2rem;">📂</span>
             Music Downloads
         </h1>
-        <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code></p>
+        <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code> ({{ files|length }} fichier{% if files|length > 1 %}s{% endif %})</p>
     </div>
     <div id="move-container">
         <button id="btn-update-genres" class="btn btn-secondary" onclick="updateAllGenres()" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>

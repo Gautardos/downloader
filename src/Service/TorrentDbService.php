@@ -6,167 +6,164 @@ class TorrentDbService
 {
     private string $dataPath;
     private ?array $categoryIndex = null;
+    private ?\PDO $pdo = null;
 
     public function __construct(string $projectDir)
     {
-        $this->dataPath = $projectDir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'gautardos' . DIRECTORY_SEPARATOR . 'hash-db';
+        $this->dataPath = $projectDir . DIRECTORY_SEPARATOR . 'var' . DIRECTORY_SEPARATOR . 'db' . DIRECTORY_SEPARATOR . 'torrents.db';
+    }
+
+    public function isDbInitialized(): bool
+    {
+        return file_exists($this->dataPath) && filesize($this->dataPath) > 0;
+    }
+
+    private function getPdo(): ?\PDO
+    {
+        if ($this->pdo === null && $this->isDbInitialized()) {
+            $this->pdo = new \PDO('sqlite:' . $this->dataPath);
+            $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        }
+        return $this->pdo;
     }
 
     /**
-     * Build and return category index from CSV files.
-     * @return array [['id' => int, 'name' => string, 'file' => string], ...]
+     * Build and return category index from SQLite.
+     * @param bool $allowXxx
+     * @return array
      */
-    public function getCategories(): array
+    public function getCategories(bool $allowXxx = false): array
     {
-        if ($this->categoryIndex !== null) {
-            return $this->categoryIndex;
+        if (!$this->isDbInitialized()) {
+            return [];
         }
 
-        $this->categoryIndex = [];
+        $categories = [];
 
-        if (!is_dir($this->dataPath)) {
-            return $this->categoryIndex;
-        }
+        try {
+            $pdo = $this->getPdo();
+            if ($pdo) {
+                // We fetch category_slug directly as it contains the "type/subtype" format
+                $stmt = $pdo->query('SELECT DISTINCT parent_category, category, category_slug FROM torrents WHERE category_slug IS NOT NULL AND category_slug != ""');
+                while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                    $slug = $row['category_slug'];
 
-        $files = glob($this->dataPath . DIRECTORY_SEPARATOR . 'category_*.csv');
-
-        foreach ($files as $file) {
-            $basename = basename($file);
-
-            // Extract ID from filename: category_2184_*.csv -> 2184
-            if (preg_match('/category_(\d+)_.*\.csv/', $basename, $matches)) {
-                $categoryId = (int) $matches[1];
-
-                // Read first data line to get category name
-                $handle = fopen($file, 'r');
-                if ($handle) {
-                    // Skip header
-                    fgets($handle);
-                    // Read first data line
-                    $line = fgets($handle);
-                    fclose($handle);
-
-                    if ($line) {
-                        $parts = str_getcsv($line, ';');
-                        $categoryName = $parts[1] ?? 'Unknown';
-
-                        $this->categoryIndex[] = [
-                            'id' => $categoryId,
-                            'name' => $categoryName,
-                            'file' => $basename
-                        ];
+                    // Filter out XXX categories if not allowed
+                    if (!$allowXxx && str_starts_with(strtolower($slug), 'xxx/')) {
+                        continue;
                     }
+
+                    // Format label: type/subtype -> Type > Subtype
+                    $label = $slug;
+                    if (str_contains($slug, '/')) {
+                        $parts = explode('/', $slug);
+                        $formattedParts = array_map(fn($p) => mb_convert_case($p, MB_CASE_TITLE, "UTF-8"), $parts);
+                        $label = implode(' > ', $formattedParts);
+                    } else {
+                        $label = mb_convert_case($slug, MB_CASE_TITLE, "UTF-8");
+                    }
+
+                    $categories[] = [
+                        'parent_category' => $row['parent_category'],
+                        'category' => $row['category'],
+                        'category_slug' => $label
+                    ];
                 }
             }
+        } catch (\Exception $e) {
+            // Log error or ignore
         }
 
-        // Sort by name
-        usort($this->categoryIndex, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+        // Sort by slug (label) in descending order (Z -> A)
+        // This ensures "Video" comes before "Audio" and "3D"
+        usort($categories, fn($a, $b) => strcasecmp($b['category_slug'] ?? '', $a['category_slug'] ?? ''));
 
-        return $this->categoryIndex;
+        return $categories;
     }
 
     /**
      * Search torrents in a specific category.
      */
-    public function search(int $categoryId, string $query, int $limit = 50): array
+    public function search(string $categoryId, string $query, int $limit = 50): array
     {
         $results = [];
-        $files = glob($this->dataPath . DIRECTORY_SEPARATOR . 'category_' . $categoryId . '_*.csv');
 
-        // 1. Search in standard category files
-        if (!empty($files)) {
-            $file = $files[0];
-
-            // Normalize query for permissive search
-            $normalizedQuery = $this->normalize($query);
-            $queryParts = preg_split('/\s+/', $normalizedQuery, -1, PREG_SPLIT_NO_EMPTY);
-
-            if (!empty($queryParts)) {
-                $handle = fopen($file, 'r');
-                if ($handle) {
-                    // Skip header
-                    fgets($handle);
-
-                    while (($line = fgets($handle)) !== false && count($results) < $limit) {
-                        $parts = str_getcsv($line, ';');
-
-                        if (count($parts) < 5) {
-                            continue;
-                        }
-
-                        $title = $parts[3] ?? '';
-                        $hash = $parts[4] ?? '';
-
-                        if ($this->matchesQuery($title, $queryParts)) {
-                            $results[] = [
-                                'title' => trim($title, '"'),
-                                'hash' => trim($hash)
-                            ];
-                        }
-                    }
-                    fclose($handle);
-                }
-            }
+        if (!$this->isDbInitialized()) {
+            return $results;
         }
 
-        // 2. Search in tos_all_hash.txt (custom format: Title###Hash###Size###Type)
-        $tosFile = $this->dataPath . DIRECTORY_SEPARATOR . 'tos_all_hash.txt';
-        if (file_exists($tosFile) && count($results) < $limit) {
-            $typeMatch = null;
-            if (in_array($categoryId, [2178, 2183])) {
-                $typeMatch = 'movie';
-            } elseif (in_array($categoryId, [2179, 2184])) {
-                $typeMatch = 'tv';
+        $pdo = $this->getPdo();
+        if (!$pdo) {
+            return $results;
+        }
+
+        // $categoryId is expected to be "parent_category-category"
+        $parts = explode('-', $categoryId);
+        $parentCategory = $parts[0] ?? '';
+        $category = $parts[1] ?? '';
+
+        // Normalize query to use % instead of spaces
+        $normalizedQuery = $this->normalize($query);
+        $queryParts = preg_split('/\s+/', trim($normalizedQuery), -1, PREG_SPLIT_NO_EMPTY);
+        $likeQuery = '%' . implode('%', $queryParts) . '%';
+
+        try {
+            $sql = 'SELECT name as title, hash_info as hash, size, CASE WHEN length(description) > 0 THEN 1 ELSE 0 END as has_description FROM torrents 
+                    WHERE name LIKE :query 
+                      AND parent_category = :parent_category 
+                      AND (category = :category OR category IS NULL OR category = "")
+                    LIMIT :limit';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindValue(':query', $likeQuery);
+            $stmt->bindValue(':parent_category', $parentCategory);
+            $stmt->bindValue(':category', $category);
+            $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
+            $stmt->execute();
+
+            while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                $results[] = [
+                    'title' => $row['title'],
+                    'hash' => $row['hash'],
+                    'size' => $row['size'],
+                    'has_description' => (bool) $row['has_description']
+                ];
             }
-
-            if ($typeMatch) {
-                // Reuse query parts if already built, otherwise build them
-                if (!isset($queryParts)) {
-                    $normalizedQuery = $this->normalize($query);
-                    $queryParts = preg_split('/\s+/', $normalizedQuery, -1, PREG_SPLIT_NO_EMPTY);
-                }
-
-                if (!empty($queryParts)) {
-                    $handle = fopen($tosFile, 'r');
-                    if ($handle) {
-                        while (($line = fgets($handle)) !== false && count($results) < $limit) {
-                            $parts = explode('###', trim($line));
-                            if (count($parts) < 4)
-                                continue;
-
-                            $title = $parts[0];
-                            $hash = $parts[1];
-                            $type = strtolower($parts[3]);
-
-                            if ($type === $typeMatch && $this->matchesQuery($title, $queryParts)) {
-                                $results[] = [
-                                    'title' => $title,
-                                    'hash' => $hash
-                                ];
-                            }
-                        }
-                        fclose($handle);
-                    }
-                }
-            }
+        } catch (\Exception $e) {
+            // Ignore or log error
         }
 
         return $results;
     }
 
-    /**
-     * Check if a title matches all query parts.
-     */
-    private function matchesQuery(string $title, array $queryParts): bool
+    public function getDescription(string $hash): ?string
     {
-        $normalizedTitle = $this->normalize($title);
-        foreach ($queryParts as $qp) {
-            if (stripos($normalizedTitle, $qp) === false) {
-                return false;
-            }
+        if (!$this->isDbInitialized()) {
+            return null;
         }
-        return true;
+
+        $pdo = $this->getPdo();
+        if (!$pdo) {
+            return null;
+        }
+
+        try {
+            $stmt = $pdo->prepare('SELECT description FROM torrents WHERE hash_info = :hash LIMIT 1');
+            $stmt->execute([':hash' => $hash]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($row && !empty($row['description'])) {
+                $uncompressed = @gzuncompress($row['description']);
+                if ($uncompressed !== false) {
+                    // Try to ensure it is valid UTF-8
+                    return mb_convert_encoding($uncompressed, 'UTF-8', 'UTF-8');
+                }
+            }
+        } catch (\Exception $e) {
+            // Ignore error
+        }
+
+        return null;
     }
 
     /**

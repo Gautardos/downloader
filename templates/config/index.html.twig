@@ -39,6 +39,11 @@
                     <small style="color: var(--text-secondary);">Maximum number of history entries to keep (default: 500).</small>
                 </div>
 
+                <div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="allow_xxx_search" name="allow_xxx_search" value="1" {{ config.allow_xxx_search|default(false) ? 'checked' : '' }}>
+                    <label for="allow_xxx_search" style="margin: 0;">Allow XXX Search</label>
+                </div>
+
                 <div style="margin-bottom: 1rem;">
                     <label for="grok_renaming_prompt">AI Renaming Prompt</label>
                     <textarea id="grok_renaming_prompt" name="grok_renaming_prompt" style="width:100%; height:200px; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white; font-family:monospace; font-size:0.8rem;">{{ config.grok_renaming_prompt|default(

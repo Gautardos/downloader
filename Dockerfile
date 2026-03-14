@@ -7,6 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     zip \
     unzip \
+    p7zip-full \
+    sqlite3 \
+    curl \
+    ca-certificates \
     python3 \
     python3-venv \
     supervisor \

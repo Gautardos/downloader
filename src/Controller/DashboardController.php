@@ -196,7 +196,7 @@ class DashboardController extends AbstractController
             $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
 
             // Run verification with recursion support
-            $cmd = "($activate && python3 \"$script\" --verify \"$root\" --recursive)";
+            $cmd = "($activate && python3 " . escapeshellarg($script) . " --verify " . escapeshellarg($root) . " --recursive)";
 
             $process = Process::fromShellCommandline($cmd);
             $process->run();
@@ -233,7 +233,7 @@ class DashboardController extends AbstractController
         $filePath = $data['path'] ?? '';
 
         if (empty($filePath) || !file_exists($filePath)) {
-            return $this->json(['success' => false, 'message' => 'File not found']);
+            return $this->json(['success' => false, 'message' => 'File not found: ' . $filePath]);
         }
 
         $config = $storage->get('config', []);
@@ -244,7 +244,7 @@ class DashboardController extends AbstractController
         $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
 
         // Build shell command
-        $cmdStr = "($activate && python3 \"$script\" --tags \"$filePath\")";
+        $cmdStr = "($activate && python3 " . escapeshellarg($script) . " --tags " . escapeshellarg($filePath) . ")";
 
         $process = Process::fromShellCommandline($cmdStr);
         $process->run();
@@ -283,10 +283,9 @@ class DashboardController extends AbstractController
         $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
 
         // Build shell command
-        $cmdStr = "($activate && python3 \"$script\" --update-tags \"$filePath\"";
+        $cmdStr = "($activate && python3 " . escapeshellarg($script) . " --update-tags " . escapeshellarg($filePath);
         foreach ($tags as $name => $value) {
-            $valueEscaped = str_replace('"', '\"', $value);
-            $cmdStr .= " --$name \"$valueEscaped\"";
+            $cmdStr .= " --$name " . escapeshellarg($value);
         }
         $cmdStr .= ")";
 
@@ -1022,11 +1021,22 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/torrent-db/categories', name: 'torrent_db_categories', methods: ['GET'])]
-    public function torrentDbCategories(TorrentDbService $torrentDb): Response
+    public function torrentDbCategories(TorrentDbService $torrentDb, JsonStorage $storage): Response
     {
+        if (!$torrentDb->isDbInitialized()) {
+            return $this->json([
+                'success' => false,
+                'error' => 'db_not_found',
+                'message' => 'Database not initialized'
+            ]);
+        }
+
+        $config = $storage->get('config', []);
+        $allowXxx = $config['allow_xxx_search'] ?? false;
+
         return $this->json([
             'success' => true,
-            'categories' => $torrentDb->getCategories()
+            'categories' => $torrentDb->getCategories($allowXxx)
         ]);
     }
 
@@ -1034,7 +1044,7 @@ class DashboardController extends AbstractController
     public function torrentDbSearch(Request $request, TorrentDbService $torrentDb): Response
     {
         $data = json_decode($request->getContent(), true);
-        $categoryId = (int) ($data['categoryId'] ?? 0);
+        $categoryId = $data['categoryId'] ?? '';
         $query = $data['query'] ?? '';
 
         if (!$categoryId || !$query) {
@@ -1046,6 +1056,22 @@ class DashboardController extends AbstractController
         return $this->json([
             'success' => true,
             'results' => $results
+        ]);
+    }
+
+    #[Route('/torrent-db/description', name: 'torrent_db_description', methods: ['POST'])]
+    public function torrentDbDescription(Request $request, TorrentDbService $torrentDb): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        $hash = $data['hash'] ?? '';
+
+        if (!$hash) {
+            return $this->json(['success' => false, 'message' => 'Hash required']);
+        }
+
+        return $this->json([
+            'success' => true,
+            'description' => $torrentDb->getDescription($hash)
         ]);
     }
 
@@ -1124,17 +1150,14 @@ class DashboardController extends AbstractController
             $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
             $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
 
-            $mappingEscaped = str_replace('"', '\"', $mapping);
-            $promptEscaped = str_replace('"', '\"', $grokPrompt);
-
-            $cmd = "($activate && python3 \"$script\" " .
-                "--source \"$sourcePath\" " .
-                "--library \"$sourcePath\" " . // Pass source as library since move is disabled
-                "--mode \"$mode\" " .
-                "--mapping \"$mappingEscaped\" " .
-                "--grok-key \"$grokKey\" " .
-                "--grok-model \"$grokModel\" " .
-                "--grok-prompt \"$promptEscaped\" " .
+            $cmd = "($activate && python3 " . escapeshellarg($script) . " " .
+                "--source " . escapeshellarg($sourcePath) . " " .
+                "--library " . escapeshellarg($sourcePath) . " " . // Pass source as library since move is disabled
+                "--mode " . escapeshellarg($mode) . " " .
+                "--mapping " . escapeshellarg($mapping) . " " .
+                "--grok-key " . escapeshellarg($grokKey) . " " .
+                "--grok-model " . escapeshellarg($grokModel) . " " .
+                "--grok-prompt " . escapeshellarg($grokPrompt) . " " .
                 "--tags-only)";
 
             $process = Process::fromShellCommandline($cmd);
@@ -1196,7 +1219,7 @@ class DashboardController extends AbstractController
             // Build command: activate venv AND run script
             // Note: On Windows, use & or &&. Chaining with && ensures python runs only if activate succeeds.
             // We need to run inside a shell.
-            $cmd = "($activate && python3 \"$script\" \"$path\" --force-save --add-unsync --json)";
+            $cmd = "($activate && python3 " . escapeshellarg($script) . " " . escapeshellarg($path) . " --force-save --add-unsync --json)";
 
             $process = Process::fromShellCommandline($cmd);
             $process->setWorkingDirectory($kernel->getProjectDir());
