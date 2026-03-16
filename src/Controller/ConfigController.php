@@ -170,11 +170,26 @@ class ConfigController extends AbstractController
                 mkdir($composerHome, 0777, true);
             }
 
-            // Run composer update
-            // We use --no-cache to avoid storing large ZIP archives in var/composer_home/cache
-            // Since composer.json now uses a static "package" repository for gautardos/hash-db,
-            // it will download a ZIP directly from GitHub, bypassing Git and SSH entirely.
-            $cmd = ['composer', 'update', 'gautardos/hash-db', '--no-interaction', '--no-scripts', '--no-plugins', '--no-cache'];
+            // Diagnostics before
+            $vendorPkgDir = $projectDir . '/vendor/gautardos/hash-db';
+
+            // Step 1: Force remove the vendor package directory if it exists
+            if (is_dir($vendorPkgDir)) {
+                $processRemove = Process::fromShellCommandline(
+                    strtoupper(substr(PHP_OS, 0, 3)) === 'WIN'
+                    ? "rmdir /s /q " . escapeshellarg($vendorPkgDir)
+                    : "rm -rf " . escapeshellarg($vendorPkgDir)
+                );
+                $processRemove->run();
+            }
+
+            // Step 2: Clear composer cache
+            $processClear = new Process(['composer', 'clear-cache']);
+            $processClear->setEnv(['COMPOSER_HOME' => $composerHome]);
+            $processClear->run();
+
+            // Step 3: Run composer update
+            $cmd = ['composer', 'update', 'gautardos/hash-db', '--no-interaction', '--no-scripts', '--no-plugins', '--no-cache', '--prefer-dist'];
             $process = new Process($cmd);
             $process->setWorkingDirectory($projectDir);
             $process->setEnv(['COMPOSER_HOME' => $composerHome]);

@@ -5,15 +5,8 @@
     "prefer-stable": true,
     "repositories": [
         {
-            "type": "package",
-            "package": {
-                "name": "gautardos/hash-db",
-                "version": "dev-master",
-                "dist": {
-                    "url": "https://github.com/Gautardos/hash-db/archive/refs/heads/master.zip",
-                    "type": "zip"
-                }
-            }
+            "type": "vcs",
+            "url": "https://github.com/Gautardos/hash-db"
         }
     ],
     "require": {
