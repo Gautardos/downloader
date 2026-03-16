@@ -171,9 +171,10 @@ class ConfigController extends AbstractController
             }
 
             // Run composer update
+            // We use --no-cache to avoid storing large ZIP archives in var/composer_home/cache
             // Since composer.json now uses a static "package" repository for gautardos/hash-db,
             // it will download a ZIP directly from GitHub, bypassing Git and SSH entirely.
-            $cmd = ['composer', 'update', 'gautardos/hash-db', '--no-interaction', '--no-scripts', '--no-plugins'];
+            $cmd = ['composer', 'update', 'gautardos/hash-db', '--no-interaction', '--no-scripts', '--no-plugins', '--no-cache'];
             $process = new Process($cmd);
             $process->setWorkingDirectory($projectDir);
             $process->setEnv(['COMPOSER_HOME' => $composerHome]);
@@ -309,5 +310,102 @@ class ConfigController extends AbstractController
         } catch (\Exception $e) {
             return $this->json(['success' => false, 'message' => $e->getMessage()]);
         }
+    }
+    #[Route('/config/export', name: 'config_export', methods: ['GET'])]
+    public function exportConfig(JsonStorage $storage, KernelInterface $kernel): \Symfony\Component\HttpFoundation\BinaryFileResponse|Response
+    {
+        $projectDir = $kernel->getProjectDir();
+        $configFile = $storage->getStorageDir() . '/config.json';
+        $credentialsFile = $projectDir . '/var/home/.local/credentials.json';
+
+        $zipPath = sys_get_temp_dir() . '/alldebrid_config_backup_' . time() . '.zip';
+        $zip = new \ZipArchive();
+
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            return new Response('Could not create zip file', 500);
+        }
+
+        $added = false;
+        if (file_exists($configFile)) {
+            $zip->addFile($configFile, 'config.json');
+            $added = true;
+        }
+
+        if (file_exists($credentialsFile)) {
+            $zip->addFile($credentialsFile, 'credentials.json');
+            $added = true;
+        }
+
+        $zip->close();
+
+        if (!$added) {
+            return new Response('No configuration files found to export.', 404);
+        }
+
+        $response = new \Symfony\Component\HttpFoundation\BinaryFileResponse($zipPath);
+        $response->headers->set('Content-Type', 'application/zip');
+        $response->setContentDisposition(
+            \Symfony\Component\HttpFoundation\ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            'alldebridDL-config-backup.zip'
+        );
+        $response->deleteFileAfterSend(true);
+
+        return $response;
+    }
+
+    #[Route('/config/import', name: 'config_import', methods: ['POST'])]
+    public function importConfig(Request $request, JsonStorage $storage, KernelInterface $kernel): Response
+    {
+        $file = $request->files->get('config_zip');
+        if (!$file) {
+            return $this->json(['success' => false, 'message' => 'No file uploaded']);
+        }
+
+        if ($file->getClientOriginalExtension() !== 'zip' && $file->guessExtension() !== 'zip') {
+            return $this->json(['success' => false, 'message' => 'Invalid file type. Please upload a ZIP file.']);
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($file->getPathname()) === true) {
+            $projectDir = $kernel->getProjectDir();
+            $configDir = $storage->getStorageDir();
+            $credsDir = $projectDir . '/var/home/.local';
+
+            $extracted = [];
+
+            // Extract config.json
+            if ($zip->locateName('config.json') !== false) {
+                if (!is_dir($configDir)) {
+                    mkdir($configDir, 0777, true);
+                }
+                $content = $zip->getFromName('config.json');
+                if ($content !== false) {
+                    file_put_contents($configDir . '/config.json', $content);
+                    $extracted[] = 'config.json';
+                }
+            }
+
+            // Extract credentials.json
+            if ($zip->locateName('credentials.json') !== false) {
+                if (!is_dir($credsDir)) {
+                    mkdir($credsDir, 0777, true);
+                }
+                $content = $zip->getFromName('credentials.json');
+                if ($content !== false) {
+                    file_put_contents($credsDir . '/credentials.json', $content);
+                    $extracted[] = 'credentials.json';
+                }
+            }
+
+            $zip->close();
+
+            if (empty($extracted)) {
+                return $this->json(['success' => false, 'message' => 'Valid configuration files (config.json, credentials.json) not found in ZIP.']);
+            }
+
+            return $this->json(['success' => true, 'message' => 'Configuration imported successfully! Extracted: ' . implode(', ', $extracted)]);
+        }
+
+        return $this->json(['success' => false, 'message' => 'Failed to open ZIP file.']);
     }
 }

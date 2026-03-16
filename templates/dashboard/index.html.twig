@@ -937,6 +937,13 @@ async function loadTorrentDbCategories() {
             document.getElementById('torrent-db-search-container').style.display = 'block';
             document.getElementById('torrent-db-init-container').style.display = 'none';
             const select = document.getElementById('torrent-db-category');
+            
+            // Add "All" option at the top
+            const allOption = document.createElement('option');
+            allOption.value = 'all';
+            allOption.textContent = 'All Categories';
+            select.appendChild(allOption);
+
             data.categories.forEach(cat => {
                 const option = document.createElement('option');
                 option.value = cat.parent_category + '-' + cat.category;
@@ -992,7 +999,7 @@ async function searchTorrentDb() {
     const resultsDiv = document.getElementById('torrent-db-results');
     const loadingDiv = document.getElementById('torrent-db-loading');
     
-    if (!categoryId || query.length < 2) {
+    if (!categoryId || (categoryId !== 'all' && query.length < 2)) {
         resultsDiv.style.display = 'none';
         return;
     }

@@ -282,8 +282,13 @@
                 </div>
             </section>
 
+        </div>
+        
+        <button type="submit" class="btn btn-primary btn-full" style="margin-top: 2rem; margin-bottom: 2rem;">Save All Settings</button>
+
+        <div style="display: grid; grid-template-columns: 1fr; gap: 2rem;">
             <!-- Maintenance & Database -->
-            <section style="grid-column: span 2; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
+            <section style="margin-top: 1rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
                 <h3 style="color: var(--accent); margin-bottom: 1rem;">Maintenance & Database</h3>
                 <div style="background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 2rem;">
@@ -302,9 +307,40 @@
                     <div id="update-db-status" style="margin-top: 1rem; padding: 1rem; border-radius: 6px; display: none; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; max-height: 200px; overflow-y: auto;"></div>
                 </div>
             </section>
-        </div>
 
-        <button type="submit" class="btn btn-primary btn-full" style="margin-top: 2rem;">Save All Settings</button>
+            <!-- Backup & Restore -->
+            <section style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <h3 style="color: var(--accent); margin-bottom: 1rem;">Backup & Restore</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <!-- Export -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <h4 style="margin: 0 0 0.5rem 0;">Export Configuration</h4>
+                        <p style="color: var(--text-secondary); margin: 0 0 1rem 0; font-size: 0.9rem;">
+                            Download your settings and Spotify credentials as a single ZIP archive. You can store this backup on Google Drive or another safe place.
+                        </p>
+                        <a href="{{ path('config_export') }}" class="btn btn-primary" style="display: inline-block; text-align: center; width: 100%; box-sizing: border-box;">
+                            📥 Download ZIP Backup
+                        </a>
+                    </div>
+                    
+                    <!-- Import -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <h4 style="margin: 0 0 0.5rem 0;">Import Configuration</h4>
+                        <p style="color: var(--text-secondary); margin: 0 0 1rem 0; font-size: 0.9rem;">
+                            Restore your settings and Spotify credentials from a previously exported ZIP file. This will overwrite current configurations.
+                        </p>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="file" id="config_zip_import" accept=".zip" style="display: none;" onchange="handleConfigImport(this)">
+                            <button type="button" class="btn btn-warning" onclick="document.getElementById('config_zip_import').click()" style="width: 100%;">
+                                📤 Upload ZIP Backup...
+                            </button>
+                        </div>
+                        <div id="import-status" style="margin-top: 1rem; font-size: 0.85rem; display: none;"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
     </form>
 </div>
 {% endblock %}
@@ -442,5 +478,49 @@ document.getElementById('btn-update-hash-db').addEventListener('click', async fu
         btnSpinner.style.display = 'none';
     }
 });
+
+async function handleConfigImport(input) {
+    if (!input.files || input.files.length === 0) return;
+    
+    const file = input.files[0];
+    if (!confirm(`Are you sure you want to import ${file.name}? This will immediately overwrite your current settings.`)) {
+        input.value = '';
+        return;
+    }
+
+    const statusDiv = document.getElementById('import-status');
+    statusDiv.style.display = 'block';
+    statusDiv.style.color = 'var(--text-secondary)';
+    statusDiv.innerText = 'Uploading and extracting...';
+
+    const formData = new FormData();
+    formData.append('config_zip', file);
+
+    try {
+        const response = await fetch("{{ path('config_import') }}", {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            statusDiv.style.color = 'var(--success)';
+            statusDiv.innerText = '✅ ' + result.message + ' Reloading page...';
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            statusDiv.style.color = 'var(--danger)';
+            statusDiv.innerText = '❌ ' + result.message;
+        }
+    } catch (e) {
+        statusDiv.style.color = 'var(--danger)';
+        statusDiv.innerText = '❌ Network error during import: ' + e.message;
+    } finally {
+        input.value = ''; // Reset input so the same file could be selected again if needed
+    }
+}
 </script>
 {% endblock %}

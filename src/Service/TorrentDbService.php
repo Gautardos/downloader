@@ -97,27 +97,35 @@ class TorrentDbService
             return $results;
         }
 
-        // $categoryId is expected to be "parent_category-category"
-        $parts = explode('-', $categoryId);
-        $parentCategory = $parts[0] ?? '';
-        $category = $parts[1] ?? '';
-
         // Normalize query to use % instead of spaces
         $normalizedQuery = $this->normalize($query);
         $queryParts = preg_split('/\s+/', trim($normalizedQuery), -1, PREG_SPLIT_NO_EMPTY);
         $likeQuery = '%' . implode('%', $queryParts) . '%';
 
         try {
-            $sql = 'SELECT name as title, hash_info as hash, size, CASE WHEN length(description) > 0 THEN 1 ELSE 0 END as has_description FROM torrents 
-                    WHERE name LIKE :query 
-                      AND parent_category = :parent_category 
-                      AND (category = :category OR category IS NULL OR category = "")
-                    LIMIT :limit';
+            if ($categoryId === 'all') {
+                // Global search without category filters
+                $sql = 'SELECT name as title, hash_info as hash, size, CASE WHEN length(description) > 0 THEN 1 ELSE 0 END as has_description FROM torrents 
+                        WHERE name LIKE :query 
+                        LIMIT :limit';
+                $stmt = $pdo->prepare($sql);
+            } else {
+                // $categoryId is expected to be "parent_category-category"
+                $parts = explode('-', $categoryId);
+                $parentCategory = $parts[0] ?? '';
+                $category = $parts[1] ?? '';
 
-            $stmt = $pdo->prepare($sql);
+                $sql = 'SELECT name as title, hash_info as hash, size, CASE WHEN length(description) > 0 THEN 1 ELSE 0 END as has_description FROM torrents 
+                        WHERE name LIKE :query 
+                          AND parent_category = :parent_category 
+                          AND (category = :category OR category IS NULL OR category = "")
+                        LIMIT :limit';
+                $stmt = $pdo->prepare($sql);
+                $stmt->bindValue(':parent_category', $parentCategory);
+                $stmt->bindValue(':category', $category);
+            }
+
             $stmt->bindValue(':query', $likeQuery);
-            $stmt->bindValue(':parent_category', $parentCategory);
-            $stmt->bindValue(':category', $category);
             $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
             $stmt->execute();
 
