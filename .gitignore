@@ -14,3 +14,4 @@ var/
 /public/debug.txt
 /public/dump_api.php
 /.env.dev
+__pycache__/

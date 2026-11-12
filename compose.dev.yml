@@ -11,6 +11,8 @@ services:
       - ./src:/var/www/html/src
       - ./templates:/var/www/html/templates
       - ./cli:/var/www/html/cli
+      - ./public:/var/www/html/public
+      - ./config:/var/www/html/config
       - ../data/.env.local:/var/www/html/.env.local:ro
       - ../data/db:/var/www/html/var/db
       - ../data/home:/var/www/html/var/home

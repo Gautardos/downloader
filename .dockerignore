@@ -33,3 +33,4 @@ public/debug.txt
 *.swp
 compose.dev.yml
 release.sh
+__pycache__/
