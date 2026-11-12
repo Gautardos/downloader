@@ -1,0 +1,27 @@
+# Developpement local : image construite depuis ce dossier, code monte (pris en compte sans rebuild).
+# Lancer :  docker compose -f compose.dev.yml up -d --build      Arreter : docker compose -f compose.dev.yml down
+# Une modification de config/, composer.* , Dockerfile ou cli/requirements.txt demande --build.
+services:
+  downloader:
+    build: .
+    image: gautardos/downloader-app:dev
+    container_name: downloader-dev
+    network_mode: host
+    environment:
+      - PORT=${DEV_PORT:-8080}
+    volumes:
+      - ./src:/var/www/html/src
+      - ./templates:/var/www/html/templates
+      - ./cli:/var/www/html/cli
+      - ../data/.env.local:/var/www/html/.env.local:ro
+      - ../data/db:/var/www/html/var/db
+      - ../data/home:/var/www/html/var/home
+      - ../data/storage:/var/www/html/var/storage
+      - ${DOWNLOADS_DIR:-${HOME}/Documents/downloads}:/downloads
+      - ${MUSIC_DIR:-${HOME}/Documents/music}:/music
+      - ${NAS_DIR:-${HOME}/Documents/storage}:/nas
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

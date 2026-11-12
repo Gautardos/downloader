@@ -13,3 +13,23 @@ docker-compose.override.yml
 tests/
 .phpunit.result.cache
 phpunit.xml.dist
+
+# Ajouts du 2026-11-12 : ni secret, ni donnees, ni debogage dans l'image
+.git
+.gitattributes
+.env.local
+.env.*.local
+.env.dev
+var/db/
+var/home/
+var/storage/
+var/cache/
+var/log/
+var/logs/
+var/sessions/
+public/info.php
+public/dump_api.php
+public/debug.txt
+*.swp
+compose.dev.yml
+release.sh
