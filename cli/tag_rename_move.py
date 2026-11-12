@@ -1,14 +1,229 @@
 import os
+import time
 import argparse
 import json
 import re
 import shutil
+import unicodedata
 import requests
 import music_tag
 
 # In-memory cache for genre detection during the current session
 GENRE_CACHE = {}
 AUDIO_EXTENSIONS = ('.mp3', '.flac', '.m4a', '.opus', '.ogg')
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+CONFIG_PATH = os.path.join(BASE_DIR, 'var', 'storage', 'config.json')
+SPOTIFY_TOKEN_CACHE_FILE = os.path.join(BASE_DIR, 'var', 'cache', 'spotify_token.json')
+SPOTIFY_GENRE_CACHE_FILE = os.path.join(BASE_DIR, 'var', 'cache', 'spotify_genres_cache.json')
+SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token'
+SPOTIFY_API_URL = 'https://api.spotify.com/v1'
+SPOTIFY_CACHE_TTL = 30 * 86400
+
+def load_config():
+    try:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+def read_json_cache(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+def write_json_cache(path, data, private=False):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        temp_path = path + '.tmp'
+        with open(temp_path, 'w', encoding='utf-8') as handle:
+            json.dump(data, handle, ensure_ascii=False)
+        os.replace(temp_path, path)
+        if private:
+            try:
+                os.chmod(path, 0o600)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def normalize_search_text(value):
+    value = unicodedata.normalize('NFKD', str(value or ''))
+    value = ''.join(char for char in value if not unicodedata.combining(char))
+    return re.sub(r'[^a-z0-9]+', ' ', value.lower()).strip()
+
+def get_spotify_token(config):
+    client_id = str(config.get('spotify_client_id') or '').strip()
+    client_secret = str(config.get('spotify_client_secret') or '').strip()
+    if not client_id or not client_secret:
+        return None
+
+    now = time.time()
+    cached = read_json_cache(SPOTIFY_TOKEN_CACHE_FILE)
+    if (
+        cached.get('access_token')
+        and cached.get('client_id') == client_id
+        and float(cached.get('expires_at') or 0) > now + 60
+    ):
+        return cached['access_token']
+
+    try:
+        response = requests.post(
+            SPOTIFY_TOKEN_URL,
+            data={'grant_type': 'client_credentials'},
+            auth=(client_id, client_secret),
+            timeout=15
+        )
+        response.raise_for_status()
+        data = response.json()
+        token = data.get('access_token')
+        if not token:
+            return None
+
+        write_json_cache(SPOTIFY_TOKEN_CACHE_FILE, {
+            'access_token': token,
+            'client_id': client_id,
+            'expires_at': now + int(data.get('expires_in') or 3600),
+        }, private=True)
+
+        return token
+    except Exception:
+        return None
+
+def spotify_search_track(token, artist, album, title):
+    title_clean = re.sub(r'"', '', str(title or '')).strip()
+    artist_clean = re.sub(r'"', '', str(artist or '')).strip()
+    album_clean = re.sub(r'"', '', str(album or '')).strip()
+
+    parts = []
+    if title_clean and title_clean.lower() not in ('untitled', 'unknown'):
+        parts.append(f'track:"{title_clean}"')
+    if artist_clean and artist_clean.lower() not in ('unknown',):
+        parts.append(f'artist:"{artist_clean}"')
+    if not parts and album_clean and album_clean.lower() not in ('unknown',):
+        parts.append(f'album:"{album_clean}"')
+    if not parts:
+        return None
+
+    response = requests.get(
+        f'{SPOTIFY_API_URL}/search',
+        headers={'Authorization': f'Bearer {token}'},
+        params={'q': ' '.join(parts), 'type': 'track', 'limit': 5},
+        timeout=15
+    )
+    response.raise_for_status()
+    items = response.json().get('tracks', {}).get('items', []) or []
+
+    target_artist = normalize_search_text(artist)
+    target_title = normalize_search_text(title)
+
+    for item in items:
+        artist_names = ' '.join(a.get('name', '') for a in item.get('artists', []))
+        item_title = normalize_search_text(item.get('name', ''))
+        if target_artist and target_artist not in normalize_search_text(artist_names):
+            continue
+        if target_title and target_title not in item_title and item_title not in target_title:
+            continue
+        return item
+
+    return items[0] if items else None
+
+def spotify_artist_genres(token, artist_ids):
+    artist_ids = [artist_id for artist_id in artist_ids if artist_id][:50]
+    if not artist_ids:
+        return []
+
+    response = requests.get(
+        f'{SPOTIFY_API_URL}/artists',
+        headers={'Authorization': f'Bearer {token}'},
+        params={'ids': ','.join(artist_ids)},
+        timeout=15
+    )
+    response.raise_for_status()
+
+    genres = []
+    for artist in response.json().get('artists', []) or []:
+        for genre in artist.get('genres', []) or []:
+            if genre and genre not in genres:
+                genres.append(genre)
+
+    return genres
+
+def spotify_album_genres(token, album_id):
+    if not album_id:
+        return []
+
+    response = requests.get(
+        f'{SPOTIFY_API_URL}/albums/{album_id}',
+        headers={'Authorization': f'Bearer {token}'},
+        timeout=15
+    )
+    response.raise_for_status()
+
+    genres = []
+    for genre in response.json().get('genres', []) or []:
+        if genre and genre not in genres:
+            genres.append(genre)
+
+    return genres
+
+def get_spotify_genres(artist, album, title, config, add_log):
+    if not config.get('music_spotify_genres', True):
+        add_log('Spotify genre lookup disabled.')
+        return []
+
+    if not config.get('spotify_client_id') or not config.get('spotify_client_secret'):
+        add_log('Spotify credentials not configured; skipping Spotify genres.')
+        return []
+
+    cache_key = '|'.join([
+        normalize_search_text(artist),
+        normalize_search_text(album or title),
+    ])
+    cache = read_json_cache(SPOTIFY_GENRE_CACHE_FILE)
+    now = time.time()
+    entry = cache.get(cache_key)
+    if entry and float(entry.get('updated_at') or 0) > now - SPOTIFY_CACHE_TTL:
+        genres = entry.get('genres') or []
+        if genres:
+            add_log('Spotify genres from cache: ' + ', '.join(genres))
+        return genres
+
+    token = get_spotify_token(config)
+    if not token:
+        add_log('Could not obtain Spotify token; skipping Spotify genres.')
+        return []
+
+    try:
+        track = spotify_search_track(token, artist, album, title)
+        if not track:
+            cache[cache_key] = {'genres': [], 'updated_at': now}
+            write_json_cache(SPOTIFY_GENRE_CACHE_FILE, cache)
+            add_log('No Spotify match found.')
+            return []
+
+        artist_ids = [artist_data.get('id') for artist_data in track.get('artists', [])]
+        genres = spotify_artist_genres(token, artist_ids)
+        if not genres:
+            album_id = (track.get('album') or {}).get('id')
+            genres = spotify_album_genres(token, album_id)
+
+        cache[cache_key] = {'genres': genres, 'updated_at': now}
+        write_json_cache(SPOTIFY_GENRE_CACHE_FILE, cache)
+
+        if genres:
+            add_log('Spotify genres: ' + ', '.join(genres))
+        else:
+            add_log('Spotify returned no genres.')
+
+        return genres
+    except Exception as exc:
+        add_log(f'Spotify genre lookup failed: {exc}')
+        return []
 
 def get_genre_from_file(file_path):
     """Reads the genre from a specific file if it exists."""
@@ -59,24 +274,37 @@ def map_genre(genre, mapping_json):
             continue
     return genre
 
-def detect_genre_with_ai(artist, album, api_key, endpoint, model, prompt):
-    if not api_key:
+def detect_genre_with_ai(artist, album, api_key, endpoint, model, prompt, referer="", app_title="", track_title="", year="", spotify_genres=None):
+    if not api_key or not model:
         return "Unknown"
-    
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if app_title:
+        headers["X-Title"] = app_title
+
     # Default prompt if none provided
     system_prompt = prompt or """
     Tu es un expert en classification musicale. Détermine le genre musical de cet album/artiste.
     Réponds UNIQUEMENT par le nom du genre (ex: Pop, Rock, Rap & Hip-Hop).
     """
-    
+
+    user_lines = [f"Artiste: {artist}", f"Album: {album}"]
+    if track_title:
+        user_lines.append(f"Titre: {track_title}")
+    if year:
+        user_lines.append(f"Année: {year}")
+    if spotify_genres:
+        user_lines.append("Genres Spotify: " + ", ".join(spotify_genres))
+        user_lines.append("Utilise en priorité ces genres Spotify et normalise-les selon les règles ci-dessus. Si aucun genre ne peut être normalisé, réponds Unknown.")
+
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Artiste: {artist}, Album: {album}"}
+        {"role": "user", "content": "\n".join(user_lines)}
     ]
     
     payload = {
@@ -86,14 +314,24 @@ def detect_genre_with_ai(artist, album, api_key, endpoint, model, prompt):
         "temperature": 0.3
     }
     
-    try:
-        response = requests.post(endpoint, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()
-        return response.json().get("choices", [{}])[0].get("message", {}).get("content", "Unknown").strip()
-    except:
-        return "Unknown"
+    for attempt in range(2):
+        try:
+            response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "Unknown")
+            content = (content or "").strip()
+            if content and content.lower() not in ["", "unknown", "none"]:
+                return content
+        except Exception:
+            pass
 
-def process_file(file_path, library_path, args):
+        if attempt == 0:
+            time.sleep(0.75)
+
+    return "Unknown"
+
+def process_file(file_path, library_path, args, config=None):
+    config = config or {}
     report = {
         "original_file": os.path.basename(file_path),
         "status": "success",
@@ -190,40 +428,78 @@ def process_file(file_path, library_path, args):
         # Genre tagging logic
         new_genre = old_genre
         genre_source = "Original"
-        
-        # 1. Apply mapping first if genre exists
-        if old_genre and old_genre.lower() not in ['', 'unknown', 'none']:
-            mapped_genre = map_genre(old_genre, args.mapping)
-            if mapped_genre != old_genre:
-                add_log(f"Applied mapping: {old_genre} -> {mapped_genre}")
-                new_genre = mapped_genre
-                genre_source = "Mapping"
+        cache_key = (artist, album)
 
-        # 2. If genre is still unknown, try optimizations
-        if new_genre.lower() in ['', 'unknown', 'none']:
-            # A. Check if the PRECISE file already exists in destination
-            dest_genre = get_genre_from_file(final_path)
-            if dest_genre:
-                new_genre = dest_genre
-                genre_source = "Existing File"
-                add_log(f"Found existing file at destination. Inheriting genre: {new_genre}")
+        if args.force_ai:
+            add_log("Forced AI genre detection requested.")
+            if cache_key in GENRE_CACHE:
+                new_genre = GENRE_CACHE[cache_key]
+                genre_source = "Session Cache"
+                add_log(f"Detected previous detection for this album in cache: {new_genre}")
+            elif args.mode == 'ai':
+                add_log(f"Querying AI for {artist} - {album}...")
+                ai_genre = detect_genre_with_ai(artist, album, args.ai_key, args.ai_endpoint, args.ai_model, args.ai_prompt, args.ai_referer, args.ai_title)
+                if ai_genre and ai_genre.lower() not in ["", "unknown", "none"]:
+                    new_genre = ai_genre
+                    GENRE_CACHE[cache_key] = ai_genre
+                    genre_source = "AI"
+                    add_log(f"AI detected genre: {new_genre}")
+                else:
+                    add_log("AI could not determine a genre. Keeping existing genre.")
             else:
-                # B. Check memory cache (Session)
-                cache_key = (artist, album)
-                if cache_key in GENRE_CACHE:
-                    new_genre = GENRE_CACHE[cache_key]
-                    genre_source = "Session Cache"
-                    add_log(f"Detected previous detection for this album in cache: {new_genre}")
-                # C. Final fallback: AI Detection
-                elif args.mode == 'ai':
-                    add_log(f"No genre found. Querying Grok for {artist} - {album}...")
-                    new_genre = detect_genre_with_ai(artist, album, args.grok_key, args.grok_endpoint, args.grok_model, args.grok_prompt)
-                    if new_genre and new_genre.lower() not in ["", "unknown", "none"]:
-                        GENRE_CACHE[cache_key] = new_genre
-                        genre_source = "AI (Grok)"
-                        add_log(f"Grok detected genre: {new_genre}")
-                    else:
-                        add_log("Grok could not determine a genre.")
+                add_log("AI is disabled. Keeping existing genre.")
+        else:
+            # 1. Apply mapping first if genre exists
+            if old_genre and old_genre.lower() not in ['', 'unknown', 'none']:
+                mapped_genre = map_genre(old_genre, args.mapping)
+                if mapped_genre != old_genre:
+                    add_log(f"Applied mapping: {old_genre} -> {mapped_genre}")
+                    new_genre = mapped_genre
+                    genre_source = "Mapping"
+
+            # 2. If genre is still unknown, try optimizations
+            if new_genre.lower() in ['', 'unknown', 'none']:
+                # A. Check if the PRECISE file already exists in destination
+                dest_genre = get_genre_from_file(final_path)
+                if dest_genre:
+                    new_genre = dest_genre
+                    genre_source = "Existing File"
+                    add_log(f"Found existing file at destination. Inheriting genre: {new_genre}")
+                else:
+                    # B. Check memory cache (Session)
+                    if cache_key in GENRE_CACHE:
+                        new_genre = GENRE_CACHE[cache_key]
+                        genre_source = "Session Cache"
+                        add_log(f"Detected previous detection for this album in cache: {new_genre}")
+                    # C. Spotify signal, then AI normalization
+                    elif args.mode == 'ai':
+                        spotify_genres = get_spotify_genres(artist, album, title, config, add_log)
+                        add_log(f"No genre found. Querying AI for {artist} - {album}...")
+                        ai_genre = detect_genre_with_ai(
+                            artist,
+                            album,
+                            args.ai_key,
+                            args.ai_endpoint,
+                            args.ai_model,
+                            args.ai_prompt,
+                            args.ai_referer,
+                            args.ai_title,
+                            track_title=title,
+                            year=date,
+                            spotify_genres=spotify_genres
+                        )
+                        if ai_genre and ai_genre.lower() not in ["", "unknown", "none"]:
+                            new_genre = ai_genre
+                            GENRE_CACHE[cache_key] = new_genre
+                            genre_source = "Spotify + AI" if spotify_genres else "AI"
+                            add_log(f"AI detected genre: {new_genre}")
+                        elif spotify_genres:
+                            new_genre = spotify_genres[0]
+                            GENRE_CACHE[cache_key] = new_genre
+                            genre_source = "Spotify (fallback)"
+                            add_log(f"AI could not normalize genre. Using Spotify genre: {new_genre}")
+                        else:
+                            add_log("AI could not determine a genre.")
 
         audio["artist"] = main_artist
         audio["tracktitle"] = final_title
@@ -233,7 +509,14 @@ def process_file(file_path, library_path, args):
             audio["year"] = date
         audio.save()
         add_log(f"Saved tags with genre: {new_genre} (Source: {genre_source}) and date: {date}")
-        
+
+        # Flat keys are set before the early return so tags-only callers receive the result.
+        report["artist"] = artist
+        report["title"] = title
+        report["genre"] = new_genre
+        report["genre_source"] = genre_source
+        report["old_genre"] = old_genre
+
         # If tags-only mode, stop here
         if args.tags_only:
             add_log("Tags-only mode: skipping move.")
@@ -282,12 +565,6 @@ def process_file(file_path, library_path, args):
         report["final_path"] = final_path
         report["final_name"] = final_name
         
-        # Flat keys for UI summary
-        report["artist"] = artist
-        report["title"] = title
-        report["genre"] = new_genre
-        report["genre_source"] = genre_source
-        report["old_genre"] = old_genre
         report["new_path"] = final_path
         
     except Exception as e:
@@ -309,14 +586,30 @@ def main():
     parser.add_argument("--library", required=True)
     parser.add_argument("--mode", default="ai")
     parser.add_argument("--mapping", default="{}")
-    parser.add_argument("--grok-key", default="")
+    parser.add_argument("--ai-endpoint", default="")
+    parser.add_argument("--ai-key", default="")
+    parser.add_argument("--ai-model", default="")
+    parser.add_argument("--ai-referer", default="")
+    parser.add_argument("--ai-title", default="")
+    parser.add_argument("--ai-prompt", default="")
     parser.add_argument("--grok-endpoint", default="https://api.x.ai/v1/chat/completions")
+    parser.add_argument("--grok-key", default="")
     parser.add_argument("--grok-model", default="grok-beta")
     parser.add_argument("--grok-prompt", default="")
+    parser.add_argument("--force-ai", action="store_true", help="Force AI genre detection, ignoring the existing genre")
     parser.add_argument("--tags-only", action="store_true", help="Only update tags, do not move files")
-    
+
     args = parser.parse_args()
-    
+
+    if not args.ai_endpoint:
+        args.ai_endpoint = args.grok_endpoint
+    if not args.ai_key:
+        args.ai_key = args.grok_key
+    if not args.ai_model:
+        args.ai_model = args.grok_model
+    if not args.ai_prompt:
+        args.ai_prompt = args.grok_prompt
+
     results = []
     
     if not os.path.exists(args.source):
@@ -332,8 +625,9 @@ def main():
             if filename.lower().endswith(AUDIO_EXTENSIONS)
         ]
 
+    config = load_config()
     for file_path in files:
-        results.append(process_file(file_path, args.library, args))
+        results.append(process_file(file_path, args.library, args, config))
 
     print(json.dumps({"results": results}))
 

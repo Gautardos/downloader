@@ -3,6 +3,8 @@
 import os
 import argparse
 import json
+import re
+import unicodedata
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import USLT, ID3
 from mutagen.mp4 import MP4, MP4FreeForm
@@ -14,6 +16,7 @@ import sys
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from bs4 import BeautifulSoup  # Ajout pour parser les pages Genius
+from difflib import SequenceMatcher
 
 colorama.init()
 
@@ -28,6 +31,52 @@ SOURCES = {
     'genius': 'https://api.genius.com/',
     'spotify': 'https://api.spotify.com/v1/'
 }
+
+BROWSER_USER_AGENT = (
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+)
+GENIUS_PAGE_HEADERS = {
+    'User-Agent': BROWSER_USER_AGENT,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+}
+
+
+def normalize_match_text(value):
+    value = unicodedata.normalize('NFKD', str(value or ''))
+    value = ''.join(char for char in value if not unicodedata.combining(char))
+    value = value.lower()
+    value = re.sub(r'\b(feat|ft|featuring)\.?\b.*$', ' ', value)
+    value = re.sub(r'[\[\(][^\]\)]*(remaster|version|edit|live)[^\]\)]*[\]\)]', ' ', value)
+    value = re.sub(r'[^a-z0-9]+', ' ', value)
+    return ' '.join(value.split())
+
+def text_similarity(first, second):
+    if not first or not second:
+        return 0.0
+    return SequenceMatcher(None, first, second).ratio()
+
+def score_genius_hit(hit, title, artist):
+    result = hit.get('result', {}) if isinstance(hit, dict) else {}
+    query_title = normalize_match_text(title)
+    query_artist = normalize_match_text(artist)
+
+    hit_title = normalize_match_text(result.get('title') or result.get('full_title'))
+    hit_artist = normalize_match_text((result.get('primary_artist') or {}).get('name'))
+    artist_names = normalize_match_text(result.get('artist_names'))
+
+    title_score = text_similarity(query_title, hit_title)
+    if query_title and (query_title in hit_title or hit_title in query_title):
+        title_score = max(title_score, 0.9)
+
+    artist_scores = [text_similarity(query_artist, candidate) for candidate in (hit_artist, artist_names) if candidate]
+    artist_score = max(artist_scores) if artist_scores else 0.0
+    if query_artist and (query_artist in hit_artist or query_artist in artist_names):
+        artist_score = max(artist_score, 0.9)
+
+    combined = title_score * 0.7 + artist_score * 0.3
+    return combined, title_score, artist_score, result
 
 class LyricsFetcher:
     def __init__(self, config_file=None, force_dl_all=False, force_dl_unsync=False, add_unsync=False):
@@ -82,34 +131,106 @@ class LyricsFetcher:
             token = self.config.get("genius_api_token")
             if not token:
                 return None, False
-                
+
             headers = {'Authorization': f'Bearer {token}'}
             params = {'q': f'{title} {artist}'}
             response = requests.get(f"{SOURCES['genius']}search", headers=headers, params=params, timeout=10)
+            if response.status_code != 200:
+                print(f"Genius search returned HTTP {response.status_code}", file=sys.stderr)
+                return None, False
+
             data = response.json()
-            if data.get('response', {}).get('hits'):
-                song_url = data['response']['hits'][0]['result']['url']
-                page_response = requests.get(song_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-                if page_response.status_code == 200:
-                    soup = BeautifulSoup(page_response.text, 'html.parser')
-                    lyrics_containers = soup.find_all('div', {'data-lyrics-container': 'true'})
-                    if lyrics_containers:
-                        lyrics = ''
-                        for container in lyrics_containers:
-                            for br in container.find_all('br'):
-                                br.replace_with('\n')
-                            lyrics += container.get_text(separator='\n') + '\n'
-                        
-                        lyrics_lines = []
-                        for line in lyrics.split('\n'):
-                            line = line.strip()
-                            if line:
-                                if line.startswith('['):
-                                    lyrics_lines.append('')
-                                lyrics_lines.append(line)
-                        return '\n'.join(lyrics_lines), False
+            hits = data.get('response', {}).get('hits', [])
+            if not hits:
+                print(f"Genius search returned no result for: {title} - {artist}", file=sys.stderr)
+                return None, False
+
+            query_artist = normalize_match_text(artist)
+            scored_hits = sorted(
+                (score_genius_hit(hit, title, artist) for hit in hits),
+                key=lambda item: item[0],
+                reverse=True
+            )
+
+            selected_result = None
+            for combined, title_score, artist_score, result in scored_hits:
+                if title_score >= 0.6 and (not query_artist or artist_score >= 0.45):
+                    selected_result = result
+                    break
+                print(
+                    f"Genius result rejected (title={title_score:.2f}, artist={artist_score:.2f}): "
+                    f"{result.get('title') or result.get('full_title')} - "
+                    f"{(result.get('primary_artist') or {}).get('name')}",
+                    file=sys.stderr
+                )
+
+            if not selected_result or not selected_result.get('url'):
+                print(f"Genius found no reliable match for: {title} - {artist}", file=sys.stderr)
+                return None, False
+
+            song_url = selected_result['url']
+            page_response = requests.get(song_url, headers=GENIUS_PAGE_HEADERS, timeout=15)
+            if page_response.status_code != 200:
+                print(
+                    f"Genius page returned HTTP {page_response.status_code} for {song_url}",
+                    file=sys.stderr
+                )
+                return None, False
+
+            soup = BeautifulSoup(page_response.text, 'html.parser')
+            page_title = soup.title.get_text(' ', strip=True) if soup.title else ''
+            normalized_page_title = normalize_match_text(page_title)
+            normalized_query_title = normalize_match_text(title)
+            if (
+                normalized_query_title
+                and normalized_query_title not in normalized_page_title
+                and text_similarity(normalized_query_title, normalized_page_title) < 0.45
+            ):
+                print(
+                    f"Genius page rejected: expected '{title}', page title is '{page_title}'",
+                    file=sys.stderr
+                )
+                return None, False
+
+            lyrics_containers = soup.find_all('div', {'data-lyrics-container': 'true'})
+            if not lyrics_containers:
+                print(f"Genius page contained no lyrics container: {song_url}", file=sys.stderr)
+                return None, False
+
+            lyrics = ''
+            for container in lyrics_containers:
+                for br in container.find_all('br'):
+                    br.replace_with('\n')
+                lyrics += container.get_text(separator='\n') + '\n'
+
+            lines = [line.strip() for line in lyrics.split('\n')]
+            section_start = next(
+                (index for index, line in enumerate(lines) if re.match(r'^\[[^\]]+\]$', line)),
+                None
+            )
+
+            if section_start is not None:
+                lines = lines[section_start:]
+            else:
+                for index, line in enumerate(lines):
+                    if line.lower().endswith(' lyrics'):
+                        lines = lines[index + 1:]
+                        break
+                if 'Read More' in lines:
+                    lines = lines[lines.index('Read More') + 1:]
+
+            lyrics_lines = []
+            for line in lines:
+                line = line.strip()
+                if not line or line in ('Read More', 'You might also like', 'Embed'):
+                    continue
+                if line.startswith('['):
+                    lyrics_lines.append('')
+                lyrics_lines.append(line)
+
+            return '\n'.join(lyrics_lines).strip(), False
         except Exception as e:
-            pass
+            print(f"Genius lyrics error: {e}", file=sys.stderr)
 
         return None, False
 

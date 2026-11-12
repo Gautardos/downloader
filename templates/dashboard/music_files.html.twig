@@ -25,6 +25,25 @@
     </div>
 </div>
 
+<div id="music-player" class="card music-player" style="display:none;">
+    <div class="music-player-inner">
+        <button id="player-prev" class="btn btn-secondary player-btn" onclick="playPreviousMusic()" title="Previous">⏮</button>
+        <button id="player-toggle" class="btn btn-primary player-btn" onclick="toggleMusicPlayback()" title="Play / Pause">▶</button>
+        <button id="player-next" class="btn btn-secondary player-btn" onclick="playNextMusic()" title="Next">⏭</button>
+        <div class="music-player-main">
+            <div id="player-title" class="music-player-title">No track selected</div>
+            <input type="range" id="player-seek" min="0" max="100" step="0.1" value="0" oninput="seekMusic(this.value)" aria-label="Seek">
+            <div class="music-player-time">
+                <span id="player-current">0:00</span>
+                <span id="player-duration">0:00</span>
+            </div>
+        </div>
+        <input type="range" id="player-volume" class="music-player-volume" min="0" max="1" step="0.01" value="1" oninput="setMusicVolume(this.value)" title="Volume" aria-label="Volume">
+        <button class="btn btn-secondary player-btn" onclick="closeMusicPlayer()" title="Close player">×</button>
+    </div>
+    <audio id="music-audio" preload="metadata"></audio>
+</div>
+
 <div class="card" style="padding: 0; overflow-x: auto;">
     <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 800px;">
         <thead style="background: rgba(255,255,255,0.03);">
@@ -35,7 +54,7 @@
                 <th class="hide-mobile" style="padding: 1rem; text-align: center;">Lyrics</th>
                 <th class="hide-mobile" style="padding: 1rem;">Size</th>
                 <th class="hide-mobile" style="padding: 1rem;">Added</th>
-                <th style="padding: 1rem; width: 100px;">Actions</th>
+                <th style="padding: 1rem; min-width: 230px;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -58,7 +77,10 @@
                 <td class="hide-mobile" style="padding: 1rem;"><span class="badge" style="background: rgba(255,255,255,0.05);">{{ (file.size / 1024 / 1024)|number_format(2) }} MB</span></td>
                 <td class="hide-mobile" style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">{{ file.mtime|date('d/m/Y H:i') }}</td>
                 <td style="padding: 1rem;">
-                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <div class="music-actions" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <button class="btn btn-secondary btn-icon btn-play" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="playMusic({{ loop.index0 }})" title="Play">
+                            ▶ Play
+                        </button>
                         <button class="btn btn-secondary btn-icon" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="viewDetails('{{ file.path|e('js') }}', '{{ file.name|e('js') }}')">
                             🔍 Details
                         </button>
@@ -108,6 +130,73 @@
 <style>
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+    .music-player {
+        position: sticky;
+        top: 0.75rem;
+        z-index: 60;
+        margin-bottom: 1rem;
+        padding: 1rem 1.25rem;
+        background: var(--bg-secondary);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-left: 4px solid var(--accent);
+        box-shadow: 0 12px 36px rgba(0,0,0,0.35);
+    }
+
+    .music-player-inner {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .music-player-main {
+        flex: 1;
+        min-width: 220px;
+    }
+
+    .music-player-title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        margin-bottom: 0.35rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .music-player-time {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.72rem;
+        color: var(--text-secondary);
+        margin-top: 0.2rem;
+    }
+
+    #player-seek {
+        width: 100%;
+        accent-color: var(--accent);
+        cursor: pointer;
+    }
+
+    .music-player-volume {
+        width: 90px;
+        accent-color: var(--accent);
+        cursor: pointer;
+    }
+
+    .player-btn {
+        padding: 0.5rem 0.7rem;
+        min-width: 2.5rem;
+    }
+
+    .music-file-row.is-playing {
+        background: rgba(56, 189, 248, 0.08) !important;
+    }
+
+    .btn-play {
+        border-color: rgba(56, 189, 248, 0.35);
+        color: var(--accent);
+    }
+
     #music-header {
         margin-bottom: 2rem;
         display: flex;
@@ -144,6 +233,19 @@
 
         td {
             padding: 0.75rem !important;
+        }
+
+        .music-player {
+            top: 0.25rem;
+            padding: 0.75rem;
+        }
+
+        .music-player-volume {
+            display: none;
+        }
+
+        .music-actions {
+            justify-content: flex-end;
         }
     }
 
@@ -308,6 +410,137 @@ document.addEventListener('DOMContentLoaded', () => {
         btnLyrics.style.opacity = '0.5';
         btnLyrics.title = 'All files already have lyrics.';
     }
+});
+
+const musicStreamUrl = "{{ path('music_stream') }}";
+const musicAudio = document.getElementById('music-audio');
+const musicPlayer = document.getElementById('music-player');
+let musicPlaylist = [];
+let musicIndex = -1;
+
+function getMusicPlaylist() {
+    return Array.from(document.querySelectorAll('.music-file-row')).map(row => ({
+        path: row.dataset.filePath,
+        name: row.dataset.fileName,
+        row: row
+    }));
+}
+
+function formatMusicTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const minutes = Math.floor(seconds / 60);
+    const remaining = Math.floor(seconds % 60);
+    return minutes + ':' + String(remaining).padStart(2, '0');
+}
+
+function updateMusicPlayButton() {
+    const button = document.getElementById('player-toggle');
+    if (button) button.textContent = musicAudio.paused ? '▶' : '⏸';
+}
+
+function highlightMusicTrack(index) {
+    document.querySelectorAll('.music-file-row.is-playing').forEach(row => row.classList.remove('is-playing'));
+    if (musicPlaylist[index]?.row) {
+        musicPlaylist[index].row.classList.add('is-playing');
+    }
+}
+
+function loadMusicTrack(index) {
+    const track = musicPlaylist[index];
+    if (!track) return;
+
+    musicIndex = index;
+    musicPlayer.style.display = 'block';
+    document.getElementById('player-title').textContent = track.name;
+    document.getElementById('player-current').textContent = '0:00';
+    document.getElementById('player-duration').textContent = '0:00';
+    document.getElementById('player-seek').value = 0;
+    highlightMusicTrack(index);
+
+    musicAudio.src = musicStreamUrl + '?path=' + encodeURIComponent(track.path);
+    musicAudio.load();
+}
+
+function playMusic(index) {
+    musicPlaylist = getMusicPlaylist();
+    if (!musicPlaylist[index]) return;
+
+    loadMusicTrack(index);
+    musicAudio.play().catch(error => {
+        console.warn('Playback failed', error);
+    });
+}
+
+function toggleMusicPlayback() {
+    if (!musicAudio.src) {
+        if (musicPlaylist.length > 0) {
+            playMusic(0);
+        }
+        return;
+    }
+
+    if (musicAudio.paused) {
+        musicAudio.play().catch(error => console.warn('Playback failed', error));
+    } else {
+        musicAudio.pause();
+    }
+}
+
+function playNextMusic() {
+    if (musicPlaylist.length === 0) {
+        musicPlaylist = getMusicPlaylist();
+    }
+    if (musicPlaylist.length === 0) return;
+
+    const nextIndex = musicIndex < 0 ? 0 : (musicIndex + 1) % musicPlaylist.length;
+    playMusic(nextIndex);
+}
+
+function playPreviousMusic() {
+    if (musicPlaylist.length === 0) {
+        musicPlaylist = getMusicPlaylist();
+    }
+    if (musicPlaylist.length === 0) return;
+
+    const previousIndex = musicIndex <= 0 ? musicPlaylist.length - 1 : musicIndex - 1;
+    playMusic(previousIndex);
+}
+
+function closeMusicPlayer() {
+    musicAudio.pause();
+    musicAudio.removeAttribute('src');
+    musicAudio.load();
+    musicPlayer.style.display = 'none';
+    document.querySelectorAll('.music-file-row.is-playing').forEach(row => row.classList.remove('is-playing'));
+    musicIndex = -1;
+}
+
+function seekMusic(value) {
+    if (!Number.isFinite(musicAudio.duration) || musicAudio.duration <= 0) return;
+    musicAudio.currentTime = (Number(value) / 100) * musicAudio.duration;
+}
+
+function setMusicVolume(value) {
+    musicAudio.volume = Number(value);
+}
+
+musicAudio.addEventListener('loadedmetadata', () => {
+    document.getElementById('player-duration').textContent = formatMusicTime(musicAudio.duration);
+});
+
+musicAudio.addEventListener('timeupdate', () => {
+    document.getElementById('player-current').textContent = formatMusicTime(musicAudio.currentTime);
+    if (Number.isFinite(musicAudio.duration) && musicAudio.duration > 0) {
+        document.getElementById('player-seek').value = (musicAudio.currentTime / musicAudio.duration) * 100;
+    }
+});
+
+musicAudio.addEventListener('play', updateMusicPlayButton);
+musicAudio.addEventListener('pause', updateMusicPlayButton);
+musicAudio.addEventListener('ended', playNextMusic);
+musicAudio.addEventListener('error', () => {
+    const title = document.getElementById('player-title');
+    if (title) title.textContent = 'Playback error: ' + (musicPlaylist[musicIndex]?.name || 'unknown track');
 });
 
 const batchConfig = {
@@ -801,7 +1034,6 @@ async function viewDetails(path, name) {
     const content = document.getElementById('details-content');
     const grid = document.getElementById('details-grid');
     const btnSave = document.getElementById('btn-save-tags');
-
     modal.style.display = 'flex';
     title.innerText = 'Details: ' + name;
     loading.style.display = 'block';
@@ -838,8 +1070,8 @@ async function viewDetails(path, name) {
                 let value = rawValue;
                 if (value === 'None' || value === '[]' || value === null) value = '';
 
-                // Skip non-essential empty tags
-                if (!editableTags.includes(key) && !value) continue;
+                // Keep the lyrics field visible even when empty, so it can be fetched/cleared.
+                if (!editableTags.includes(key) && key !== 'lyrics' && !value) continue;
 
                 const label = document.createElement('div');
                 label.style.color = 'var(--text-secondary)';
@@ -862,9 +1094,46 @@ async function viewDetails(path, name) {
                     input.style.padding = '0.5rem';
                     input.style.background = 'rgba(255,255,255,0.03)';
                     input.style.marginTop = '2px';
-                    val.appendChild(input);
+
+                    if (key === 'genre') {
+                        const group = document.createElement('div');
+                        group.style.display = 'flex';
+                        group.style.gap = '0.5rem';
+                        group.style.alignItems = 'stretch';
+                        group.style.marginTop = '2px';
+                        group.style.width = '100%';
+
+                        input.style.flex = '1';
+                        input.style.width = 'auto';
+                        input.style.minWidth = '0';
+                        input.style.marginTop = '0';
+                        input.style.marginBottom = '0';
+                        input.style.boxSizing = 'border-box';
+
+                        const aiButton = document.createElement('button');
+                        aiButton.type = 'button';
+                        aiButton.className = 'btn btn-secondary';
+                        aiButton.title = 'Update genre with AI';
+                        aiButton.innerHTML = '✨';
+                        aiButton.style.display = 'flex';
+                        aiButton.style.alignItems = 'center';
+                        aiButton.style.justifyContent = 'center';
+                        aiButton.style.minWidth = '46px';
+                        aiButton.style.padding = '0 0.85rem';
+                        aiButton.style.margin = '0';
+                        aiButton.style.fontSize = '1rem';
+                        aiButton.style.lineHeight = '1';
+                        aiButton.style.boxSizing = 'border-box';
+                        aiButton.style.flexShrink = '0';
+                        aiButton.addEventListener('click', () => fetchAiGenre(aiButton));
+
+                        group.appendChild(input);
+                        group.appendChild(aiButton);
+                        val.appendChild(group);
+                    } else {
+                        val.appendChild(input);
+                    }
                 } else if (key === 'lyrics') {
-                    val.style.whiteSpace = 'pre-wrap';
                     val.style.background = 'rgba(0,0,0,0.2)';
                     val.style.padding = '0.75rem';
                     val.style.borderRadius = '4px';
@@ -872,7 +1141,45 @@ async function viewDetails(path, name) {
                     val.style.gridColumn = '1 / span 2';
                     label.style.gridColumn = '1 / span 2';
                     label.style.alignSelf = 'flex-start';
-                    val.innerText = value;
+
+                    const lyricsToolbar = document.createElement('div');
+                    lyricsToolbar.style.display = 'flex';
+                    lyricsToolbar.style.justifyContent = 'flex-end';
+                    lyricsToolbar.style.gap = '0.5rem';
+                    lyricsToolbar.style.marginBottom = '0.5rem';
+
+                    const lyricsButton = document.createElement('button');
+                    lyricsButton.type = 'button';
+                    lyricsButton.className = 'btn btn-secondary';
+                    lyricsButton.title = 'Fetch lyrics';
+                    lyricsButton.innerHTML = '🎤 Fetch';
+                    lyricsButton.style.padding = '0.4rem 0.7rem';
+                    lyricsButton.style.fontSize = '0.8rem';
+                    lyricsButton.style.margin = '0';
+                    lyricsButton.style.whiteSpace = 'nowrap';
+
+                    const clearButton = document.createElement('button');
+                    clearButton.type = 'button';
+                    clearButton.className = 'btn btn-secondary';
+                    clearButton.title = 'Clear lyrics';
+                    clearButton.innerHTML = '🗑 Clear';
+                    clearButton.style.padding = '0.4rem 0.7rem';
+                    clearButton.style.fontSize = '0.8rem';
+                    clearButton.style.margin = '0';
+                    clearButton.style.whiteSpace = 'nowrap';
+
+                    const lyricsText = document.createElement('div');
+                    lyricsText.style.whiteSpace = 'pre-wrap';
+                    lyricsText.style.overflowWrap = 'anywhere';
+                    lyricsText.textContent = value;
+
+                    lyricsButton.addEventListener('click', () => fetchLyricsForDetails(lyricsButton, lyricsText));
+                    clearButton.addEventListener('click', () => clearLyrics(clearButton, lyricsText));
+
+                    lyricsToolbar.appendChild(lyricsButton);
+                    lyricsToolbar.appendChild(clearButton);
+                    val.appendChild(lyricsToolbar);
+                    val.appendChild(lyricsText);
                 } else {
                     val.innerText = value;
                     val.style.padding = '0.5rem 0';
@@ -938,6 +1245,181 @@ async function saveTags() {
 
 function closeDetails() {
     document.getElementById('details-modal').style.display = 'none';
+}
+
+function updateMusicRowGenre(path, genre) {
+    const row = Array.from(document.querySelectorAll('.music-file-row'))
+        .find(candidate => candidate.dataset.filePath === path);
+
+    if (!row) return;
+    const genreCell = row.children[2];
+    if (genreCell) genreCell.textContent = genre || '-';
+}
+
+async function fetchAiGenre(btn) {
+    if (!currentFilePath) return;
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⌛ AI...';
+
+    try {
+        const response = await fetch("{{ path('music_update_genres') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: currentFilePath })
+        });
+        const data = await response.json();
+
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || data.error || 'AI genre fetch failed.');
+        }
+
+        const result = data.result || {};
+        const genre = (result.genre || '').trim();
+        const genreInput = document.getElementById('edit-genre');
+
+        if (!genre || ['unknown', 'none'].includes(genre.toLowerCase())) {
+            const logs = Array.isArray(result.logs) ? result.logs : [];
+            const aiFailure = logs.some(log => /AI could not determine|AI is disabled/i.test(log));
+
+            if (aiFailure && genreInput && genreInput.value.trim()) {
+                window.notify('info', 'AI could not determine a genre. Existing genre kept.');
+            } else if (aiFailure) {
+                window.notify('info', 'AI could not determine a genre for this track.');
+            } else {
+                window.notify('info', result.error || 'AI could not determine a genre for this track.');
+            }
+            return;
+        }
+
+        if (genreInput) genreInput.value = genre;
+
+        updateMusicRowGenre(currentFilePath, genre);
+        window.notify('success', 'AI genre: ' + genre);
+    } catch (e) {
+        window.notify('error', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+async function refreshLyricsText(lyricsText) {
+    try {
+        const response = await fetch("{{ path('file_tags') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: currentFilePath })
+        });
+        const data = await response.json();
+
+        if (!data.success) return null;
+
+        let lyrics = (data.tags && data.tags.lyrics) || '';
+        if (lyrics === 'None' || lyrics === '[]') lyrics = '';
+        lyricsText.textContent = lyrics;
+        return lyrics;
+    } catch (e) {
+        console.warn('Could not refresh lyrics', e);
+        return null;
+    }
+}
+
+async function clearLyrics(btn, lyricsText) {
+    if (!currentFilePath) return;
+    if (!confirm('Remove lyrics from this file?')) return;
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⌛';
+
+    try {
+        const response = await fetch("{{ path('update_tags') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                path: currentFilePath,
+                tags: { lyrics: '' }
+            })
+        });
+        const data = await response.json();
+
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || data.error || 'Could not clear lyrics.');
+        }
+
+        lyricsText.textContent = '';
+
+        const row = Array.from(document.querySelectorAll('.music-file-row'))
+            .find(candidate => candidate.dataset.filePath === currentFilePath);
+        if (row) {
+            row.dataset.hasLyrics = '0';
+            const lyricsCell = row.children[3];
+            if (lyricsCell) {
+                lyricsCell.innerHTML = '<span title="No Lyrics" style="opacity: 0.3; filter: grayscale(1);">❌</span>';
+            }
+        }
+
+        window.notify('success', 'Lyrics cleared.');
+    } catch (e) {
+        window.notify('error', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+async function fetchLyricsForDetails(btn, lyricsText) {
+    if (!currentFilePath) return;
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⌛';
+
+    try {
+        const response = await fetch("{{ path('fetch_lyrics') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: currentFilePath })
+        });
+        const data = await response.json();
+
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || data.error || 'Lyrics fetch failed.');
+        }
+
+        const fileName = currentFilePath.split(/[\\/]/).pop();
+        const results = Array.isArray(data.results) ? data.results : [];
+        const fileResult = results.find(result => result.file === fileName) || results[0] || null;
+
+        if (fileResult && (fileResult.status === 'found' || fileResult.status === 'skipped')) {
+            await refreshLyricsText(lyricsText);
+
+            const row = Array.from(document.querySelectorAll('.music-file-row'))
+                .find(candidate => candidate.dataset.filePath === currentFilePath);
+            if (row) {
+                row.dataset.hasLyrics = '1';
+                const lyricsCell = row.children[3];
+                if (lyricsCell) lyricsCell.innerHTML = '<span title="Lyrics Present">📝</span>';
+            }
+
+            if (fileResult.status === 'found') {
+                const type = fileResult.type ? ' (' + fileResult.type + ')' : '';
+                window.notify('success', 'Lyrics found for ' + (fileResult.title || fileName) + type);
+            } else {
+                window.notify('info', 'Lyrics already present.');
+            }
+        } else {
+            const reason = fileResult?.reason ? ' (' + fileResult.reason + ')' : '';
+            window.notify('info', 'Lyrics not found' + reason);
+        }
+    } catch (e) {
+        window.notify('error', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
 }
 </script>
 {% endblock %}

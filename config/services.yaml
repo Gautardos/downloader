@@ -18,6 +18,10 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\AiService:
+        arguments:
+            $cache: '@cache.app'
+
     App\Command\DownloadWorkerCommand:
         arguments:
             $projectDir: '%kernel.project_dir%'

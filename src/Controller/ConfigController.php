@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Service\AiService;
 use App\Service\JsonStorage;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,15 +18,30 @@ class ConfigController extends AbstractController
     {
         $currentConfig = $storage->get('config');
 
+        if (empty($currentConfig['ai_provider'])) {
+            $currentConfig['ai_provider'] = !empty($currentConfig['openrouter_api_key'])
+                ? 'openrouter'
+                : (!empty($currentConfig['grok_api_key']) ? 'xai' : 'openrouter');
+        }
+
         if ($request->isMethod('POST')) {
             $apiKey = $request->request->get('api_key');
-            $grokKey = $request->request->get('grok_api_key');
+            $grokKey = $request->request->get('grok_api_key', $currentConfig['grok_api_key'] ?? '');
             $defaultPath = $request->request->get('default_path');
+            $aiProvider = $request->request->get('ai_provider', 'openrouter');
+            if (!in_array($aiProvider, ['openrouter', 'xai'], true)) {
+                $aiProvider = 'openrouter';
+            }
 
             $storage->set('config', [
                 'api_key' => $apiKey,
+                'ai_provider' => $aiProvider,
+                'openrouter_api_key' => $request->request->get('openrouter_api_key', ''),
+                'ai_model_default' => trim((string) $request->request->get('ai_model_default', '')),
+                'ai_model_renaming' => trim((string) $request->request->get('ai_model_renaming', '')),
+                'ai_model_music_genre' => trim((string) $request->request->get('ai_model_music_genre', '')),
                 'grok_api_key' => $grokKey,
-                'grok_model' => $request->request->get('grok_model', 'grok-4-fast-non-reasoning'),
+                'grok_model' => $request->request->get('grok_model', $currentConfig['grok_model'] ?? 'grok-4-fast-non-reasoning'),
                 'default_path' => $defaultPath,
                 'spotify_client_id' => $request->request->get('spotify_client_id', ''),
                 'spotify_client_secret' => $request->request->get('spotify_client_secret', ''),
@@ -46,8 +62,9 @@ class ConfigController extends AbstractController
                 'music_library_path' => $request->request->get('music_library_path', ''),
                 'music_genre_mapping' => $request->request->get('music_genre_mapping', ''),
                 'music_genre_tagging_mode' => $request->request->get('music_genre_tagging_mode', 'ai'),
+                'music_spotify_genres' => $request->request->get('music_spotify_genres') === '1',
                 'music_genre_grok_prompt' => $request->request->get('music_genre_grok_prompt', ''),
-                'music_genre_grok_model' => $request->request->get('music_genre_grok_model', 'grok-4-fast-non-reasoning'),
+                'music_genre_grok_model' => $request->request->get('music_genre_grok_model', $currentConfig['music_genre_grok_model'] ?? 'grok-4-fast-non-reasoning'),
                 'music_genres' => $request->request->get('music_genres') === '1',
                 'genius_api_token' => $request->request->get('genius_api_token', ''),
                 'lrclib_token' => $request->request->get('lrclib_token', ''),
@@ -70,6 +87,42 @@ class ConfigController extends AbstractController
             'config' => $currentConfig,
             'creds_exists' => $credsExists,
         ]);
+    }
+
+    #[Route('/config/ai/models', name: 'config_ai_models', methods: ['POST'])]
+    public function aiModels(Request $request, AiService $ai): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        $apiKey = is_array($data) ? ($data['api_key'] ?? null) : null;
+
+        $result = $ai->listOpenRouterModels($apiKey !== null ? (string) $apiKey : null);
+
+        return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    #[Route('/config/ai/test', name: 'config_ai_test', methods: ['POST'])]
+    public function aiTest(Request $request, AiService $ai): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data)) {
+            return $this->json(['success' => false, 'error' => 'Invalid request body.'], 400);
+        }
+
+        $usage = (string) ($data['usage'] ?? 'renaming');
+        if (!in_array($usage, ['default', 'renaming', 'music_genre'], true)) {
+            return $this->json(['success' => false, 'error' => 'Invalid AI usage.'], 400);
+        }
+
+        $overrides = [];
+        foreach (['provider', 'api_key', 'model'] as $key) {
+            if (array_key_exists($key, $data)) {
+                $overrides[$key] = $data[$key];
+            }
+        }
+
+        $result = $ai->testUsage($usage, $overrides);
+
+        return $this->json($result, $result['success'] ? 200 : 422);
     }
 
     #[Route('/config/spotify-auth', name: 'config_spotify_auth', methods: ['POST'])]

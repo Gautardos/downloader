@@ -2,6 +2,25 @@
 
 {% block title %}Settings - AllDebridDL{% endblock %}
 
+{% macro modelPicker(usage, inputName, label, value, help) %}
+<div style="margin-bottom: 1rem;">
+    <label for="{{ inputName }}">{{ label }}</label>
+    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <input type="text" id="{{ inputName }}" name="{{ inputName }}" value="{{ value }}" placeholder="provider/model-id" autocomplete="off"
+               style="flex: 1; min-width: 220px; padding: 0.75rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 0.5rem; color: white; font-family: monospace; font-size: 0.85rem;">
+        <button type="button" class="btn btn-secondary" style="padding: 0.75rem 1rem;" onclick="toggleAiModelBrowser('{{ usage }}')">Browse</button>
+        <button type="button" class="btn btn-secondary" style="padding: 0.75rem 1rem;" onclick="testAiUsage('{{ usage }}', this)">Test</button>
+    </div>
+    <div id="ai-model-browser-{{ usage }}" style="display: none; margin-top: 0.5rem; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;">
+        <input type="text" id="ai-model-search-{{ usage }}" placeholder="Search OpenRouter models..." oninput="renderAiModelList('{{ usage }}')"
+               style="width: 100%; padding: 0.6rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+        <div id="ai-model-list-{{ usage }}" style="max-height: 240px; overflow-y: auto; margin-top: 0.5rem;"></div>
+    </div>
+    <small style="color: var(--text-secondary);">{{ help }}</small>
+    <div id="ai-model-status-{{ usage }}" style="margin-top: 0.4rem; font-size: 0.8rem; display: none;"></div>
+</div>
+{% endmacro %}
+
 {% block body %}
 <div class="card" style="max-width: 800px; margin: 0 auto;">
     <h2>Configuration</h2>
@@ -16,16 +35,6 @@
                     <small style="color: var(--text-secondary);">Your personal Alldebrid API token.</small>
                 </div>
 
-                <div style="margin-bottom: 1rem;">
-                    <label for="grok_api_key">Grok AI API Key (xAI)</label>
-                    <input type="text" id="grok_api_key" name="grok_api_key" value="{{ config.grok_api_key|default('') }}" placeholder="xai-...">
-                    <small style="color: var(--text-secondary);">Used for AI-assisted file renaming.</small>
-                </div>
-
-                <div style="margin-bottom: 1rem;">
-                    <label for="grok_model">Grok Model</label>
-                    <input type="text" id="grok_model" name="grok_model" value="{{ config.grok_model|default('grok-4-fast-non-reasoning') }}" placeholder="grok-...">
-                </div>
                 
                 <div style="margin-bottom: 1rem;">
                     <label for="default_path">Default Torrent Download Path</label>
@@ -64,7 +73,7 @@
 5. Return a JSON object where keys are ORIGINAL filenames and values are another JSON object containing \"filename\" and \"path\".
 6. For ebooks NEVER change the language of the book title.
 7. Maintain the exact original file extension.") }}</textarea>
-                    <small style="color: var(--text-secondary);">System instructions for Grok regarding file renaming and path generation.</small>
+                    <small style="color: var(--text-secondary);">System instructions for AI regarding file renaming and path generation.</small>
                 </div>
 
                 <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Spotify API (Metadata)</h3>
@@ -208,14 +217,18 @@
                 <div style="margin-bottom: 1rem;">
                     <label for="music_genre_tagging_mode">Tagging Mode</label>
                     <select id="music_genre_tagging_mode" name="music_genre_tagging_mode" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
-                        <option value="ai" {{ config.music_genre_tagging_mode|default('ai') == 'ai' ? 'selected' : '' }}>AI (Grok)</option>
+                        <option value="ai" {{ config.music_genre_tagging_mode|default('ai') == 'ai' ? 'selected' : '' }}>AI (OpenRouter / xAI)</option>
                         <option value="mapping" {{ config.music_genre_tagging_mode|default('ai') == 'mapping' ? 'selected' : '' }}>Regex Mapping</option>
                     </select>
                 </div>
 
-                <div style="margin-bottom: 1rem;">
-                    <label for="music_genre_grok_model">Grok Music Model</label>
-                    <input type="text" id="music_genre_grok_model" name="music_genre_grok_model" value="{{ config.music_genre_grok_model|default('grok-4-fast-non-reasoning') }}" placeholder="grok-...">
+
+                <div style="margin-bottom: 1rem; display: flex; align-items: flex-start; gap: 0.5rem;">
+                    <input type="checkbox" id="music_spotify_genres" name="music_spotify_genres" value="1" {{ config.music_spotify_genres|default(true) ? 'checked' : '' }}>
+                    <div>
+                        <label for="music_spotify_genres" style="margin: 0;">Use Spotify artist genres before AI</label>
+                        <small style="color: var(--text-secondary);">Spotify genres are sent to the AI as the primary signal, then normalized to your taxonomy.</small>
+                    </div>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
@@ -246,7 +259,7 @@
             Instructions :
             - Si tu as un doute sur la langue ou le style, base-toi sur les informations typiquement associées à l'artiste ou à l'album.
             - Réponds UNIQUEMENT par le nom du ou des genres, sans aucun autre texte, commentaire ou explication (exemple : \"Pop / Rock\").") }}</textarea>
-                    <small style="color: var(--text-secondary);">System prompt for Grok classification.</small>
+                    <small style="color: var(--text-secondary);">System prompt for AI classification.</small>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
@@ -283,7 +296,62 @@
             </section>
 
         </div>
-        
+
+        <section style="margin-top: 1rem; padding: 2rem; background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;">
+            <h3 style="color: var(--accent); margin-bottom: 0.5rem;">AI Provider & Models</h3>
+            <p style="color: var(--text-secondary); margin-top: 0; font-size: 0.9rem;">
+                OpenRouter is used when an OpenRouter key is configured. If the key is empty, the app falls back to xAI using the legacy fields below.
+            </p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                    <label for="ai_provider">AI Provider</label>
+                    <select id="ai_provider" name="ai_provider" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
+                        <option value="openrouter" {{ config.ai_provider|default('openrouter') == 'openrouter' ? 'selected' : '' }}>OpenRouter</option>
+                        <option value="xai" {{ config.ai_provider|default('openrouter') == 'xai' ? 'selected' : '' }}>xAI (direct)</option>
+                    </select>
+                    <small style="color: var(--text-secondary);">Explicit xAI mode uses the legacy xAI models below.</small>
+                </div>
+                <div>
+                    <label for="openrouter_api_key">OpenRouter API Key</label>
+                    <input type="password" id="openrouter_api_key" name="openrouter_api_key" value="{{ config.openrouter_api_key|default('') }}" placeholder="sk-or-v1-..." autocomplete="off">
+                    <small style="color: var(--text-secondary);">Stored server-side. Leave empty to use the xAI fallback.</small>
+                </div>
+            </div>
+
+            <div id="ai-models-status" style="display:none; margin-bottom:1rem; padding:0.75rem; border-radius:8px; font-size:0.85rem;"></div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                <h4 style="margin:0;">OpenRouter models</h4>
+                <button type="button" class="btn btn-secondary" onclick="loadAiModels(true)" style="padding:0.6rem 1rem; font-size:0.8rem;">🔄 Refresh catalog</button>
+            </div>
+
+            {{ _self.modelPicker('default', 'ai_model_default', 'Default model', config.ai_model_default|default(''), 'Used when a usage-specific model is empty.') }}
+            {{ _self.modelPicker('renaming', 'ai_model_renaming', 'Media renaming model', config.ai_model_renaming|default(''), 'Used by the AI rename buttons on the Debrid page.') }}
+            {{ _self.modelPicker('music_genre', 'ai_model_music_genre', 'Music genre model', config.ai_model_music_genre|default(''), 'Used by genre detection and library migration.') }}
+
+            <details style="margin-top: 1rem; padding: 1rem; background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+                <summary style="cursor:pointer; font-weight:600;">xAI fallback (legacy)</summary>
+                <p style="color: var(--text-secondary); font-size:0.85rem; margin-top:0.75rem;">
+                    These models are only used when the provider is set to xAI or when no OpenRouter key is available.
+                </p>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+                    <div>
+                        <label for="grok_api_key">xAI API Key</label>
+                        <input type="password" id="grok_api_key" name="grok_api_key" value="{{ config.grok_api_key|default('') }}" placeholder="xai-..." autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="grok_model">xAI Renaming Model</label>
+                        <input type="text" id="grok_model" name="grok_model" value="{{ config.grok_model|default('grok-4-fast-non-reasoning') }}" placeholder="grok-...">
+                    </div>
+                    <div>
+                        <label for="music_genre_grok_model">xAI Music Genre Model</label>
+                        <input type="text" id="music_genre_grok_model" name="music_genre_grok_model" value="{{ config.music_genre_grok_model|default('grok-4-fast-non-reasoning') }}" placeholder="grok-...">
+                    </div>
+                </div>
+            </details>
+        </section>
+
         <button type="submit" class="btn btn-primary btn-full" style="margin-top: 2rem; margin-bottom: 2rem;">Save All Settings</button>
 
         <div style="display: grid; grid-template-columns: 1fr; gap: 2rem;">
@@ -347,6 +415,228 @@
 
 {% block javascripts %}
 <script>
+const aiModelsRoute = "{{ path('config_ai_models') }}";
+const aiTestRoute = "{{ path('config_ai_test') }}";
+const aiUsageLabels = {
+    default: 'Default model',
+    renaming: 'Media renaming',
+    music_genre: 'Music genre'
+};
+let aiModelCatalog = [];
+let aiModelsLoaded = false;
+
+function getAiProvider() {
+    return document.getElementById('ai_provider')?.value || 'openrouter';
+}
+
+function getAiInputValue(id) {
+    return document.getElementById(id)?.value?.trim() || '';
+}
+
+function setAiModelsStatus(message, type) {
+    const el = document.getElementById('ai-models-status');
+    if (!el) return;
+    el.style.display = 'block';
+    if (type === 'error') {
+        el.style.background = 'rgba(220, 53, 69, 0.1)';
+        el.style.color = 'var(--danger)';
+        el.style.border = '1px solid var(--danger)';
+    } else if (type === 'success') {
+        el.style.background = 'rgba(40, 167, 69, 0.1)';
+        el.style.color = 'var(--success)';
+        el.style.border = '1px solid var(--success)';
+    } else {
+        el.style.background = 'rgba(255,255,255,0.05)';
+        el.style.color = 'var(--text-secondary)';
+        el.style.border = '1px solid rgba(255,255,255,0.1)';
+    }
+    el.textContent = message;
+}
+
+function formatAiPrice(value) {
+    const parsed = parseFloat(value);
+    if (!Number.isFinite(parsed)) return '?';
+    if (parsed === 0) return 'free';
+    const perMillion = parsed * 1000000;
+    return '$' + perMillion.toFixed(perMillion < 0.01 ? 4 : 2);
+}
+
+async function loadAiModels(force = false) {
+    if (aiModelsLoaded && !force) return;
+
+    setAiModelsStatus('Loading OpenRouter model catalog...', 'info');
+
+    try {
+        const response = await fetch(aiModelsRoute, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: getAiInputValue('openrouter_api_key') })
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+            setAiModelsStatus('❌ ' + (data.error || 'Could not load the OpenRouter catalog.'), 'error');
+            return;
+        }
+
+        aiModelCatalog = data.models || [];
+        aiModelsLoaded = true;
+        setAiModelsStatus('✅ ' + aiModelCatalog.length + ' OpenRouter models loaded.', 'success');
+        renderAllAiModelLists();
+    } catch (e) {
+        setAiModelsStatus('❌ ' + e.message, 'error');
+    }
+}
+
+function renderAllAiModelLists() {
+    ['default', 'renaming', 'music_genre'].forEach(renderAiModelList);
+}
+
+function renderAiModelList(usage) {
+    const list = document.getElementById('ai-model-list-' + usage);
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    if (aiModelCatalog.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.padding = '0.75rem';
+        empty.style.color = 'var(--text-secondary)';
+        empty.style.fontSize = '0.85rem';
+        empty.textContent = 'No catalog loaded. You can still type a model ID manually.';
+        list.appendChild(empty);
+        return;
+    }
+
+    const search = (document.getElementById('ai-model-search-' + usage)?.value || '').toLowerCase();
+    const selected = getAiInputValue('ai_model_' + usage);
+    const matches = aiModelCatalog
+        .filter(model => !search || model.id.toLowerCase().includes(search) || model.name.toLowerCase().includes(search))
+        .slice(0, 200);
+
+    if (matches.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.padding = '0.75rem';
+        empty.style.color = 'var(--text-secondary)';
+        empty.textContent = 'No matching models.';
+        list.appendChild(empty);
+        return;
+    }
+
+    matches.forEach(model => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.style.display = 'block';
+        row.style.width = '100%';
+        row.style.textAlign = 'left';
+        row.style.padding = '0.6rem';
+        row.style.marginBottom = '0.25rem';
+        row.style.background = model.id === selected ? 'rgba(56, 189, 248, 0.15)' : 'transparent';
+        row.style.border = '1px solid transparent';
+        row.style.borderRadius = '6px';
+        row.style.color = 'var(--text-primary)';
+        row.style.cursor = 'pointer';
+
+        const name = document.createElement('div');
+        name.style.fontWeight = '600';
+        name.textContent = model.name;
+
+        const meta = document.createElement('div');
+        meta.style.fontSize = '0.75rem';
+        meta.style.color = 'var(--text-secondary)';
+        const context = model.context_length ? model.context_length.toLocaleString() + ' ctx' : 'ctx ?';
+        meta.textContent = model.id + ' · ' + context + ' · ' + formatAiPrice(model.pricing?.prompt) + ' in / ' + formatAiPrice(model.pricing?.completion) + ' out' + (model.supports_json ? ' · JSON' : '');
+
+        row.appendChild(name);
+        row.appendChild(meta);
+        row.addEventListener('click', () => {
+            const input = document.getElementById('ai_model_' + usage);
+            if (input) input.value = model.id;
+            const browser = document.getElementById('ai-model-browser-' + usage);
+            if (browser) browser.style.display = 'none';
+            const status = document.getElementById('ai-model-status-' + usage);
+            if (status) {
+                status.style.display = 'block';
+                status.style.color = 'var(--success)';
+                status.textContent = 'Selected: ' + model.name + ' (' + model.id + ')';
+            }
+            renderAiModelList(usage);
+        });
+
+        list.appendChild(row);
+    });
+}
+
+function toggleAiModelBrowser(usage) {
+    const browser = document.getElementById('ai-model-browser-' + usage);
+    if (!browser) return;
+
+    const willOpen = browser.style.display === 'none' || browser.style.display === '';
+    browser.style.display = willOpen ? 'block' : 'none';
+
+    if (willOpen) {
+        if (!aiModelsLoaded) loadAiModels(false);
+        const search = document.getElementById('ai-model-search-' + usage);
+        if (search) search.focus();
+    }
+}
+
+async function testAiUsage(usage, btn) {
+    const provider = getAiProvider();
+    const keyInput = provider === 'xai' ? 'grok_api_key' : 'openrouter_api_key';
+    const modelInput = provider === 'xai'
+        ? (usage === 'music_genre' ? 'music_genre_grok_model' : 'grok_model')
+        : 'ai_model_' + usage;
+    const status = document.getElementById('ai-model-status-' + usage);
+    const originalText = btn.textContent;
+
+    if (status) {
+        status.style.display = 'block';
+        status.style.color = 'var(--text-secondary)';
+        status.textContent = 'Testing ' + (aiUsageLabels[usage] || usage) + '...';
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⌛';
+
+    try {
+        const response = await fetch(aiTestRoute, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                usage: usage,
+                provider: provider,
+                api_key: getAiInputValue(keyInput),
+                model: getAiInputValue(modelInput)
+            })
+        });
+        const data = await response.json();
+
+        if (status) {
+            status.style.display = 'block';
+            status.style.color = data.success ? 'var(--success)' : 'var(--danger)';
+            status.textContent = data.success
+                ? '✅ ' + (aiUsageLabels[usage] || usage) + ' OK · ' + data.provider + ' · ' + data.model + ' · ' + data.latency_ms + ' ms'
+                : '❌ ' + (data.error || 'Test failed.');
+        }
+    } catch (e) {
+        if (status) {
+            status.style.display = 'block';
+            status.style.color = 'var(--danger)';
+            status.textContent = '❌ ' + e.message;
+        }
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (getAiProvider() === 'openrouter' && getAiInputValue('openrouter_api_key') !== '') {
+        loadAiModels(false);
+    }
+});
+
 document.getElementById('btn-generate-auth').addEventListener('click', async function() {
     const btn = this;
     const btnText = document.getElementById('auth-btn-text');

@@ -13,6 +13,7 @@ class SessionIdleSubscriber implements EventSubscriberInterface
         'queue_status',
         'queue_active_log',
         'progress',
+        'music_stream',
         'check_files',
         'debug_storage',
         'debug_api',

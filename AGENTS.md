@@ -18,8 +18,8 @@ livrée sous forme d'**image Docker unique**. Elle combine :
 - **Alldebrid** comme service de debrid cloud : l'application n'est *pas* un
   client BitTorrent, elle délègue le P2P puis télécharge les liens HTTP débridés.
 - **Zotify** (fork `Gautardos/zotify`) comme moteur de téléchargement Spotify.
-- **Grok (xAI)** en option pour le renommage intelligent et la classification
-  de genres.
+- **OpenRouter / xAI** en option pour le renommage intelligent et la classification
+  de genres, avec un modèle configurable par usage.
 - **Supervisor** pour lancer Redis, Apache et le worker de téléchargement.
 - **Redis** uniquement pour le stockage des sessions PHP.
 - **SQLite** en option pour l'index local de recherche de torrents
@@ -95,7 +95,8 @@ Dépendances PHP complémentaires (voir `composer.json`) : `symfony/process`,
 │       ├── AlldebridService.php   # API Alldebrid (v4 et v4.1)
 │       ├── AuthService.php        # Auth session basée config JSON
 │       ├── DownloadManager.php    # Téléchargement HTTP natif PHP + progression
-│       ├── GrokService.php        # Renommage IA
+│       ├── AiService.php          # Provider IA (OpenRouter/xAI) + modèles par usage
+│       ├── GrokService.php        # Wrapper renommage média
 │       ├── JsonStorage.php        # Persistance JSON avec flock
 │       ├── MediaTypeHelper.php    # Détection type/icône par extension
 │       ├── QueueManager.php       # File d'attente + historique + démarrage worker
@@ -311,8 +312,13 @@ valeurs par défaut).
 | Clé | Défaut | Rôle |
 | --- | ------ | ---- |
 | `api_key` | — | Clé API Alldebrid |
-| `grok_api_key` | — | Clé API xAI |
-| `grok_model` | `grok-4-fast-non-reasoning` | Modèle Grok renommage |
+| `ai_provider` | `openrouter` | `openrouter` ou `xai` (fallback auto si clé OpenRouter absente) |
+| `openrouter_api_key` | — | Clé API OpenRouter |
+| `ai_model_default` | — | Modèle IA de secours global |
+| `ai_model_renaming` | — | Modèle IA pour le renommage média |
+| `ai_model_music_genre` | — | Modèle IA pour la classification musicale |
+| `grok_api_key` | — | Clé API xAI (fallback legacy) |
+| `grok_model` | `grok-4-fast-non-reasoning` | Modèle xAI renommage (fallback) |
 | `default_path` | — | Répertoire de dl vidéo par défaut |
 | `spotify_client_id` | — | Client ID Spotify |
 | `spotify_client_secret` | — | Client Secret Spotify |
@@ -333,8 +339,9 @@ valeurs par défaut).
 | `music_library_path` | — | Bibliothèque finale organisée |
 | `music_genre_mapping` | — | JSON `{"genre_patterns": {"regex": "Genre"}}` |
 | `music_genre_tagging_mode` | `ai` | `ai` ou `mapping` |
+| `music_spotify_genres` | `true` | Utiliser les genres artiste Spotify comme signal avant l’IA |
 | `music_genre_grok_prompt` | — | Prompt système de classification |
-| `music_genre_grok_model` | `grok-4-fast-non-reasoning` | Modèle Grok genres |
+| `music_genre_grok_model` | `grok-4-fast-non-reasoning` | Modèle xAI genres (fallback) |
 | `music_genres` | `false` | Active la gestion des genres |
 | `genius_api_token` | — | Token Genius (paroles non synchronisées) |
 | `lrclib_token` | — | Token LRCLib (paroles synchronisées) |
@@ -406,6 +413,7 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 | GET | `/` | `music` | Accueil = recherche Spotify |
 | POST | `/music-add` | `music_add` | Métadonnées Spotify + enqueue musique |
 | GET | `/music-files` | `music_files` | Liste des fichiers audio + tags |
+| GET | `/music/stream` | `music_stream` | Streaming audio avec support des requêtes HTTP Range |
 | POST | `/file-tags` | `file_tags` | Extrait les tags d'un fichier |
 | POST | `/update-tags` | `update_tags` | Met à jour des tags |
 | POST | `/music/update-genres` | `music_update_genres` | Lance `tag_rename_move.py --tags-only` |
@@ -416,6 +424,8 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 | Méthode | URL | Nom | Rôle |
 | --- | --- | --- | --- |
 | GET/POST | `/config` | `config` | Réglages |
+| POST | `/config/ai/models` | `config_ai_models` | Catalogue des modèles OpenRouter |
+| POST | `/config/ai/test` | `config_ai_test` | Test provider/clé/modèle par usage |
 | POST | `/config/spotify-auth` | `config_spotify_auth` | Génère `credentials.json` via `librespot-auth` |
 | POST | `/config/update-hash-db` | `config_update_hash_db` | `composer update` du paquet DB + import CSV |
 | GET | `/config/export` | `config_export` | ZIP `config.json` + `credentials.json` |
@@ -472,14 +482,20 @@ l'attente au-delà de 4, ou dès que des liens sont disponibles.
   une exception (« expired link? »).
 - `isDownloaded(filename)` : simple recherche du nom dans l'historique.
 
-### GrokService
+### AiService / GrokService
 
-- Endpoint `https://api.x.ai/v1/chat/completions`, `response_format=json_object`,
-  température 0.1.
+`AiService` centralise les providers OpenAI-compatibles (OpenRouter, xAI),
+résout le modèle selon l’usage (`renaming`, `music_genre`, `default`), gère le
+fallback xAI et le catalogue OpenRouter. `GrokService` reste un wrapper de
+renommage média.
+
+### GrokService (wrapper)
+
+- Délègue à `AiService` avec l’usage `renaming` (OpenRouter ou xAI).
+- Demande une sortie JSON et tolère les réponses entourées de ```json.
 - Construit un prompt de renommage standardisé (Séries/Anime/Films/Musique/
   Ebooks) ou utilise `grok_renaming_prompt`.
 - Retourne un mapping `{ original_filename: { filename, path } }`.
-- Tolère les réponses entourées de ```json.
 
 ### SpotifyService
 
@@ -558,7 +574,10 @@ Wrapper autour de `music_binary` (Zotify). Modes :
   1. mapping regex (`--mapping`, clé `genre_patterns`) si genre existant ;
   2. sinon genre d'un fichier déjà présent à la destination ;
   3. sinon cache session `{artist, album}` ;
-  4. sinon IA Grok (`--mode ai`, `--grok-key`, `--grok-model`, `--grok-prompt`).
+  4. sinon genres Spotify artiste (cache token + cache genres) ;
+  5. sinon IA (`--ai-*`, avec genres Spotify dans le prompt) ; si l’IA ne
+     normalise pas, conserve le premier genre Spotify brut ;
+  6. sinon `Unknown`.
 - Écrit les tags (`artist`, `title`, `date`, `genre`) puis force `TDRC` via
   `ID3` complet.
 - Avec `--tags-only` : s'arrête après les tags (pas de déplacement).
@@ -569,8 +588,10 @@ Wrapper autour de `music_binary` (Zotify). Modes :
 - Retour : `{"results": [ {status: success|warning|error, logs, metadata_before,
   final_path, artist, title, genre, genre_source, ...} ]}`.
 
-> Limitations connues : seuls les MP3 sont traités ; les noms d'artistes avec
-> `/` sont neutralisés dans `sanitize_name` (remplacés par `,`).
+> Limitations connues : les formats supportés dépendent de `music_tag`
+> (MP3/FLAC/M4A/OGG/Opus) ; les noms d'artistes avec `/` sont neutralisés dans
+> `sanitize_name` (remplacés par `,`). La couverture des genres Spotify est
+> partielle et dépend des artistes.
 
 ---
 
@@ -804,8 +825,8 @@ python3 -m py_compile cli/*.py
   les tâches musique échouent.
 - `music_downloader.py` importe `music_tag` sans l'avoir déclaré dans
   `requirements.txt`.
-- `tag_rename_move.py` ne traite que les `.mp3` (pas FLAC/OGG/M4A), alors que
-  `--verify` et `lyrics_fetcher` gèrent plus de formats.
+- `tag_rename_move.py` traite les formats gérés par `music_tag` ; la couverture
+  des genres Spotify est partielle (certains artistes n’ont aucun genre).
 
 ### Front / UX
 - CSS/JS inline volumineux (surtout `base.html.twig` et

@@ -84,10 +84,15 @@ class JsonStorage
         return !empty($config['default_path']);
     }
 
-    public function hasGrok(): bool
+    public function hasAi(): bool
     {
         $config = $this->get('config', []);
-        return !empty($config['grok_api_key']);
+        return !empty($config['openrouter_api_key']) || !empty($config['grok_api_key']);
+    }
+
+    public function hasGrok(): bool
+    {
+        return $this->hasAi();
     }
 
     public function hasSpotify(): bool

@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Service\AiService;
 use App\Service\AlldebridService;
 use App\Service\DownloadManager;
 use App\Service\GrokService;
@@ -13,6 +14,7 @@ use GuzzleHttp\Client;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Routing\Annotation\Route;
@@ -20,7 +22,7 @@ use Symfony\Component\Routing\Annotation\Route;
 class DashboardController extends AbstractController
 {
     #[Route('/torrent', name: 'torrent')]
-    public function torrent(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage, MediaTypeHelper $mediaTypeHelper): Response
+    public function torrent(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage, MediaTypeHelper $mediaTypeHelper, AiService $ai): Response
     {
         if (!$storage->hasAlldebrid() || !$storage->hasDefaultTorrentPath()) {
             return $this->render('dashboard/locked.html.twig', [
@@ -65,7 +67,7 @@ class DashboardController extends AbstractController
             'recent_paths' => $recentPaths,
             'config' => $storage->get('config', []),
             'is_torrent_page' => true,
-            'is_grok_configured' => $storage->hasGrok()
+            'is_ai_configured' => $ai->hasAi('renaming')
         ]);
     }
 
@@ -224,6 +226,118 @@ class DashboardController extends AbstractController
             'files' => $files,
             'root' => $root
         ]);
+    }
+
+    #[Route('/music/stream', name: 'music_stream', methods: ['GET'])]
+    public function musicStream(Request $request, JsonStorage $storage): Response
+    {
+        $config = $storage->get('config', []);
+        $root = $config['music_root_path'] ?? '';
+        $rootReal = $root ? realpath($root) : false;
+        $target = (string) $request->query->get('path', '');
+        $targetReal = $target !== '' ? realpath($target) : false;
+        $rootPrefix = $rootReal ? rtrim($rootReal, '/\\') . DIRECTORY_SEPARATOR : null;
+
+        if (!$rootPrefix || !$targetReal || !is_file($targetReal) || !str_starts_with($targetReal, $rootPrefix)) {
+            return new Response('File not found.', 404);
+        }
+
+        $extension = strtolower(pathinfo($targetReal, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['mp3', 'flac', 'm4a', 'opus', 'ogg', 'wav'], true)) {
+            return new Response('Unsupported media type.', 415);
+        }
+
+        if ($request->hasSession() && $request->getSession()->isStarted()) {
+            $request->getSession()->save();
+        }
+
+        $size = filesize($targetReal);
+        if ($size === false || $size <= 0) {
+            return new Response('File is empty.', 404);
+        }
+
+        $start = 0;
+        $end = $size - 1;
+        $status = 200;
+        $headers = [
+            'Content-Type' => $this->getAudioMimeType($targetReal),
+            'Accept-Ranges' => 'bytes',
+            'Cache-Control' => 'private, max-age=3600',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+
+        $range = $request->headers->get('Range');
+        if ($range && preg_match('/bytes=(\d*)-(\d*)/', $range, $matches)) {
+            if ($matches[1] !== '') {
+                $start = (int) $matches[1];
+            }
+            if ($matches[2] !== '') {
+                $end = (int) $matches[2];
+            }
+            if ($matches[1] === '' && $matches[2] !== '') {
+                $suffixLength = (int) $matches[2];
+                $start = max(0, $size - $suffixLength);
+                $end = $size - 1;
+            }
+
+            $end = min($end, $size - 1);
+            if ($start >= $size || $start > $end) {
+                return new Response('Requested range not satisfiable.', 416, [
+                    'Content-Range' => 'bytes */' . $size,
+                ]);
+            }
+
+            $status = 206;
+            $headers['Content-Range'] = 'bytes ' . $start . '-' . $end . '/' . $size;
+        }
+
+        $headers['Content-Length'] = (string) ($end - $start + 1);
+
+        return new StreamedResponse(function () use ($targetReal, $start, $end): void {
+            if (function_exists('apache_setenv')) {
+                @apache_setenv('no-gzip', '1');
+            }
+            @ini_set('zlib.output_compression', '0');
+
+            $handle = fopen($targetReal, 'rb');
+            if ($handle === false) {
+                return;
+            }
+
+            fseek($handle, $start);
+            $remaining = $end - $start + 1;
+
+            while ($remaining > 0 && !feof($handle)) {
+                $chunk = fread($handle, min(8192, $remaining));
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                echo $chunk;
+                flush();
+                $remaining -= strlen($chunk);
+            }
+
+            fclose($handle);
+        }, $status, $headers);
+    }
+
+    private function getAudioMimeType(string $path): string
+    {
+        if (function_exists('mime_content_type')) {
+            $mime = @mime_content_type($path);
+            if (is_string($mime) && str_starts_with($mime, 'audio/')) {
+                return $mime;
+            }
+        }
+
+        return match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+            'mp3' => 'audio/mpeg',
+            'flac' => 'audio/flac',
+            'm4a' => 'audio/mp4',
+            'opus', 'ogg' => 'audio/ogg',
+            'wav' => 'audio/wav',
+            default => 'application/octet-stream',
+        };
     }
 
     #[Route('/file-tags', name: 'file_tags', methods: ['POST'])]
@@ -649,7 +763,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music/move-to-library', name: 'move_to_library', methods: ['POST'])]
-    public function moveToLibrary(Request $request, JsonStorage $storage, KernelInterface $kernel): Response
+    public function moveToLibrary(Request $request, JsonStorage $storage, KernelInterface $kernel, AiService $ai): Response
     {
         try {
             $config = $storage->get('config', []);
@@ -657,9 +771,8 @@ class DashboardController extends AbstractController
             $libraryPath = $config['music_library_path'] ?? '';
             $mode = $config['music_genre_tagging_mode'] ?? 'ai';
             $mapping = $config['music_genre_mapping'] ?? '{}';
-            $grokKey = $config['grok_api_key'] ?? '';
-            $grokModel = $config['music_genre_grok_model'] ?? 'grok-4-fast-non-reasoning';
-            $grokPrompt = $config['music_genre_grok_prompt'] ?? '';
+            $aiPrompt = $config['music_genre_grok_prompt'] ?? '';
+            $aiRuntime = $ai->getRuntimeConfig('music_genre');
             $venvPath = $config['music_venv_path'] ?? 'venv';
 
             if (!$sourcePath || !$libraryPath) {
@@ -683,9 +796,12 @@ class DashboardController extends AbstractController
                 "--library " . escapeshellarg($libraryPath) . " " .
                 "--mode " . escapeshellarg($mode) . " " .
                 "--mapping " . escapeshellarg($mapping) . " " .
-                "--grok-key " . escapeshellarg($grokKey) . " " .
-                "--grok-model " . escapeshellarg($grokModel) . " " .
-                "--grok-prompt " . escapeshellarg($grokPrompt) . ")";
+                "--ai-endpoint " . escapeshellarg($aiRuntime['endpoint']) . " " .
+                "--ai-key " . escapeshellarg($aiRuntime['api_key']) . " " .
+                "--ai-model " . escapeshellarg($aiRuntime['model']) . " " .
+                "--ai-referer " . escapeshellarg($aiRuntime['referer']) . " " .
+                "--ai-title " . escapeshellarg($aiRuntime['title']) . " " .
+                "--ai-prompt " . escapeshellarg($aiPrompt) . ")";
 
             $process = Process::fromShellCommandline($cmd);
             $process->setTimeout(300);
@@ -1267,17 +1383,23 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music/update-genres', name: 'music_update_genres', methods: ['POST'])]
-    public function musicUpdateGenres(Request $request, JsonStorage $storage, KernelInterface $kernel): Response
+    public function musicUpdateGenres(Request $request, JsonStorage $storage, KernelInterface $kernel, AiService $ai): Response
     {
         try {
             $config = $storage->get('config', []);
+            $requestData = json_decode($request->getContent(), true);
+            $forceAi = is_array($requestData) && !empty($requestData['force_ai']);
+
             $sourcePath = $config['music_root_path'] ?? '';
-            $mode = $config['music_genre_tagging_mode'] ?? 'ai';
+            $mode = $forceAi ? 'ai' : ($config['music_genre_tagging_mode'] ?? 'ai');
             $mapping = $config['music_genre_mapping'] ?? '{}';
-            $grokKey = $config['grok_api_key'] ?? '';
-            $grokModel = $config['music_genre_grok_model'] ?? 'grok-beta';
-            $grokPrompt = $config['music_genre_grok_prompt'] ?? '';
+            $aiPrompt = $config['music_genre_grok_prompt'] ?? '';
+            $aiRuntime = $ai->getRuntimeConfig('music_genre');
             $venvPath = $config['music_venv_path'] ?? 'venv';
+
+            if ($forceAi && !$ai->hasAi('music_genre')) {
+                return $this->json(['success' => false, 'message' => 'No AI model configured for music genre.'], 400);
+            }
 
             if (!$sourcePath) {
                 return $this->json(['success' => false, 'message' => 'Music root path not configured.']);
@@ -1300,9 +1422,13 @@ class DashboardController extends AbstractController
                 "--library " . escapeshellarg($sourcePath) . " " . // Pass source as library since move is disabled
                 "--mode " . escapeshellarg($mode) . " " .
                 "--mapping " . escapeshellarg($mapping) . " " .
-                "--grok-key " . escapeshellarg($grokKey) . " " .
-                "--grok-model " . escapeshellarg($grokModel) . " " .
-                "--grok-prompt " . escapeshellarg($grokPrompt) . " " .
+                "--ai-endpoint " . escapeshellarg($aiRuntime['endpoint']) . " " .
+                "--ai-key " . escapeshellarg($aiRuntime['api_key']) . " " .
+                "--ai-model " . escapeshellarg($aiRuntime['model']) . " " .
+                "--ai-referer " . escapeshellarg($aiRuntime['referer']) . " " .
+                "--ai-title " . escapeshellarg($aiRuntime['title']) . " " .
+                "--ai-prompt " . escapeshellarg($aiPrompt) . " " .
+                ($forceAi ? "--force-ai " : "") .
                 "--tags-only)";
 
             $process = Process::fromShellCommandline($cmd);
