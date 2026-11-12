@@ -649,7 +649,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music/move-to-library', name: 'move_to_library', methods: ['POST'])]
-    public function moveToLibrary(JsonStorage $storage, KernelInterface $kernel): Response
+    public function moveToLibrary(Request $request, JsonStorage $storage, KernelInterface $kernel): Response
     {
         try {
             $config = $storage->get('config', []);
@@ -666,22 +666,26 @@ class DashboardController extends AbstractController
                 return new Response(json_encode(['error' => 'Source or Library path not configured.']), 400);
             }
 
+            $target = $this->resolveMusicFileTarget($request, $storage);
+            if ($target['error'] !== null) {
+                return $this->json(['success' => false, 'message' => $target['error']], 400);
+            }
+            $isPerFile = $target['requested'];
+            $processSource = $isPerFile ? $target['path'] : $sourcePath;
+
             $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'tag_rename_move.py';
 
             $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
             $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
 
-            $mappingEscaped = str_replace('"', '\"', $mapping);
-            $promptEscaped = str_replace('"', '\"', $grokPrompt);
-
-            $cmd = "($activate && python3 \"$script\" " .
-                "--source \"$sourcePath\" " .
-                "--library \"$libraryPath\" " .
-                "--mode \"$mode\" " .
-                "--mapping \"$mappingEscaped\" " .
-                "--grok-key \"$grokKey\" " .
-                "--grok-model \"$grokModel\" " .
-                "--grok-prompt \"$promptEscaped\")";
+            $cmd = "($activate && python3 " . escapeshellarg($script) . " " .
+                "--source " . escapeshellarg($processSource) . " " .
+                "--library " . escapeshellarg($libraryPath) . " " .
+                "--mode " . escapeshellarg($mode) . " " .
+                "--mapping " . escapeshellarg($mapping) . " " .
+                "--grok-key " . escapeshellarg($grokKey) . " " .
+                "--grok-model " . escapeshellarg($grokModel) . " " .
+                "--grok-prompt " . escapeshellarg($grokPrompt) . ")";
 
             $process = Process::fromShellCommandline($cmd);
             $process->setTimeout(300);
@@ -689,7 +693,9 @@ class DashboardController extends AbstractController
 
             if (!$process->isSuccessful()) {
                 return new Response(json_encode([
+                    'success' => false,
                     'error' => 'Script failed.',
+                    'message' => 'Script failed.',
                     'details' => $process->getErrorOutput(),
                     'cmd' => $cmd
                 ]), 500);
@@ -697,6 +703,17 @@ class DashboardController extends AbstractController
 
             $output = json_decode($process->getOutput(), true);
             $results = $output['results'] ?? [];
+
+            if ($isPerFile) {
+                $result = $results[0] ?? ['status' => 'error', 'error' => 'No result returned by script.'];
+
+                return $this->json([
+                    'success' => ($result['status'] ?? 'error') !== 'error',
+                    'status' => $result['status'] ?? 'error',
+                    'result' => $result,
+                    'message' => $result['error'] ?? null,
+                ]);
+            }
 
             // Determine aggregated status
             $params = ['error' => 0, 'warning' => 0, 'success' => 0];
@@ -750,14 +767,135 @@ class DashboardController extends AbstractController
             $storage->set('server_notifications', $notifs);
 
             return new Response(json_encode([
+                'success' => true,
                 'status' => 'success',
                 'processed' => count($results),
                 'results' => $results
             ]), 200, ['Content-Type' => 'application/json']);
 
         } catch (\Exception $e) {
-            return new Response(json_encode(['error' => $e->getMessage()]), 500);
+            return new Response(json_encode(['success' => false, 'error' => $e->getMessage(), 'message' => $e->getMessage()]), 500);
         }
+    }
+
+    private function resolveMusicFileTarget(Request $request, JsonStorage $storage): array
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || empty($data['path'])) {
+            return ['requested' => false, 'path' => null, 'error' => null];
+        }
+
+        $config = $storage->get('config', []);
+        $root = $config['music_root_path'] ?? '';
+        $rootReal = $root ? realpath($root) : false;
+        $targetReal = realpath((string) $data['path']);
+
+        if (!$rootReal || !$targetReal || !is_file($targetReal)) {
+            return ['requested' => true, 'path' => null, 'error' => 'Invalid file path specified.'];
+        }
+
+        $rootPrefix = rtrim($rootReal, '/\\') . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($targetReal, $rootPrefix)) {
+            return ['requested' => true, 'path' => null, 'error' => 'File path is outside the music root directory.'];
+        }
+
+        if (!is_writable($targetReal)) {
+            return [
+                'requested' => true,
+                'path' => null,
+                'error' => 'File is not writable by the application user (www-data, UID 1000). '
+                    . 'Fix ownership on the host with: sudo chown -R 1000:1000 <downloads directory>.',
+            ];
+        }
+
+        return ['requested' => true, 'path' => $targetReal, 'error' => null];
+    }
+
+    #[Route('/music/batch/record', name: 'music_batch_record', methods: ['POST'])]
+    public function musicBatchRecord(Request $request, JsonStorage $storage): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data)) {
+            return $this->json(['success' => false, 'message' => 'Invalid request body.'], 400);
+        }
+
+        $action = (string) ($data['action'] ?? '');
+        $results = is_array($data['results'] ?? null) ? $data['results'] : [];
+        $labels = [
+            'genres' => 'Genre update',
+            'lyrics' => 'Lyrics fetching',
+            'library_move' => 'Library move',
+        ];
+
+        if (!isset($labels[$action])) {
+            return $this->json(['success' => false, 'message' => 'Invalid batch action.'], 400);
+        }
+
+        $counts = ['success' => 0, 'warning' => 0, 'error' => 0, 'skipped' => 0];
+        foreach ($results as $result) {
+            $status = $result['status'] ?? 'success';
+            if ($status === 'found' || $status === 'completed') {
+                $status = 'success';
+            } elseif ($status === 'not_found') {
+                $status = 'warning';
+            }
+            if (isset($counts[$status])) {
+                $counts[$status]++;
+            }
+        }
+
+        $total = count($results);
+        $globalStatus = 'success';
+        if ($counts['error'] > 0) {
+            $globalStatus = ($counts['error'] === $total) ? 'error' : 'warning';
+        } elseif ($counts['warning'] > 0) {
+            $globalStatus = 'warning';
+        }
+
+        if ($action === 'library_move') {
+            $config = $storage->get('config', []);
+            $libraryPath = $config['music_library_path'] ?? '';
+            $history = $storage->get('history', []);
+            $history[] = [
+                'date' => date('Y-m-d H:i:s'),
+                'status' => $globalStatus,
+                'action' => 'library_move',
+                'type' => 'music',
+                'filename' => 'Moved files to music library',
+                'file_count' => $total,
+                'message' => 'Processed ' . $total . ' files into ' . $libraryPath,
+                'details' => $results,
+            ];
+
+            $limit = (int) ($config['history_retention_limit'] ?? 100);
+            if ($limit < 10) {
+                $limit = 10;
+            }
+            if (count($history) > $limit) {
+                $history = array_slice($history, -$limit);
+            }
+            $storage->set('history', array_values($history));
+        }
+
+        $notifs = $storage->get('server_notifications', []);
+        $notifs[] = [
+            'id' => uniqid(),
+            'timestamp' => time(),
+            'type' => $globalStatus === 'error' ? 'error' : ($globalStatus === 'warning' ? 'info' : 'success'),
+            'action' => 'Finished',
+            'media_type' => 'music',
+            'item' => $labels[$action] . ' completed: ' . $counts['success'] . ' success, '
+                . $counts['warning'] . ' warning, ' . $counts['error'] . ' error, '
+                . $counts['skipped'] . ' skipped',
+        ];
+        $storage->set('server_notifications', $notifs);
+
+        return $this->json([
+            'success' => true,
+            'status' => $globalStatus,
+            'counts' => $counts,
+            'total' => $total,
+        ]);
     }
 
     #[Route('/dashboard/upload-torrent', name: 'upload_torrent', methods: ['POST'])]
@@ -1129,7 +1267,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music/update-genres', name: 'music_update_genres', methods: ['POST'])]
-    public function musicUpdateGenres(JsonStorage $storage, KernelInterface $kernel): Response
+    public function musicUpdateGenres(Request $request, JsonStorage $storage, KernelInterface $kernel): Response
     {
         try {
             $config = $storage->get('config', []);
@@ -1145,13 +1283,20 @@ class DashboardController extends AbstractController
                 return $this->json(['success' => false, 'message' => 'Music root path not configured.']);
             }
 
+            $target = $this->resolveMusicFileTarget($request, $storage);
+            if ($target['error'] !== null) {
+                return $this->json(['success' => false, 'message' => $target['error']], 400);
+            }
+            $isPerFile = $target['requested'];
+            $processSource = $isPerFile ? $target['path'] : $sourcePath;
+
             $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'tag_rename_move.py';
 
             $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
             $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
 
             $cmd = "($activate && python3 " . escapeshellarg($script) . " " .
-                "--source " . escapeshellarg($sourcePath) . " " .
+                "--source " . escapeshellarg($processSource) . " " .
                 "--library " . escapeshellarg($sourcePath) . " " . // Pass source as library since move is disabled
                 "--mode " . escapeshellarg($mode) . " " .
                 "--mapping " . escapeshellarg($mapping) . " " .
@@ -1168,7 +1313,21 @@ class DashboardController extends AbstractController
                 return $this->json(['success' => false, 'message' => $process->getErrorOutput()]);
             }
 
-            return $this->json(['success' => true, 'output' => json_decode($process->getOutput())]);
+            $output = json_decode($process->getOutput(), true);
+            $results = $output['results'] ?? [];
+
+            if ($isPerFile) {
+                $result = $results[0] ?? ['status' => 'error', 'error' => 'No result returned by script.'];
+
+                return $this->json([
+                    'success' => ($result['status'] ?? 'error') !== 'error',
+                    'status' => $result['status'] ?? 'error',
+                    'result' => $result,
+                    'message' => $result['error'] ?? null,
+                ]);
+            }
+
+            return $this->json(['success' => true, 'output' => $output, 'results' => $results]);
         } catch (\Exception $e) {
             return $this->json(['success' => false, 'message' => $e->getMessage()]);
         }
@@ -1187,10 +1346,21 @@ class DashboardController extends AbstractController
             $path = $root;
             // If a specific file is requested, use it if it exists
             if ($targetPath) {
+                $rootReal = realpath($root);
                 $fullTargetPath = realpath($targetPath);
-                if ($fullTargetPath && str_starts_with($fullTargetPath, realpath($root))) {
-                    $path = $fullTargetPath;
+                $rootPrefix = $rootReal ? rtrim($rootReal, '/\\') . DIRECTORY_SEPARATOR : null;
+
+                if (!$rootPrefix || !$fullTargetPath || !is_file($fullTargetPath) || !str_starts_with($fullTargetPath, $rootPrefix)) {
+                    return $this->json(['success' => false, 'message' => 'Invalid file path specified.'], 400);
                 }
+                if (!is_writable($fullTargetPath)) {
+                    return $this->json([
+                        'success' => false,
+                        'message' => 'File is not writable by the application user (www-data, UID 1000). '
+                            . 'Fix ownership on the host with: sudo chown -R 1000:1000 <downloads directory>.',
+                    ], 400);
+                }
+                $path = $fullTargetPath;
             }
 
             if (empty($path) || !file_exists($path)) {
@@ -1235,6 +1405,17 @@ class DashboardController extends AbstractController
             }
 
             $results = json_decode($process->getOutput(), true);
+
+            if ($targetPath) {
+                $result = is_array($results) ? ($results[0] ?? ['status' => 'error', 'reason' => 'No result returned by script.']) : ['status' => 'error', 'reason' => 'Invalid script output.'];
+
+                return $this->json([
+                    'success' => true,
+                    'status' => $result['status'] ?? 'error',
+                    'result' => $result,
+                    'results' => $results,
+                ]);
+            }
 
             return $this->json([
                 'success' => true,

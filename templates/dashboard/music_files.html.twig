@@ -13,19 +13,15 @@
         <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code> ({{ files|length }} fichier{% if files|length > 1 %}s{% endif %})</p>
     </div>
     <div id="move-container">
-        <button id="btn-update-genres" class="btn btn-secondary" onclick="updateAllGenres()" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+        <button id="btn-update-genres" class="btn btn-secondary" onclick="runBatch('genres')" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
             <span id="genre-icon">🏷️</span> Update Genres
         </button>
-        <button id="btn-lyrics" class="btn btn-secondary" onclick="fetchLyrics()">
+        <button id="btn-lyrics" class="btn btn-secondary" onclick="runBatch('lyrics')">
             <span id="lyrics-icon">🎤</span> Add Lyrics
         </button>
-        <button id="btn-move" class="btn btn-primary" onclick="moveToLibrary()" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+        <button id="btn-move" class="btn btn-primary" onclick="runBatch('move')" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
             <span id="move-icon">🚚</span> Move to library
         </button>
-        <div id="move-loader" style="display: none; align-items: center; gap: 0.5rem; color: var(--accent);">
-            <div style="font-size: 1.2rem; animation: spin 1s infinite linear;">⌛</div>
-            <span>Processing...</span>
-        </div>
     </div>
 </div>
 
@@ -44,7 +40,7 @@
         </thead>
         <tbody>
             {% for file in files %}
-            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+            <tr class="music-file-row" data-file-path="{{ file.path|e('html_attr') }}" data-file-name="{{ file.name|e('html_attr') }}" data-has-lyrics="{{ file.has_lyrics ? '1' : '0' }}" style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 1rem; font-weight: 500;">{{ file.name }}</td>
                 <td class="hide-mobile" style="padding: 1rem; color: var(--text-secondary); font-size: 0.85rem;" title="{{ file.path }}">
                     {{ file.rel_path }}
@@ -227,6 +223,49 @@
     }
 </style>
 
+<!-- Batch Progress Modal -->
+<div id="batch-modal" class="modal-overlay" style="z-index: 2200;">
+    <div class="modal-container-custom" style="max-width: 900px;">
+        <div class="modal-header-custom">
+            <h2 id="batch-modal-title" style="margin: 0; font-size: 1.25rem;">Batch processing</h2>
+            <button class="btn-remove" onclick="closeBatchModal()" style="font-size: 2rem; background: none; border: none; color: var(--text-secondary); cursor: pointer;">×</button>
+        </div>
+        <div class="modal-body-custom">
+            <div style="margin-bottom: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.9rem;">
+                    <span id="batch-current" style="color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Preparing...</span>
+                    <span id="batch-counter" style="font-weight: 600; white-space: nowrap;">0 / 0</span>
+                </div>
+                <div style="height: 10px; background: rgba(255,255,255,0.06); border-radius: 5px; overflow: hidden;">
+                    <div id="batch-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); transition: width 0.25s ease;"></div>
+                </div>
+            </div>
+
+            <div id="batch-summary" style="display: none; margin-bottom: 1.25rem; padding: 1rem; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); font-size: 0.9rem;"></div>
+
+            <div style="overflow-x: auto; max-height: 45vh;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem;">
+                    <thead style="position: sticky; top: 0; background: var(--bg-secondary); z-index: 1;">
+                        <tr style="border-bottom: 2px solid rgba(255,255,255,0.1);">
+                            <th style="padding: 0.65rem;">File</th>
+                            <th style="padding: 0.65rem; width: 120px;">Status</th>
+                            <th style="padding: 0.65rem;">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="batch-results-body">
+                        <!-- Dynamic -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 1.25rem 1.5rem; border-top: 1px solid rgba(255,255,255,0.05);">
+            <button id="btn-batch-cancel" class="btn btn-secondary" onclick="cancelBatch()">Cancel</button>
+            <button id="btn-batch-refresh" class="btn btn-secondary" onclick="window.location.reload()" style="display: none;">Refresh page</button>
+            <button id="btn-batch-close" class="btn btn-primary" onclick="closeBatchModal()" style="display: none;">Close</button>
+        </div>
+    </div>
+</div>
+
 <!-- Lyrics Modal -->
 <div id="lyrics-modal" class="modal-overlay" style="z-index: 2100;">
     <div class="modal-container-custom" style="max-width: 800px;">
@@ -271,74 +310,390 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-async function updateAllGenres() {
-    const btn = document.getElementById('btn-update-genres');
-    const originalContent = btn.innerHTML;
+const batchConfig = {
+    genres: {
+        url: "{{ path('music_update_genres') }}",
+        recordAction: 'genres',
+        title: 'Updating genres',
+        confirm: 'This will detect and update genres for every file using AI/Mapping. Continue?'
+    },
+    lyrics: {
+        url: "{{ path('fetch_lyrics') }}",
+        recordAction: 'lyrics',
+        title: 'Fetching lyrics',
+        confirm: null,
+        skipWithLyrics: true
+    },
+    move: {
+        url: "{{ path('move_to_library') }}",
+        recordAction: 'library_move',
+        title: 'Moving files to library',
+        confirm: 'This will move every file into the configured music library. Continue?'
+    }
+};
+const batchRecordUrl = "{{ path('music_batch_record') }}";
+const batchButtonIds = ['btn-update-genres', 'btn-lyrics', 'btn-move'];
+const batchRequestTimeout = 620000;
 
-    if (!confirm('This will attempt to detect and update genres for all files using AI/Mapping. Continue?')) return;
+let batchState = {
+    running: false,
+    cancelRequested: false,
+    action: null,
+    files: [],
+    results: [],
+    completed: 0,
+    controller: null
+};
 
-    btn.disabled = true;
-    btn.style.opacity = '0.7';
-    btn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear; margin-right:5px;">⌛</span> Updating...';
+function getBatchFiles() {
+    return Array.from(document.querySelectorAll('.music-file-row')).map(row => ({
+        path: row.dataset.filePath,
+        name: row.dataset.fileName,
+        hasLyrics: row.dataset.hasLyrics === '1',
+        row: row
+    }));
+}
 
-    try {
-        const res = await fetch("{{ path('music_update_genres') }}", {
-            method: 'POST'
-        });
+function normalizeBatchStatus(status) {
+    const value = String(status || '').toLowerCase();
+    if (['success', 'found', 'completed', 'complete', 'moved', 'updated'].includes(value)) return 'success';
+    if (['warning', 'not_found', 'partial'].includes(value)) return 'warning';
+    if (['skipped', 'skip'].includes(value)) return 'skipped';
+    if (['canceled', 'cancelled'].includes(value)) return 'canceled';
+    if (['pending', 'running'].includes(value)) return value;
+    return 'error';
+}
 
-        const data = await res.json();
-        if (data.success) {
-            window.notify('success', 'Genre updates completed!');
-            setTimeout(() => window.location.reload(), 1000);
-        } else {
-            alert('Error: ' + (data.message || 'Unknown error'));
-            btn.disabled = false;
-            btn.style.opacity = '1';
-            btn.innerHTML = originalContent;
+function batchStatusInfo(status) {
+    const normalized = normalizeBatchStatus(status);
+    const map = {
+        pending: { label: '⏳ Pending', color: 'var(--text-secondary)' },
+        running: { label: '⌛ Running', color: 'var(--accent)' },
+        success: { label: '✅ Success', color: 'var(--success)' },
+        warning: { label: '⚠️ Warning', color: '#f59e0b' },
+        error: { label: '❌ Error', color: 'var(--danger)' },
+        skipped: { label: '⏭️ Skipped', color: '#94a3b8' },
+        canceled: { label: '🚫 Canceled', color: '#94a3b8' }
+    };
+    return map[normalized] || map.pending;
+}
+
+function buildBatchMessage(action, result) {
+    if (!result) return '';
+
+    if (action === 'genres') {
+        if (result.genre) {
+            return `${result.old_genre || '?'} → ${result.genre}`;
         }
-    } catch (e) {
-        alert('Fetch Error: ' + e.message);
-        btn.disabled = false;
-        btn.style.opacity = '1';
-        btn.innerHTML = originalContent;
+        return result.error || (result.logs && result.logs.length ? result.logs[result.logs.length - 1] : 'Updated');
+    }
+
+    if (action === 'lyrics') {
+        if (result.status === 'found' || result.lyrics) {
+            return `${result.title || 'Lyrics found'}${result.type ? ' (' + result.type + ')' : ''}`;
+        }
+        return result.reason || result.message || result.error || 'Not found';
+    }
+
+    if (action === 'move') {
+        return result.final_path || result.error || 'Moved';
+    }
+
+    return result.message || result.error || '';
+}
+
+function applyBatchRowSideEffects(action, item, result) {
+    if (!item.row || !result) return;
+
+    if (action === 'genres' && result.genre) {
+        const genreCell = item.row.children[2];
+        if (genreCell) genreCell.textContent = result.genre;
+    }
+
+    if (action === 'lyrics' && (result.status === 'found' || result.lyrics)) {
+        const lyricsCell = item.row.children[3];
+        if (lyricsCell) lyricsCell.innerHTML = '<span title="Lyrics Present">📝</span>';
+        item.row.dataset.hasLyrics = '1';
+    }
+
+    if (action === 'move' && result.final_path) {
+        item.row.dataset.filePath = result.final_path;
+        const locationCell = item.row.children[1];
+        if (locationCell) locationCell.textContent = result.final_path;
     }
 }
 
-async function fetchLyrics() {
-    const btn = document.getElementById('btn-lyrics');
-    const originalText = btn.innerHTML;
-
-    btn.disabled = true;
-    btn.style.opacity = '0.7';
-    btn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear; margin-right:5px;">⌛</span> Fetching...';
-
-    try {
-        const res = await fetch("{{ path('fetch_lyrics') }}", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-
-        const data = await res.json();
-        
-        if (data.success) {
-            showLyricsResults(data.results);
-            window.notify('success', 'Lyrics fetching completed!');
-        } else {
-            let errorMsg = 'Error: ' + (data.message || 'Unknown error');
-            if (data.details) {
-                errorMsg += '\n\nDetails:\n' + data.details;
-            }
-            alert(errorMsg);
-            btn.disabled = false;
-            btn.style.opacity = '1';
-            btn.innerHTML = originalText;
-        }
-    } catch (e) {
-        alert('Fetch Error: ' + e.message);
-        btn.disabled = false;
-        btn.style.opacity = '1';
-        btn.innerHTML = originalText;
+function setBatchRowStatus(index, status) {
+    const row = document.getElementById('batch-result-row-' + index);
+    if (!row) return;
+    const info = batchStatusInfo(status);
+    const statusCell = row.querySelector('.batch-status-cell');
+    if (statusCell) {
+        statusCell.textContent = info.label;
+        statusCell.style.color = info.color;
     }
+}
+
+function setBatchRowMessage(index, message) {
+    const row = document.getElementById('batch-result-row-' + index);
+    if (!row) return;
+    const detailsCell = row.querySelector('.batch-details-cell');
+    if (detailsCell) detailsCell.textContent = message || '';
+}
+
+function initBatchResults(files) {
+    const tbody = document.getElementById('batch-results-body');
+    tbody.innerHTML = '';
+
+    files.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.id = 'batch-result-row-' + index;
+        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+
+        const nameCell = document.createElement('td');
+        nameCell.style.padding = '0.65rem';
+        nameCell.style.wordBreak = 'break-word';
+        nameCell.textContent = item.name;
+
+        const statusCell = document.createElement('td');
+        statusCell.className = 'batch-status-cell';
+        statusCell.style.padding = '0.65rem';
+        statusCell.style.whiteSpace = 'nowrap';
+
+        const detailsCell = document.createElement('td');
+        detailsCell.className = 'batch-details-cell';
+        detailsCell.style.padding = '0.65rem';
+        detailsCell.style.color = 'var(--text-secondary)';
+        detailsCell.style.fontSize = '0.8rem';
+        detailsCell.textContent = item.skip ? 'Lyrics already present' : '';
+
+        tr.appendChild(nameCell);
+        tr.appendChild(statusCell);
+        tr.appendChild(detailsCell);
+        tbody.appendChild(tr);
+
+        setBatchRowStatus(index, item.skip ? 'skipped' : 'pending');
+    });
+}
+
+function setBatchButtonsDisabled(disabled) {
+    batchButtonIds.forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+
+        if (disabled) {
+            btn.dataset.batchWasDisabled = btn.disabled ? '1' : '0';
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+        } else {
+            btn.disabled = btn.dataset.batchWasDisabled === '1';
+            btn.style.opacity = btn.disabled ? '0.5' : '1';
+        }
+    });
+}
+
+function updateBatchProgress() {
+    const total = batchState.files.length;
+    const completed = batchState.completed;
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    document.getElementById('batch-counter').textContent = completed + ' / ' + total;
+    document.getElementById('batch-progress-bar').style.width = percent + '%';
+}
+
+function openBatchModal(action) {
+    const config = batchConfig[action];
+    document.getElementById('batch-modal-title').textContent = config.title;
+    document.getElementById('batch-summary').style.display = 'none';
+    document.getElementById('batch-summary').innerHTML = '';
+    document.getElementById('batch-current').textContent = 'Preparing...';
+    document.getElementById('btn-batch-cancel').style.display = 'inline-block';
+    document.getElementById('btn-batch-cancel').disabled = false;
+    document.getElementById('btn-batch-cancel').textContent = 'Cancel';
+    document.getElementById('btn-batch-close').style.display = 'none';
+    document.getElementById('btn-batch-refresh').style.display = 'none';
+    document.getElementById('batch-modal').style.display = 'flex';
+}
+
+function closeBatchModal() {
+    if (batchState.running) return;
+    document.getElementById('batch-modal').style.display = 'none';
+}
+
+function cancelBatch() {
+    if (!batchState.running || batchState.cancelRequested) return;
+
+    batchState.cancelRequested = true;
+    const cancelBtn = document.getElementById('btn-batch-cancel');
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = 'Stopping after current file...';
+}
+
+function showBatchSummary(action, results) {
+    const counts = { success: 0, warning: 0, error: 0, skipped: 0, canceled: 0 };
+    results.forEach(result => {
+        const status = normalizeBatchStatus(result.status);
+        if (Object.prototype.hasOwnProperty.call(counts, status)) {
+            counts[status]++;
+        }
+    });
+
+    const summary = document.getElementById('batch-summary');
+    summary.innerHTML = `
+        <div style="font-weight: 600; margin-bottom: 0.35rem;">${batchConfig[action].title} complete</div>
+        <div style="color: var(--success);">✅ ${counts.success} success</div>
+        <div style="color: #f59e0b;">⚠️ ${counts.warning} warning</div>
+        <div style="color: var(--danger);">❌ ${counts.error} error</div>
+        <div style="color: #94a3b8;">⏭️ ${counts.skipped} skipped · 🚫 ${counts.canceled} canceled</div>
+    `;
+    summary.style.display = 'block';
+
+    const type = counts.error > 0 ? 'error' : (counts.warning > 0 ? 'info' : 'success');
+    window.notify(type, `${batchConfig[action].title} complete: ${counts.success} success, ${counts.warning} warning, ${counts.error} error.`);
+}
+
+async function recordBatch(action, results) {
+    try {
+        await fetch(batchRecordUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: batchConfig[action].recordAction,
+                results: results
+            })
+        });
+    } catch (e) {
+        console.warn('Could not record batch results', e);
+    }
+}
+
+async function runBatch(action) {
+    if (batchState.running) return;
+
+    const config = batchConfig[action];
+    if (!config) return;
+
+    if (config.confirm && !confirm(config.confirm)) return;
+
+    const files = getBatchFiles().map(file => ({
+        ...file,
+        skip: config.skipWithLyrics === true && file.hasLyrics,
+        status: config.skipWithLyrics === true && file.hasLyrics ? 'skipped' : 'pending',
+        message: config.skipWithLyrics === true && file.hasLyrics ? 'Lyrics already present' : '',
+        result: null
+    }));
+
+    if (files.length === 0) {
+        window.notify('info', 'No files to process.');
+        return;
+    }
+
+    batchState = {
+        running: true,
+        cancelRequested: false,
+        action: action,
+        files: files,
+        results: [],
+        completed: files.filter(file => file.skip).length,
+        controller: null
+    };
+
+    initBatchResults(files);
+    openBatchModal(action);
+    setBatchButtonsDisabled(true);
+    updateBatchProgress();
+
+    const results = [];
+
+    for (let index = 0; index < files.length; index++) {
+        const item = files[index];
+
+        if (item.skip) {
+            results.push({ status: 'skipped', file: item.name, reason: item.message });
+            continue;
+        }
+
+        if (batchState.cancelRequested) {
+            item.status = 'canceled';
+            item.message = 'Canceled by user';
+            setBatchRowStatus(index, item.status);
+            setBatchRowMessage(index, item.message);
+            batchState.completed++;
+            updateBatchProgress();
+            results.push({ status: 'canceled', file: item.name, reason: item.message });
+            continue;
+        }
+
+        item.status = 'running';
+        setBatchRowStatus(index, item.status);
+        document.getElementById('batch-current').textContent = item.name;
+
+        const controller = new AbortController();
+        batchState.controller = controller;
+        const timeoutId = setTimeout(() => controller.abort(), batchRequestTimeout);
+
+        try {
+            const res = await fetch(config.url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: item.path }),
+                signal: controller.signal
+            });
+
+            let data = {};
+            try {
+                data = await res.json();
+            } catch (e) {
+                data = {};
+            }
+
+            if (!res.ok || data.success === false) {
+                throw new Error(data.message || data.error || data.details || ('HTTP ' + res.status));
+            }
+
+            const result = data.result || (Array.isArray(data.results) ? data.results[0] : null) || data.output || {};
+            item.result = result;
+            item.status = normalizeBatchStatus(result.status || data.status || 'success');
+            item.message = item.status === 'error'
+                ? (result.error || data.message || 'Processing failed')
+                : buildBatchMessage(action, result);
+
+            applyBatchRowSideEffects(action, item, result);
+        } catch (e) {
+            if (e.name === 'AbortError') {
+                item.status = batchState.cancelRequested ? 'canceled' : 'error';
+                item.message = batchState.cancelRequested ? 'Canceled by user' : 'Request timed out';
+            } else {
+                item.status = 'error';
+                item.message = e.message || 'Request failed';
+            }
+        } finally {
+            clearTimeout(timeoutId);
+            batchState.controller = null;
+        }
+
+        batchState.completed++;
+        setBatchRowStatus(index, item.status);
+        setBatchRowMessage(index, item.message);
+        updateBatchProgress();
+
+        results.push(item.result && typeof item.result === 'object'
+            ? { ...item.result, status: item.result.status || item.status, file: item.result.file || item.name }
+            : { status: item.status, file: item.name, reason: item.message });
+    }
+
+    await recordBatch(action, results);
+
+    batchState.results = results;
+    batchState.running = false;
+
+    setBatchButtonsDisabled(false);
+    document.getElementById('batch-current').textContent = batchState.cancelRequested ? 'Canceled' : 'Done';
+    document.getElementById('btn-batch-cancel').style.display = 'none';
+    document.getElementById('btn-batch-close').style.display = 'inline-block';
+    document.getElementById('btn-batch-refresh').style.display = 'inline-block';
+
+    showBatchSummary(action, results);
 }
 
 async function fetchSingleLyrics(path, btn) {
@@ -578,40 +933,6 @@ async function saveTags() {
         alert('Network error: ' + e.message);
         btn.disabled = false;
         btn.innerHTML = '💾 Save';
-    }
-}
-
-async function moveToLibrary() {
-    const btn = document.getElementById('btn-move');
-    const loader = document.getElementById('move-loader');
-
-    btn.style.display = 'none';
-    loader.style.display = 'flex';
-
-    try {
-        const res = await fetch("{{ path('move_to_library') }}", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-
-        const data = await res.json();
-        
-        if (data.status === 'success') {
-            window.notify('success', {
-                action: 'Finished',
-                media_type: 'music',
-                item: data.processed + ' files moved to Library'
-            });
-            setTimeout(() => window.location.reload(), 2000);
-        } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
-            btn.style.display = 'inline-flex';
-            loader.style.display = 'none';
-        }
-    } catch (e) {
-        alert('Fetch Error: ' + e.message);
-        btn.style.display = 'inline-flex';
-        loader.style.display = 'none';
     }
 }
 

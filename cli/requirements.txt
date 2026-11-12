@@ -1,5 +1,6 @@
 git+https://github.com/Gautardos/zotify.git
 mutagen
+music-tag==0.4.3
 requests
 spotipy
 beautifulsoup4

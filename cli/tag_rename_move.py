@@ -4,20 +4,19 @@ import json
 import re
 import shutil
 import requests
-import mutagen.easyid3
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3, TDRC
+import music_tag
 
 # In-memory cache for genre detection during the current session
 GENRE_CACHE = {}
+AUDIO_EXTENSIONS = ('.mp3', '.flac', '.m4a', '.opus', '.ogg')
 
 def get_genre_from_file(file_path):
     """Reads the genre from a specific file if it exists."""
     if not os.path.exists(file_path):
         return None
     try:
-        audio = EasyID3(file_path)
-        genre = audio.get("genre", [None])[0]
+        audio = music_tag.load_file(file_path)
+        genre = str(audio['genre']).strip()
         if genre and genre.lower() not in ["", "unknown", "none"]:
             return genre
     except:
@@ -31,6 +30,16 @@ def sanitize_name(name):
     if name.endswith('.'):
         name = name.rstrip('.')
     return name.replace("/", ",").replace('"', "").replace(":", "").replace("?", "").replace("¿", "")
+
+
+def parse_filename_metadata(file_path):
+    stem = os.path.splitext(os.path.basename(file_path))[0]
+    parts = [part.strip() for part in stem.split(' - ')]
+    if len(parts) >= 3:
+        return parts[0], parts[1], ' - '.join(parts[2:])
+    if len(parts) == 2:
+        return parts[0], 'Unknown', parts[1]
+    return 'Unknown', 'Unknown', stem or 'Untitled'
 
 def map_genre(genre, mapping_json):
     if not genre:
@@ -99,37 +108,50 @@ def process_file(file_path, library_path, args):
         report["logs"].append(msg)
 
     try:
-        audio = EasyID3(file_path)
-        audio_full = ID3(file_path) # Full ID3 for TDRC date support
-        
-        # Capture metadata before
-        old_genre = audio.get("genre", ["Unknown"])[0]
-        # Robust date extraction
-        date = audio.get("originaldate", [None])[0]
-        if not date:
-            tdrc = audio_full.get('TDRC')
-            date = str(tdrc.text[0]) if tdrc and tdrc.text else "0000"
-            
+        audio = music_tag.load_file(file_path)
+
+        def tag_value(name):
+            try:
+                return str(audio[name]).strip()
+            except Exception:
+                return ""
+
+        title_tag = tag_value("tracktitle")
+        artist_tag = tag_value("artist")
+        album_tag = tag_value("album")
+        albumartist_tag = tag_value("albumartist")
+        old_genre = tag_value("genre") or "Unknown"
+        date = tag_value("year") or "0000"
+        track_tag = tag_value("tracknumber")
+
+        fallback_artist, fallback_album, fallback_title = parse_filename_metadata(file_path)
+        if not title_tag:
+            title_tag = fallback_title
+            add_log(f"No title tag found, using filename: {title_tag}")
+        if not artist_tag:
+            artist_tag = fallback_artist
+            add_log(f"No artist tag found, using filename: {artist_tag}")
+        if not album_tag:
+            album_tag = fallback_album
+            add_log(f"No album tag found, using filename: {album_tag}")
+
         report["metadata_before"] = {
-            "title": audio.get("title", ["Unknown"])[0],
-            "artist": audio.get("artist", ["Unknown"])[0],
-            "album": audio.get("album", ["Unknown"])[0],
+            "title": title_tag or "Unknown",
+            "artist": artist_tag or "Unknown",
+            "album": album_tag or "Unknown",
             "genre": old_genre,
             "date": date
         }
         add_log(f"Reading metadata for: {report['original_file']}")
         add_log(f"Old genre found: {old_genre}")
         add_log(f"Date found: {date}")
-        
-        # Tagging logic & Featuring detection
-        # ... (Artist, Title, featuring logic omitted for brevity in thought, but included in full replacement)
+
         # 1. Determine main artist (prioritize albumartist)
-        if "albumartist" in audio:
-            main_artist = sanitize_name(audio["albumartist"][0])
+        if albumartist_tag:
+            main_artist = sanitize_name(albumartist_tag)
             add_log(f"Main artist from albumartist: {main_artist}")
-        elif "artist" in audio:
-            # Split by comma if multiple artists listed
-            artists = [sanitize_name(a.strip()) for a in audio["artist"][0].split(",") if a.strip()]
+        elif artist_tag:
+            artists = [sanitize_name(a.strip()) for a in artist_tag.split(",") if a.strip()]
             main_artist = artists[0] if artists else "Unknown"
             add_log(f"Main artist from first listed artist: {main_artist}")
         else:
@@ -138,15 +160,13 @@ def process_file(file_path, library_path, args):
 
         # 2. Extract featuring artists
         featuring_artists = []
-        if "artist" in audio:
-            artist_str = audio["artist"][0]
-            # Some apps use comma, some use semicolon
-            all_artists = [sanitize_name(a.strip()) for a in re.split(',|;', artist_str) if a.strip()]
-            all_artists = list(dict.fromkeys(all_artists)) # Deduplicate
+        if artist_tag:
+            all_artists = [sanitize_name(a.strip()) for a in re.split(',|;', artist_tag) if a.strip()]
+            all_artists = list(dict.fromkeys(all_artists))
             featuring_artists = [a for a in all_artists if a != main_artist]
-        
+
         # 3. Update Title with featuring
-        original_title = sanitize_name(audio.get("title", ["Untitled"])[0])
+        original_title = sanitize_name(title_tag or "Untitled")
         final_title = original_title
         if featuring_artists:
             feat_str = f"(feat. {', '.join(featuring_artists)})"
@@ -155,17 +175,12 @@ def process_file(file_path, library_path, args):
                 add_log(f"Detected features: {', '.join(featuring_artists)}. Title updated.")
             else:
                 add_log(f"Features already in title: {original_title}")
-        
+
         artist = main_artist
-        album = sanitize_name(audio.get("album", ["Unknown"])[0])
+        album = sanitize_name(album_tag or "Unknown")
         title = final_title
-        tracknum = str(audio.get("tracknumber", ["1"])[0].split("/")[0]).zfill(2)
+        tracknum = str((track_tag or "1").split("/")[0]).zfill(2)
         ext = os.path.splitext(file_path)[1].lower()
-        
-        # Save updated tags back via EasyID3
-        audio["artist"] = main_artist
-        audio["title"] = final_title
-        audio["date"] = date
         
         # Prepare destination path early for optimization
         artist_dir = os.path.join(library_path, artist)
@@ -210,13 +225,13 @@ def process_file(file_path, library_path, args):
                     else:
                         add_log("Grok could not determine a genre.")
 
+        audio["artist"] = main_artist
+        audio["tracktitle"] = final_title
+        audio["album"] = album
         audio["genre"] = new_genre
+        if date and date != "0000":
+            audio["year"] = date
         audio.save()
-        
-        # Double-save with full ID3 to ensure TDRC persistence
-        audio_full = ID3(file_path)
-        audio_full['TDRC'] = TDRC(encoding=3, text=date)
-        audio_full.save(file_path)
         add_log(f"Saved tags with genre: {new_genre} (Source: {genre_source}) and date: {date}")
         
         # If tags-only mode, stop here
@@ -277,8 +292,15 @@ def process_file(file_path, library_path, args):
         
     except Exception as e:
         report["status"] = "error"
-        report["error"] = str(e)
-        
+        if isinstance(e, PermissionError) or getattr(e, "errno", None) == 13:
+            report["error"] = (
+                f"Permission denied: {file_path} is not writable by the application user "
+                f"(www-data, UID 1000). Fix ownership on the host with: "
+                f"sudo chown -R 1000:1000 <downloads directory>."
+            )
+        else:
+            report["error"] = str(e)
+
     return report
 
 def main():
@@ -298,14 +320,21 @@ def main():
     results = []
     
     if not os.path.exists(args.source):
-        print(json.dumps({"error": f"Source directory {args.source} not found"}))
+        print(json.dumps({"error": f"Source path {args.source} not found"}))
         return
 
-    for filename in os.listdir(args.source):
-        if filename.lower().endswith('.mp3'):
-            file_path = os.path.join(args.source, filename)
-            results.append(process_file(file_path, args.library, args))
-            
+    if os.path.isfile(args.source):
+        files = [args.source] if args.source.lower().endswith(AUDIO_EXTENSIONS) else []
+    else:
+        files = [
+            os.path.join(args.source, filename)
+            for filename in os.listdir(args.source)
+            if filename.lower().endswith(AUDIO_EXTENSIONS)
+        ]
+
+    for file_path in files:
+        results.append(process_file(file_path, args.library, args))
+
     print(json.dumps({"results": results}))
 
 if __name__ == "__main__":
