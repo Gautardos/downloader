@@ -136,10 +136,13 @@ RUN mkdir -p var/storage var/sessions var/cache var/log var/composer_home \
 # 12. Fichiers de configuration finale
 # ────────────────────────────────────────────────
 COPY supervisord.conf /etc/supervisord.conf
+COPY docker-entrypoint.sh /var/www/html/docker-entrypoint.sh
+RUN chmod +x /var/www/html/docker-entrypoint.sh
 
 # ────────────────────────────────────────────────
 # Ports & démarrage
 # ────────────────────────────────────────────────
 EXPOSE 8000
 
+ENTRYPOINT ["/var/www/html/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

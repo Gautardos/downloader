@@ -10,3 +10,7 @@ var/
 /var/
 /vendor/
 ###< symfony/framework-bundle ###
+*.swp
+/public/debug.txt
+/public/dump_api.php
+/.env.dev

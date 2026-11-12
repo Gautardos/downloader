@@ -30,11 +30,7 @@
             "symfony/flex": true,
             "symfony/runtime": true
         },
-        "sort-packages": true,
-        "audit": {
-            "ignore": ["PKSA-A-WS7-MR54-jsny", "PKSA-dirr-z8zb-qnm7"],
-            "block-insecure": false
-        }
+        "sort-packages": true
     },
     "autoload": {
         "psr-4": {
