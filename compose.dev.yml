@@ -7,8 +7,6 @@ services:
     image: gautardos/downloader-app:dev
     container_name: downloader-dev
     network_mode: host
-    environment:
-      - PORT=${DEV_PORT:-8080}
     volumes:
       - ./src:/var/www/html/src
       - ./templates:/var/www/html/templates
@@ -17,9 +15,9 @@ services:
       - ../data/db:/var/www/html/var/db
       - ../data/home:/var/www/html/var/home
       - ../data/storage:/var/www/html/var/storage
-      - ${DOWNLOADS_DIR:-${HOME}/Documents/downloads}:/downloads
-      - ${MUSIC_DIR:-${HOME}/Documents/music}:/music
-      - ${NAS_DIR:-${HOME}/Documents/storage}:/nas
+      - ${DOWNLOADS_DIR:-../volumes/downloads}:/downloads
+      - ${MUSIC_DIR:-../volumes/music}:/music
+      - ${NAS_DIR:-../volumes/nas}:/nas
     logging:
       driver: "json-file"
       options:
