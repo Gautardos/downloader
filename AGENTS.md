@@ -98,9 +98,14 @@ Dépendances PHP complémentaires (voir `composer.json`) : `symfony/process`,
 │       ├── AiService.php          # Provider IA (OpenRouter/xAI) + modèles par usage
 │       ├── GrokService.php        # Wrapper renommage média
 │       ├── JsonStorage.php        # Persistance JSON avec flock
+│       ├── MediaAddonService.php  # Manifests Stremio/Nuvio + agrégation de streams
+│       ├── MediaDownloadService.php # Torrent Stremio → Alldebrid → queue
+│       ├── NuvioCollectionService.php # Import des collections Nuvio + mapping catalogues
 │       ├── MediaTypeHelper.php    # Détection type/icône par extension
 │       ├── QueueManager.php       # File d'attente + historique + démarrage worker
+│       ├── TmdbService.php        # Recherche/métadonnées TMDB + IMDb IDs
 │       ├── SpotifyService.php     # Métadonnées Spotify (Client Credentials)
+│       ├── SpotifyUserService.php # Playlists du compte via token librespot/Zotify
 │       └── TorrentDbService.php   # Recherche SQLite
 ├── templates/
 │   ├── base.html.twig             # Layout global : nav, toasts, tracker, polling
@@ -115,6 +120,7 @@ Dépendances PHP complémentaires (voir `composer.json`) : `symfony/process`,
 │   │   └── locked.html.twig       # Écran "configuration requise"
 │   └── history/index.html.twig
 ├── cli/
+│   ├── spotify_user.py            # Playlists/métadonnées via token librespot (privées incluses)
 │   ├── music_downloader.py        # Wrapper Zotify + modes --verify/--tags/--update-tags
 │   ├── lyrics_fetcher.py          # LRCLib + Genius, écrit dans les tags
 │   ├── tag_rename_move.py         # Genre + tags + renommage + déplacement bibliothèque
@@ -192,7 +198,10 @@ lock de session et éviter les blocages Apache prefork pendant le polling.
 | `history.json` (`history`) | Historique des opérations | `QueueManager`, contrôleurs |
 | `recent_paths.json` (`recent_paths`) | 10 derniers chemins de dl vidéo | `DashboardController` |
 | `server_notifications.json` (`server_notifications`) | Notifications à poller par l'UI | worker + contrôleurs |
+| `media_addons.json` (`media_addons`) | Manifests Stremio/Nuvio configurés | `MediaAddonService`, `MediaController` |
+| `media_collections.json` (`media_collections`) | Collections/dossiers Nuvio importés + rapport | `NuvioCollectionService`, `MediaController` |
 | `worker_heartbeat.json` (`worker_heartbeat`) | Timestamp de vie du worker | worker, `QueueManager` |
+| `alldebrid_history_cache.json` (`alldebrid_history_cache`) | Snapshot paginé de `user/history` (TTL 60 s, 500 liens max) | `DebridHistoryService` |
 | `progress_<downloadId>.json` | Progression d'un téléchargement | `DownloadManager`, `/progress` |
 
 Autres fichiers runtime (hors JsonStorage) :
@@ -236,7 +245,8 @@ Commande : `php bin/console app:download-worker`.
 
 Boucle infinie :
 1. Écrit `worker_heartbeat = time()`.
-2. `pop()` un item. Si vide : efface la tâche active, heartbeat, `sleep(2)`.
+2. `pop()` un item dû (`not_before <= now`). Si aucun : efface la tâche
+   active, heartbeat, `sleep(2)`.
 3. Met la tâche active et émet une notification `Starting`.
 4. Traite selon `item['type']` :
    - `music` → `processMusicTask()`
@@ -247,6 +257,11 @@ Boucle infinie :
 
 Un `flock(LOCK_EX | LOCK_NB)` sur `worker.lock` empêche les workers concurrents.
 Supervisor relance le worker en cas d'arrêt, mais un seul peut vivre à la fois.
+
+Au démarrage, le worker récupère `active_worker_task` s'il existe : la tâche est
+ré-enqueuée si elle n'est ni déjà en queue (même URL/filename) ni déjà terminée
+dans l'historique (`success`, `warning`, `error`, `canceled`). Cela évite de
+perdre un téléchargement interrompu par un redémarrage du conteneur.
 
 ### Structure d'un item de queue
 
@@ -274,7 +289,9 @@ Musique (créé dans `DashboardController::musicAdd`) :
   'date_added' => ...,
   'type' => 'music',
   'expected_tracks' => [ ['artist'=>..., 'album'=>..., 'song_name'=>...], ... ],
-  'retry_count' => int (ajouté lors des retries)
+  'retry_count' => int (ajouté lors des retries immédiats),
+  'scheduled_retry_count' => int (retries différés API/audio key),
+  'not_before' => timestamp Unix (item ignoré par `pop()` avant cette date)
 ]
 ```
 
@@ -290,15 +307,23 @@ Musique (créé dans `DashboardController::musicAdd`) :
 3. Après succès : exécute `music_downloader.py --verify <root>` pour obtenir un
    JSON des pistes réellement présentes (tags lus par `music-tag`).
 4. Compare `expected_tracks` et `verified` sur
-   `artist`/`album`/`song_name` (comparaison insensible à la casse/espaces) :
+   `artist`/`album`/`song_name` après normalisation des deux côtés
+   (casse, espaces, séparateurs `/` et `;` → `,`) :
    - toutes présentes → `success`
    - aucune → `error`
    - partielles → `warning`
    - `expected_tracks` vide → `error` (déclenche retry)
-5. Si `error` et `retry_count < 2` : historise `failed_requeued`, incrémente
-   `retry_count`, suffixe `download_id` avec `_retry_N`, ré-enqueue.
-   Jusqu'à **3 tentatives** au total.
-6. Sinon `recordHistory` avec pistes trouvées/manquantes.
+5. Détecte les erreurs Spotify/audio key dans la sortie
+   (`received an empty response`, `Audio key error`, `Failed fetching audio key`,
+   `GENERAL DOWNLOAD ERROR`).
+6. Si la tâche est incomplète avec ces erreurs (ou en `error`), historise
+   `failed_requeued`, incrémente `scheduled_retry_count`, positionne
+   `not_before = now + 300` et ré-enqueue. Le worker ignore l’item pendant
+   5 minutes ; Zotify skip ensuite les pistes déjà présentes. Maximum
+   `MAX_API_RETRIES = 5`.
+7. Sinon, pour une erreur non-API : retry immédiat jusqu’à 3 tentatives
+   (`retry_count < 2`).
+8. `recordHistory` avec pistes trouvées/manquantes.
 
 ---
 
@@ -340,6 +365,8 @@ valeurs par défaut).
 | `music_genre_mapping` | — | JSON `{"genre_patterns": {"regex": "Genre"}}` |
 | `music_genre_tagging_mode` | `ai` | `ai` ou `mapping` |
 | `music_spotify_genres` | `true` | Utiliser les genres artiste Spotify comme signal avant l’IA |
+| `tmdb_api_key` | — | Clé API TMDB ou token v4 |
+| `tmdb_language` | `fr-FR` | Langue des métadonnées TMDB |
 | `music_genre_grok_prompt` | — | Prompt système de classification |
 | `music_genre_grok_model` | `grok-4-fast-non-reasoning` | Modèle xAI genres (fallback) |
 | `music_genres` | `false` | Active la gestion des genres |
@@ -374,7 +401,8 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 ### Vidéo / torrents / liens
 | Méthode | URL | Nom | Rôle |
 | --- | --- | --- | --- |
-| GET | `/torrent` | `torrent` | Page Debrid (vérifie clé + chemin) |
+| GET | `/torrent` | `torrent` | Page Debrid récente (vérifie clé + chemin) ; `?view=packs` charge la vue avancée |
+| GET | `/debrid/recent` | `debrid_recent` | Liens récents paginés depuis le cache `user/history` (`offset`, `limit`, `refresh`) |
 | POST | `/download` | `download` | Débride et enqueue un fichier vidéo |
 | POST | `/dashboard/upload-torrent` | `upload_torrent` | Upload magnet ou `.torrent`, attend le statut, débride les liens |
 | POST | `/dashboard/upload-direct-link` | `upload_direct_link` | Débride une liste de liens directs |
@@ -407,11 +435,33 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 | GET ★ | `/notifications-poll` | `notifications_poll` | Lit puis vide `server_notifications` |
 | GET | `/logs` | `logs` | Liste des fichiers de logs |
 
+### Discover (films / séries)
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/media` | `media_index` | Page Discover (TMDB + addons streams) |
+| GET | `/media/search` | `media_search` | Recherche TMDB |
+| GET | `/media/details/{type}/{id}` | `media_details` | Détails TMDB + IMDb ID |
+| GET | `/media/season/{id}/{season}` | `media_season` | Épisodes d'une saison TMDB |
+| POST | `/media/streams` | `media_streams` | Agrège les streams des addons |
+| POST | `/media/debrid` | `media_debrid` | Torrent stream → Alldebrid → queue |
+| POST | `/media/settings` | `media_settings` | Sauvegarde clé/langue TMDB |
+| POST | `/media/addons/validate` | `media_addons_validate` | Valide un manifest HTTPS public |
+| POST | `/media/addons` | `media_addons_save` | Sauvegarde les addons streams |
+| POST | `/media/catalog/items` | `media_catalog_items` | Récupère les items d’un catalogue |
+| GET | `/media/collections` | `media_collections` | Collections Nuvio importées |
+| POST | `/media/collections/import` | `media_collections_import` | Import du JSON Nuvio |
+| POST | `/media/collections/delete` | `media_collections_delete` | Supprime une collection importée |
+| POST | `/media/collections/folder/delete` | `media_collections_folder_delete` | Supprime un dossier d’une collection |
+| POST | `/media/collections/clear` | `media_collections_clear` | Supprime les collections importées |
+| POST | `/media/resolve-item` | `media_resolve_item` | Résout un item catalogue vers TMDB |
+
 ### Musique (recherche / fichiers)
 | Méthode | URL | Nom | Rôle |
 | --- | --- | --- | --- |
 | GET | `/` | `music` | Accueil = recherche Spotify |
 | POST | `/music-add` | `music_add` | Métadonnées Spotify + enqueue musique |
+| GET | `/music/spotify/playlists` | `spotify_playlists` | Liste les playlists du compte (privées incluses) via token Zotify |
+| GET | `/music/spotify/search` | `spotify_search` | Recherche publique Spotify (titres, albums, playlists) |
 | GET | `/music-files` | `music_files` | Liste des fichiers audio + tags |
 | GET | `/music/stream` | `music_stream` | Streaming audio avec support des requêtes HTTP Range |
 | POST | `/file-tags` | `file_tags` | Extrait les tags d'un fichier |
@@ -467,6 +517,16 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 Statuts magnet Alldebrid : `statusCode === 4` = prêt. Le code interrompt
 l'attente au-delà de 4, ou dès que des liens sont disponibles.
 
+### DebridHistoryService
+
+- Cache JSON `alldebrid_history_cache.json` alimenté par `AlldebridService::getRecentLinks()`.
+- `page(offset, limit, refresh)` : trie les liens par date décroissante, applique
+  un TTL de 60 s, conserve au plus 500 entrées et renvoie `links`, `total`,
+  `has_more`.
+- `invalidate()` : vide le cache (appelé après une purge d'historique).
+- Utilisé par la route `debrid_recent` ; ne charge jamais les magnets ni leurs
+  fichiers, ce qui évite la lenteur de `getRecentLinksGrouped()` sur la vue par défaut.
+
 ### DownloadManager
 
 - Téléchargement **HTTP natif PHP** via `fopen` + contexte de flux
@@ -495,7 +555,32 @@ renommage média.
 - Demande une sortie JSON et tolère les réponses entourées de ```json.
 - Construit un prompt de renommage standardisé (Séries/Anime/Films/Musique/
   Ebooks) ou utilise `grok_renaming_prompt`.
+- Convention vidéo orientée Jellyfin : séries/anime
+  `Series Name (Year) - SxxExx - Episode Title.ext` dans
+  `Video/TV Shows|Anime/Series Name (Year)/Season XX/`, films
+  `Movie Name (Year).ext` dans `Video/Movies/Movie Name (Year)/`.
 - Retourne un mapping `{ original_filename: { filename, path } }`.
+
+### TmdbService / MediaAddonService / MediaDownloadService
+
+- `TmdbService` : recherche multi, trending, détails film/série, saisons,
+  résolution IMDb via `external_ids`, cache Symfony.
+- `MediaAddonService` : charge les manifests `media_addons`, vérifie les URLs
+  HTTPS publiques (anti-SSRF basique), agrège les streams des addons compatibles
+  `tt`, normalise `infoHash`, `fileIdx`, tailles/seeders, déduplique et limite
+  le nombre de résultats. Gère aussi les catalogues (`/catalog/...`) et les
+  items (`_tmdbId`, `imdb_id`), y compris les catalogues absents du manifest.
+- `MediaDownloadService` : construit un magnet depuis un stream, l’envoie à
+  Alldebrid, attend les fichiers, sélectionne le fichier (`fileIdx`, nom, ou
+  plus gros fichier vidéo), débride et ajoute à `QueueManager`.
+- `NuvioCollectionService` importe les exports Nuvio Collections, conserve les
+  sources de tous les addons et les active dynamiquement selon `media_addons`.
+  Les sources d’un addon non configuré restent « en attente » (pas besoin de
+  réimporter après ajout de l’addon). Seules les sources sans `catalogId` ou
+  `addonId` sont ignorées et comptées dans le rapport.
+- Le drawer “Media addons” de Discover sauvegarde `tmdb_api_key`,
+  `tmdb_language` et `media_addons`, et permet d’importer le JSON Nuvio.
+  Aucune URL locale/privée n’est acceptée.
 
 ### SpotifyService
 
@@ -504,9 +589,27 @@ renommage média.
 - `parseUrl()` accepte `/track/`, `/album/`, `/playlist/` avec segments de
   locale (`/intl-fr/`, `/fr-fr/`) et query `?si=`.
 - `getMetadata(url)` retourne `['name' => ..., 'tracks' => [['artist','album','song_name'], ...]]`.
+- `search(query, type, limit)` interroge `/v1/search` en Client Credentials
+  (`track`, `album`, `playlist`) et retourne des résultats normalisés
+  (`id`, `type`, `badge`, `name`, `subtitle`, `meta`, `image`, `url`).
 - `getLogs()` expose un journal horodaté utilisé pour écrire
   `history_<id>.log` à l'enqueue.
 - `testCredentials()` vérifie l'obtention d'un token.
+
+### SpotifyUserService
+
+- Wrapper PHP autour de `cli/spotify_user.py`, exécuté via `PythonExecutor`
+  dans le venv musique.
+- Le script ouvre une session `librespot` avec `music_creds` et demande un
+  token utilisateur avec les scopes `playlist-read-private`,
+  `playlist-read-collaborative`, `user-library-read`, `user-follow-read`.
+- `listPlaylists()` retourne les playlists privées et publiques du compte via
+  `/v1/me/playlists`, avec pagination.
+- Cache `var/cache/spotify_playlists.json` (TTL 24 h ; cache partiel 60 s). En
+  cas de `429`, le cache existant est renvoyé avec `stale=true`.
+- `getPlaylistMetadata()` récupère le nom et les pistes d'une playlist via
+  `/v1/playlists/{id}/tracks` (utilisé par `musicAdd` pour les playlists
+  privées, en fallback des Client Credentials).
 
 ### TorrentDbService
 
@@ -616,7 +719,10 @@ permet de recréer l'arborescence.
 ### 11.2 Musique
 
 1. `/music-add` : vérifie Spotify, extrait les métadonnées via l'API, écrit un
-   log `history_<id>.log`, enqueue avec `expected_tracks`.
+   log `history_<id>.log`, enqueue avec `expected_tracks`. Pour une playlist,
+   `SpotifyUserService` tente d'abord les métadonnées via le token utilisateur
+   Zotify (fonctionne aussi pour les playlists privées), puis retombe sur
+   `SpotifyService`.
 2. Worker : `music_downloader.py` → Zotify télécharge dans `music_root_path`.
 3. Vérification `--verify` et calcul succès/warning/erreur + retries.
 4. `/music-files` liste les fichiers (tags, genre, paroles présentes).
@@ -896,6 +1002,7 @@ python3 -m py_compile cli/*.py
 | `src/Service/JsonStorage.php` | Toute la persistance applicative |
 | `src/Service/AlldebridService.php` | Toute l'intégration Alldebrid + groupement des packs |
 | `src/Service/DownloadManager.php` | Téléchargement HTTP + progression |
+| `cli/spotify_user.py` | Liste playlists privées/publiques et métadonnées via token librespot |
 | `cli/music_downloader.py` | Contrat entre PHP et Zotify (JSON/verify/tags) |
 | `cli/tag_rename_move.py` | Tags, genres, bibliothèque |
 | `templates/base.html.twig` | Layout, polling, tracker, notifications |

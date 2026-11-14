@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Browse Collections</title>
+<style>
+    :root {
+        --bg-primary: #0f172a;
+        --bg-secondary: #1e293b;
+        --text-primary: #f8fafc;
+        --text-secondary: #94a3b8;
+        --accent: #38bdf8;
+        --accent-hover: #0ea5e9;
+        --success: #22c55e;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --border: rgba(255, 255, 255, 0.08);
+        --panel: rgba(30, 41, 59, 0.78);
+        --panel-solid: #1e293b;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text-primary);
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+            radial-gradient(circle at 12% 0%, rgba(56, 189, 248, 0.11), transparent 28rem),
+            radial-gradient(circle at 88% 8%, rgba(129, 140, 248, 0.09), transparent 26rem),
+            var(--bg-primary);
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    img { display: block; }
+
+    .nav {
+        position: sticky;
+        top: 0;
+        z-index: 80;
+        background: rgba(15, 23, 42, 0.86);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 0.8rem 2rem;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+    .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        white-space: nowrap;
+    }
+    .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--accent), #818cf8);
+        box-shadow: 0 0 24px rgba(56, 189, 248, 0.25);
+    }
+    .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 0.2rem;
+        flex: 1;
+        overflow-x: auto;
+    }
+    .nav-links a {
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.88rem;
+        padding: 0.55rem 0.8rem;
+        border-radius: 8px;
+        white-space: nowrap;
+    }
+    .nav-links a:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+    .nav-links a.active { color: var(--accent); background: rgba(56, 189, 248, 0.1); }
+    .mock-badge {
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--warning);
+        background: rgba(245, 158, 11, 0.12);
+        border: 1px solid rgba(245, 158, 11, 0.25);
+        border-radius: 999px;
+        padding: 0.35rem 0.65rem;
+        white-space: nowrap;
+    }
+
+    .container { max-width: 1240px; margin: 0 auto; padding: 2rem; }
+
+    .page-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1.5rem;
+        margin-bottom: 1.2rem;
+    }
+    .page-head h1 { margin: 0 0 0.35rem; font-size: clamp(1.8rem, 3vw, 2.4rem); letter-spacing: -0.04em; }
+    .page-head p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+    .head-actions { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+
+    .btn {
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 0.7rem 1rem;
+        font-weight: 650;
+        font-size: 0.84rem;
+        color: var(--text-primary);
+        background: rgba(255,255,255,0.04);
+        transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+        white-space: nowrap;
+    }
+    .btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); }
+    .btn.primary {
+        background: linear-gradient(135deg, var(--accent), #818cf8);
+        border: none;
+        color: #07111f;
+        font-weight: 800;
+        box-shadow: 0 8px 24px rgba(56,189,248,0.16);
+    }
+    .btn.primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
+
+    .mode-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.2rem;
+        flex-wrap: wrap;
+    }
+    .mode-switch {
+        display: flex;
+        gap: 0.25rem;
+        padding: 0.25rem;
+        border-radius: 11px;
+        border: 1px solid var(--border);
+        background: rgba(15,23,42,0.72);
+    }
+    .mode-switch button {
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        padding: 0.55rem 0.95rem;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+    .mode-switch button.active { background: rgba(56,189,248,0.15); color: var(--accent); }
+    .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: var(--text-secondary);
+        font-size: 0.76rem;
+    }
+    .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--success);
+        box-shadow: 0 0 10px rgba(34,197,94,0.65);
+    }
+
+    .collection-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        padding: 0.15rem 0.1rem 0.8rem;
+        margin-bottom: 0.8rem;
+    }
+    .collection-tabs::-webkit-scrollbar { display: none; }
+    .collection-tab {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        min-width: max-content;
+        padding: 0.45rem 0.7rem 0.45rem 0.45rem;
+        border-radius: 11px;
+        border: 1px solid var(--border);
+        background: rgba(30,41,59,0.55);
+        color: var(--text-secondary);
+        transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+    }
+    .collection-tab:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.16); }
+    .collection-tab.active {
+        color: var(--text-primary);
+        border-color: rgba(56,189,248,0.5);
+        background: rgba(56,189,248,0.09);
+        box-shadow: 0 0 0 1px rgba(56,189,248,0.08) inset;
+    }
+    .collection-tab-thumb {
+        width: 42px;
+        height: 28px;
+        border-radius: 7px;
+        object-fit: cover;
+        background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(129,140,248,0.25));
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+    .collection-tab-copy { text-align: left; }
+    .collection-tab-name { font-size: 0.8rem; font-weight: 750; line-height: 1.2; }
+    .collection-tab-count { font-size: 0.65rem; color: var(--text-secondary); margin-top: 0.12rem; }
+
+    .collection-hero {
+        position: relative;
+        min-height: 220px;
+        border-radius: 18px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.12));
+        background-size: cover;
+        background-position: center;
+        display: flex;
+        align-items: flex-end;
+        padding: 2rem;
+        margin-bottom: 1.2rem;
+        box-shadow: 0 18px 50px rgba(0,0,0,0.28);
+    }
+    .collection-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(to top, rgba(30,41,59,0.95) 3%, rgba(30,41,59,0.55) 45%, rgba(15,23,42,0.25) 100%),
+            linear-gradient(to right, rgba(15,23,42,0.8), transparent 65%);
+    }
+    .collection-hero-copy { position: relative; z-index: 2; }
+    .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+    }
+    .collection-hero h2 { margin: 0 0 0.35rem; font-size: clamp(1.6rem, 3vw, 2.3rem); letter-spacing: -0.035em; }
+    .collection-hero p { margin: 0; max-width: 680px; color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; }
+    .hero-stats { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.9rem; }
+    .stat-pill {
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(15,23,42,0.55);
+        backdrop-filter: blur(8px);
+        border-radius: 999px;
+        padding: 0.3rem 0.6rem;
+        font-size: 0.7rem;
+        color: var(--text-primary);
+    }
+
+    .folder-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.9rem;
+        flex-wrap: wrap;
+    }
+    .folder-toolbar h3 { margin: 0; font-size: 0.98rem; }
+    .folder-toolbar small { color: var(--text-secondary); }
+    .folder-search {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.45rem 0.65rem;
+        border-radius: 9px;
+        background: rgba(15,23,42,0.75);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+    }
+    .folder-search input {
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        outline: none;
+        width: 180px;
+        font-size: 0.78rem;
+    }
+
+    .folder-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+    }
+    .folder-card {
+        position: relative;
+        aspect-ratio: 16 / 9;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: linear-gradient(135deg, rgba(56,189,248,0.17), rgba(129,140,248,0.13));
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .folder-card:hover {
+        transform: translateY(-4px) scale(1.012);
+        border-color: rgba(56,189,248,0.4);
+        box-shadow: 0 22px 48px rgba(0,0,0,0.42), 0 0 30px rgba(56,189,248,0.08);
+    }
+    .folder-card img.folder-cover {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.35s ease, filter 0.35s ease;
+    }
+    .folder-card:hover img.folder-cover { transform: scale(1.05); filter: brightness(1.06); }
+    .folder-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to top, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0.05) 55%, transparent 100%);
+        pointer-events: none;
+    }
+    .folder-badge {
+        position: absolute;
+        top: 0.65rem;
+        left: 0.65rem;
+        z-index: 2;
+        font-size: 0.62rem;
+        font-weight: 700;
+        color: var(--text-secondary);
+        background: rgba(15,23,42,0.72);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 0.24rem 0.4rem;
+        backdrop-filter: blur(8px);
+    }
+    .folder-hover-cta {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.96);
+        z-index: 3;
+        opacity: 0;
+        border-radius: 999px;
+        padding: 0.5rem 0.85rem;
+        background: rgba(56,189,248,0.92);
+        color: #07111f;
+        font-size: 0.75rem;
+        font-weight: 800;
+        transition: opacity 0.18s ease, transform 0.18s ease;
+        pointer-events: none;
+    }
+    .folder-card:hover .folder-hover-cta { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    .folder-title-overlay {
+        position: absolute;
+        left: 0.8rem;
+        right: 0.8rem;
+        bottom: 0.7rem;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 0.6rem;
+    }
+    .folder-title-overlay h4 { margin: 0; font-size: 0.95rem; text-shadow: 0 2px 12px rgba(0,0,0,0.7); }
+    .folder-source-count {
+        font-size: 0.65rem;
+        color: #e2e8f0;
+        white-space: nowrap;
+    }
+    .folder-logo {
+        position: absolute;
+        left: 0.8rem;
+        bottom: 0.7rem;
+        z-index: 2;
+        max-width: 62%;
+        max-height: 32px;
+        object-fit: contain;
+        filter: drop-shadow(0 2px 8px rgba(0,0,0,0.6));
+    }
+    .folder-card.no-title .folder-title-overlay { display: none; }
+
+    .folder-empty {
+        grid-column: 1 / -1;
+        padding: 3rem;
+        border-radius: 14px;
+        border: 1px dashed var(--border);
+        text-align: center;
+        color: var(--text-secondary);
+    }
+
+    .folder-view { display: none; }
+    .folder-view.open { display: block; animation: fadeUp 0.25s ease; }
+    .browse-main { display: block; }
+    .browse-main.hidden { display: none; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    .folder-view-hero {
+        position: relative;
+        min-height: 250px;
+        border-radius: 18px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background-size: cover;
+        background-position: center;
+        background-color: rgba(15,23,42,0.8);
+        display: flex;
+        align-items: flex-end;
+        padding: 2rem;
+        margin-bottom: 1.2rem;
+        box-shadow: 0 18px 50px rgba(0,0,0,0.32);
+    }
+    .folder-view-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(to top, rgba(30,41,59,0.97) 4%, rgba(30,41,59,0.6) 50%, rgba(15,23,42,0.2) 100%),
+            linear-gradient(to right, rgba(15,23,42,0.7), transparent 60%);
+    }
+    .folder-view-copy { position: relative; z-index: 2; }
+    .folder-view-copy h2 { margin: 0 0 0.4rem; font-size: clamp(1.5rem, 3vw, 2.1rem); letter-spacing: -0.035em; }
+    .folder-view-copy p { margin: 0; color: var(--text-secondary); font-size: 0.86rem; }
+    .folder-view-logo { max-height: 48px; max-width: 300px; object-fit: contain; margin-bottom: 0.65rem; filter: drop-shadow(0 3px 14px rgba(0,0,0,0.55)); }
+    .folder-view-actions { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+    .filter-row { display: flex; gap: 0.4rem; padding: 0.25rem; border-radius: 10px; border: 1px solid var(--border); background: rgba(15,23,42,0.72); }
+    .filter-row button { border: none; background: transparent; color: var(--text-secondary); padding: 0.48rem 0.75rem; border-radius: 8px; font-size: 0.76rem; font-weight: 700; }
+    .filter-row button.active { background: rgba(56,189,248,0.15); color: var(--accent); }
+    .source-summary { color: var(--text-secondary); font-size: 0.76rem; }
+
+    .poster-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 1rem;
+    }
+    .poster-card {
+        position: relative;
+        border-radius: 13px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: var(--bg-secondary);
+        cursor: pointer;
+        transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .poster-card:hover { transform: translateY(-4px); border-color: rgba(56,189,248,0.35); box-shadow: 0 18px 36px rgba(0,0,0,0.35); }
+    .poster-wrap { position: relative; aspect-ratio: 2 / 3; background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(129,140,248,0.12)); }
+    .poster-wrap img { width: 100%; height: 100%; object-fit: cover; }
+    .poster-wrap::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(15,23,42,0.95), transparent 45%); }
+    .poster-type {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        z-index: 2;
+        font-size: 0.56rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        padding: 0.22rem 0.36rem;
+        border-radius: 5px;
+        background: rgba(15,23,42,0.82);
+        border: 1px solid rgba(255,255,255,0.12);
+    }
+    .poster-rating {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        z-index: 2;
+        font-size: 0.62rem;
+        font-weight: 800;
+        color: #fbbf24;
+        background: rgba(15,23,42,0.82);
+        border: 1px solid rgba(251,191,36,0.18);
+        border-radius: 5px;
+        padding: 0.2rem 0.34rem;
+    }
+    .poster-body { padding: 0.7rem 0.75rem 0.85rem; }
+    .poster-body h4 { margin: 0 0 0.25rem; font-size: 0.82rem; line-height: 1.25; }
+    .poster-body div { color: var(--text-secondary); font-size: 0.68rem; display: flex; gap: 0.4rem; align-items: center; }
+    .poster-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-secondary); }
+
+    .load-more-row { display: flex; justify-content: center; margin-top: 1.3rem; }
+
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: rgba(2,6,23,0.8);
+        backdrop-filter: blur(12px);
+    }
+    .modal-backdrop.open { display: flex; }
+    .media-modal {
+        width: min(880px, 100%);
+        max-height: 92vh;
+        overflow: auto;
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: var(--panel-solid);
+        box-shadow: 0 30px 90px rgba(0,0,0,0.65);
+        position: relative;
+    }
+    .media-modal-hero {
+        min-height: 280px;
+        background-size: cover;
+        background-position: center;
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        padding: 1.6rem;
+    }
+    .media-modal-hero::before { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, var(--panel-solid) 2%, rgba(30,41,59,0.65) 45%, rgba(15,23,42,0.2)); }
+    .media-modal-copy { position: relative; z-index: 2; display: flex; gap: 1.1rem; align-items: flex-end; width: 100%; }
+    .media-modal-poster { width: 120px; aspect-ratio: 2/3; object-fit: cover; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 14px 32px rgba(0,0,0,0.5); flex-shrink: 0; }
+    .media-modal-title { margin: 0 0 0.35rem; font-size: clamp(1.3rem, 3vw, 1.8rem); letter-spacing: -0.03em; }
+    .media-modal-meta { display: flex; gap: 0.45rem; flex-wrap: wrap; color: var(--text-secondary); font-size: 0.78rem; margin-bottom: 0.55rem; }
+    .modal-pill { border-radius: 999px; padding: 0.25rem 0.5rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); font-size: 0.68rem; color: var(--text-primary); }
+    .media-modal-overview { margin: 0; color: #cbd5e1; line-height: 1.5; font-size: 0.84rem; max-width: 620px; }
+    .modal-close {
+        position: absolute;
+        top: 0.9rem;
+        right: 0.9rem;
+        z-index: 4;
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(15,23,42,0.8);
+        color: var(--text-primary);
+        font-size: 1.4rem;
+        line-height: 1;
+    }
+    .media-modal-body { padding: 1.2rem 1.6rem 1.6rem; }
+    .section-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.8rem; }
+    .section-row h3 { margin: 0; font-size: 0.95rem; }
+    .source-list { display: grid; gap: 0.6rem; }
+    .source-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem 0.85rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(15,23,42,0.55);
+    }
+    .source-main { min-width: 0; }
+    .source-addon { color: var(--accent); font-size: 0.64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+    .source-title { font-size: 0.8rem; margin-top: 0.15rem; color: var(--text-primary); }
+    .source-meta { color: var(--text-secondary); font-size: 0.68rem; margin-top: 0.25rem; }
+    .loading-row { display: none; padding: 1.5rem; text-align: center; color: var(--text-secondary); border: 1px dashed var(--border); border-radius: 10px; }
+    .spinner { width: 22px; height: 22px; border: 3px solid rgba(255,255,255,0.08); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; margin: 0 auto 0.6rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast-wrap { position: fixed; right: 1.2rem; bottom: 1.2rem; z-index: 120; display: grid; gap: 0.5rem; width: min(350px, calc(100vw - 2rem)); }
+    .toast { background: var(--panel-solid); border: 1px solid var(--border); border-left: 4px solid var(--success); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.82rem; box-shadow: 0 18px 45px rgba(0,0,0,0.45); animation: fadeUp 0.2s ease; }
+
+    @media (max-width: 1100px) {
+        .folder-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .poster-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+        .nav-inner { padding: 0.7rem 1rem; flex-wrap: wrap; }
+        .nav-links { order: 3; width: 100%; }
+        .mock-badge { margin-left: auto; }
+        .container { padding: 1rem; }
+        .page-head { flex-direction: column; align-items: flex-start; }
+        .folder-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+        .poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; }
+        .collection-hero, .folder-view-hero { min-height: 180px; padding: 1.2rem; }
+        .media-modal-copy { flex-direction: column; align-items: flex-start; }
+        .media-modal-poster { width: 90px; }
+        .source-row { flex-direction: column; align-items: stretch; }
+    }
+    @media (max-width: 520px) {
+        .folder-grid { grid-template-columns: 1fr; }
+        .poster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+</style>
+</head>
+<body>
+<nav class="nav">
+    <div class="nav-inner">
+        <div class="brand"><span class="brand-mark"></span> Downloader</div>
+        <div class="nav-links">
+            <a href="#">Music</a>
+            <a href="#">Music Downloads</a>
+            <a href="#">Debrid</a>
+            <a href="#" class="active">Discover</a>
+            <a href="#">Queue</a>
+            <a href="#">History</a>
+            <a href="#">Settings</a>
+        </div>
+        <div class="mock-badge">Mockup</div>
+    </div>
+</nav>
+
+<main class="container">
+    <section class="page-head">
+        <div>
+            <h1>Discover</h1>
+            <p>Parcours tes collections Nuvio, fusionnées depuis AIOMetadata, puis envoie un titre vers Debrid.</p>
+        </div>
+        <div class="head-actions">
+            <button class="btn" onclick="showToast('Import Nuvio JSON — mockup')">Import collections</button>
+            <button class="btn" onclick="showToast('Media addons — mockup')">Media addons</button>
+        </div>
+    </section>
+
+    <div class="mode-row">
+        <div class="mode-switch">
+            <button onclick="showToast('Search mode — mockup')">Search</button>
+            <button class="active">Browse</button>
+        </div>
+        <div class="status-chip"><span class="status-dot"></span> Nuvio Collections · importées le 13 Nov 2026</div>
+    </div>
+
+    <div class="collection-tabs" id="collectionTabs"></div>
+
+    <section class="browse-main" id="browseMain">
+        <div class="collection-hero" id="collectionHero">
+            <div class="collection-hero-copy">
+                <div class="eyebrow">Nuvio collection</div>
+                <h2 id="collectionTitle"></h2>
+                <p id="collectionDescription"></p>
+                <div class="hero-stats" id="collectionStats"></div>
+            </div>
+        </div>
+
+        <div class="folder-toolbar">
+            <div>
+                <h3>Dossiers</h3>
+                <small id="folderSubtitle"></small>
+            </div>
+            <label class="folder-search">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                <input id="folderSearch" type="text" placeholder="Filtrer les dossiers..." oninput="renderFolders()">
+            </label>
+        </div>
+
+        <section class="folder-grid" id="folderGrid"></section>
+    </section>
+
+    <section class="folder-view" id="folderView">
+        <div class="folder-view-hero" id="folderViewHero">
+            <div class="folder-view-copy">
+                <button class="btn" style="margin-bottom:0.75rem;" onclick="closeFolderView()">&larr; Retour aux dossiers</button>
+                <div id="folderViewLogoWrap"></div>
+                <h2 id="folderViewTitle"></h2>
+                <p id="folderViewSubtitle"></p>
+                <div class="hero-stats" id="folderViewStats"></div>
+            </div>
+        </div>
+
+        <div class="folder-view-actions">
+            <div class="filter-row" id="typeFilter">
+                <button class="active" data-type="all" onclick="setTypeFilter('all', this)">Tous</button>
+                <button data-type="movie" onclick="setTypeFilter('movie', this)">Films</button>
+                <button data-type="series" onclick="setTypeFilter('series', this)">Séries</button>
+            </div>
+            <span class="source-summary" id="folderSourceSummary"></span>
+        </div>
+
+        <section class="poster-grid" id="posterGrid"></section>
+        <div class="load-more-row">
+            <button class="btn" id="loadMoreBtn" onclick="loadMoreTitles()">Load more</button>
+        </div>
+    </section>
+</main>
+
+<div class="modal-backdrop" id="mediaModalBackdrop" onclick="closeMediaModal(event)">
+    <div class="media-modal" role="dialog" aria-modal="true">
+        <button class="modal-close" onclick="closeMediaModal()">&times;</button>
+        <div class="media-modal-hero" id="mediaModalHero">
+            <div class="media-modal-copy">
+                <img class="media-modal-poster" id="mediaModalPoster" alt="">
+                <div>
+                    <h2 class="media-modal-title" id="mediaModalTitle"></h2>
+                    <div class="media-modal-meta" id="mediaModalMeta"></div>
+                    <p class="media-modal-overview" id="mediaModalOverview"></p>
+                </div>
+            </div>
+        </div>
+        <div class="media-modal-body">
+            <div class="section-row">
+                <div>
+                    <h3>Sources</h3>
+                    <small id="mediaModalSourceSubtitle" style="color:var(--text-secondary);">Cherche les sources torrent / directes.</small>
+                </div>
+                <button class="btn primary" id="findSourcesBtn" onclick="findSources()">Find sources</button>
+            </div>
+            <div class="loading-row" id="loadingRow"><div class="spinner"></div>Interrogation des addons...</div>
+            <div class="source-list" id="modalSourceList"></div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+const collections = [{"title": "Plateformes", "backdrop": "https://img.myhomelab13.fr/Collection/Divers/Vignettes_aio/plateformes.jpg", "showAll": false, "viewMode": "TABBED_GRID", "folders": [{"title": "Netflix", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/Netflix-Complet.jpg", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/Netflix-Complet.jpg", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 8, "movies": 4, "series": 4}, {"title": "Disney+", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/disney.png", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/disney.png", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 10, "movies": 6, "series": 4}, {"title": "Paramount+", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/paramount.png", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/paramount.png", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 8, "movies": 4, "series": 4}, {"title": "Prime Vidéo", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/Prime-Video.jpg", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/Prime-Video.jpg", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 8, "movies": 4, "series": 4}, {"title": "Apple TV", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/apple-tv.png", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/apple-tv.png", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 8, "movies": 4, "series": 4}, {"title": "HBO Max", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/HBO-Max.jpg", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/HBO-Max.jpg", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 8, "movies": 4, "series": 4}, {"title": "Canal+", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/Canal_plus.png", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/Canal_plus.png", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 5, "movies": 3, "series": 2}, {"title": "Hulu", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/hulu.png", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/hulu.png", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 6, "movies": 3, "series": 3}, {"title": "Peacock", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/Peacock.jpg", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/Peacock.jpg", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 1}, {"title": "Britbox", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/britbox.jpg", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/britbox.jpg", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 1}, {"title": "Channel 4", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/Channel_4.png", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/Channel_4.png", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 2, "movies": 0, "series": 2}, {"title": "MGM+", "cover": "https://img.myhomelab13.fr/Collection/Plateformes/MGM.jpg", "hero": "https://img.myhomelab13.fr/Collection/Plateformes/MGM.jpg", "logo": null, "hideTitle": true, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 1}]}, {"title": "Favoris", "backdrop": "https://img.myhomelab13.fr/Collection/Divers/Vignettes_aio/favoris.jpg", "showAll": false, "viewMode": "TABBED_GRID", "folders": [{"title": "Films Nouveautés", "cover": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Vignettes_et_Titres/Films_nouveautes_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Fanarts/Films_nouveautes_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Titres_Cadre/Films_Nouveautes_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 2, "series": 0}, {"title": "Séries Nouveautés", "cover": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Vignettes_et_Titres/Series_nouveautes_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Fanarts/Series_nouveautes_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Titres_Cadre/Series_Nouveautes_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 3, "movies": 1, "series": 2}, {"title": "Films à la Une", "cover": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Vignettes_et_Titres/Films_a_la_une_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Fanarts/Films_a_la_une_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Titres_Cadre/Films_a_la_une_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 3, "movies": 3, "series": 0}, {"title": "Séries à la Une", "cover": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Vignettes_et_Titres/Series_a_la_une_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Fanarts/Series_a_la_une_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Titres_Cadre/Series_a_la_une_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 3, "movies": 0, "series": 3}, {"title": "Films Populaires", "cover": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Vignettes_et_Titres/Films_populaires_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Fanarts/Films_populaires_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Titres_Cadre/Films_Populaires_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 5, "movies": 5, "series": 0}, {"title": "Séries Populaires", "cover": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Vignettes_et_Titres/Series_populaires_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Fanarts/Series_populaires_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/Films_Series/Favoris_Titres_Cadre/Series_Populaires_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 7, "movies": 0, "series": 7}, {"title": "HK", "cover": "https://img.myhomelab13.fr/Collection/HK_event/HK_du_moment_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/HK_event/HK_du_moment_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/HK_event/HK_du_moment_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 8, "movies": 5, "series": 3}, {"title": "Trakt", "cover": "https://img.myhomelab13.fr/Collection/Favoris/Trakt/Traktv_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/Trakt/Traktv_Fanarts.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/Trakt/Traktv_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 11, "movies": 1, "series": 4}, {"title": "TMDB", "cover": "https://img.myhomelab13.fr/Collection/Favoris/TMDB_Vignettes/TMDB_Logo_2_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Favoris/TMDB_Fanarts/TMDB_Logo_2_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Favoris/TMDB_Titres_Cadre/TMDB_Seul_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 11, "movies": 5, "series": 6}]}, {"title": "Iptv", "backdrop": null, "showAll": true, "viewMode": "TABBED_GRID", "folders": [{"title": "Tv", "cover": null, "hero": null, "logo": null, "hideTitle": false, "shape": "POSTER", "sources": 1, "movies": 0, "series": 0}, {"title": "VOD", "cover": null, "hero": null, "logo": null, "hideTitle": false, "shape": "POSTER", "sources": 2, "movies": 1, "series": 1}]}, {"title": "Genres", "backdrop": "https://img.myhomelab13.fr/Collection/Divers/Vignettes_aio/genres.jpg", "showAll": false, "viewMode": "TABBED_GRID", "folders": [{"title": "Action / Aventure", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Action_Aventure.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Action_Aventure_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Action_Aventure_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 3, "series": 3}, {"title": "Comédie", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Comedie.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Comedie_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Comedie_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 4, "movies": 2, "series": 2}, {"title": "Policier", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Policier.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Policier_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Policier_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 3, "series": 3}, {"title": "Romance", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Romance.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Romance_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Romance_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 3, "series": 3}, {"title": "Familial", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Familial.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Familial_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Familial_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 4, "movies": 2, "series": 2}, {"title": "Jeunesse", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Jeunesse.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Jeunesse_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Jeunesse_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 7, "movies": 2, "series": 5}, {"title": "Science-Fiction", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/ScienceFiction.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/ScienceFiction_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/ScienceFiction_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 3, "series": 3}, {"title": "Super-Héros", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Super-Heros.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Super_Heros_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Super_Heros_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 9, "movies": 4, "series": 5}, {"title": "Historique", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Historique.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Historique_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Historique_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 3, "series": 3}, {"title": "Mystère / Enquête", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Mystere.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Mystere_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Mystere_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 1}, {"title": "Français", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Francais.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Francais_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Francais_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 4, "movies": 2, "series": 2}, {"title": "Horreur", "cover": "https://img.myhomelab13.fr/Collection/Genres/Genres_Vignettes_et_Titres/Horreur.jpg", "hero": "https://img.myhomelab13.fr/Collection/Genres/Genres_Fanart_Seuls/Horreur_SansTitre.jpg", "logo": "https://img.myhomelab13.fr/Collection/Genres/Genres_Titres_Cadre/Horreur_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 5, "movies": 3, "series": 2}]}, {"title": "Thèmes", "backdrop": "https://img.myhomelab13.fr/Collection/Divers/Vignettes_aio/themes.jpg", "showAll": false, "viewMode": "TABBED_GRID", "folders": [{"title": "Aliens", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Aliens_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Aliens_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Aliens_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 0}, {"title": "Apocalypse", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Apocalypse_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Apocalypse_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Apocalypse_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 2, "series": 0}, {"title": "Arts Martiaux", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Arts_Martiaux_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Arts_Martiaux_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Arts_Martiaux_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 2, "series": 0}, {"title": "Biopics", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Biopics_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Biopics_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Biopics_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 0}, {"title": "Ca Mérite une Seconde lecture", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Ca_merite_une_seconde_lecture_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Ca_merite_une_seconde_lecture_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Ca_merite_une_seconde_lecture_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 0}, {"title": "Comédies Anglaises", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Comedies_Anglaises_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Comedies_Anglaises_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Comedies_Anglaises_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 0, "series": 1}, {"title": "Conspiration", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Conspiration_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Conspiration_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Conspiration_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 1, "series": 0}, {"title": "Corruption", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Corruption_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Corruption_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Corruption_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 0, "series": 0}, {"title": "Courses Automobiles", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Courses_Automobiles_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Courses_Automobiles_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Courses_Automobiles_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 2, "series": 0}, {"title": "Cyberpunk", "cover": "https://img.myhomelab13.fr/Collection/Themes/Themes_Vignettes_et_Titres/Cyberpunk_Vignette.jpg", "hero": "https://img.myhomelab13.fr/Collection/Themes/Themes_Fanarts_Seuls/Cyberpunk_Fanart.jpg", "logo": "https://img.myhomelab13.fr/Collection/Themes/Themes_Titres_Cadre/Cyberpunk_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 2, "movies": 2, "series": 0}]}, {"title": "Décennies", "backdrop": "https://img.myhomelab13.fr/Collection/Divers/Vignettes_aio/decennies.jpg", "showAll": false, "viewMode": "TABBED_GRID", "folders": [{"title": "Années 2020", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/2020_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/2020_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/2020_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 7, "movies": 4, "series": 3}, {"title": "Années 2010", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/2010_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/2010_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/2010_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 8, "movies": 6, "series": 2}, {"title": "Années 2000", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/2000_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/2000_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/2000_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 9, "movies": 7, "series": 2}, {"title": "Années 1990", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/1990_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/1990_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/1990_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 4, "series": 2}, {"title": "Années 1980", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/1980_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/1980_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/1980_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 4, "series": 2}, {"title": "Années 1970", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/1970_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/1970_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/1970_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 4, "series": 2}, {"title": "Années 1960", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/1960_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/1960_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/1960_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 6, "movies": 4, "series": 2}, {"title": "Années 1950 et avant", "cover": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Vignettes_et_Titres/1950_Vignettes.jpg", "hero": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Fanarts_Seul/1950_Fanarts_Seuls.jpg", "logo": "https://img.myhomelab13.fr/Collection/Decennies/Decennies_Titres_Cadre/1950_Titre.png", "hideTitle": false, "shape": "LANDSCAPE", "sources": 7, "movies": 7, "series": 0}]}, {"title": "Ma sélection", "backdrop": null, "showAll": true, "viewMode": "TABBED_GRID", "folders": [{"title": "Watchlist", "cover": "http://a7.gautard.com/nuvio/watchlist.jpg", "hero": "http://a7.gautard.com/nuvio/watchlist.jpg", "logo": null, "hideTitle": false, "shape": "LANDSCAPE", "sources": 7, "movies": 2, "series": 5}, {"title": "Best Of", "cover": "http://a7.gautard.com/nuvio/best.jpg", "hero": "http://a7.gautard.com/nuvio/best.jpg", "logo": null, "hideTitle": false, "shape": "LANDSCAPE", "sources": 4, "movies": 0, "series": 0}, {"title": "Global trends", "cover": "http://a7.gautard.com/nuvio/trending.jpg", "hero": "http://a7.gautard.com/nuvio/trending.jpg", "logo": null, "hideTitle": false, "shape": "LANDSCAPE", "sources": 8, "movies": 4, "series": 4}, {"title": "Platform trends", "cover": "http://a7.gautard.com/nuvio/platform-trends.jpg", "hero": "http://a7.gautard.com/nuvio/platform-trends.jpg", "logo": null, "hideTitle": false, "shape": "LANDSCAPE", "sources": 15, "movies": 7, "series": 8}]}];
+const titles = [{"id": "tt0133093", "type": "movie", "title": "The Matrix", "year": "1999", "rating": "8.7", "poster": "https://images.metahub.space/poster/small/tt0133093/img", "backdrop": "https://images.metahub.space/background/medium/tt0133093/img", "overview": "A computer hacker discovers that his life is nothing more than an elaborate simulation run by an evil AI."}, {"id": "tt15239678", "type": "movie", "title": "Dune: Part Two", "year": "2024", "rating": "8.4", "poster": "https://images.metahub.space/poster/small/tt15239678/img", "backdrop": "https://images.metahub.space/background/medium/tt15239678/img", "overview": "Paul Atreides unites with the Fremen while on a warpath of revenge against the conspirators who destroyed his family. Facing a choice between the love of his life and the fate of the universe, he endeavors to prevent a terrible fu..."}, {"id": "tt0816692", "type": "movie", "title": "Interstellar", "year": "2014", "rating": "8.7", "poster": "https://images.metahub.space/poster/small/tt0816692/img", "backdrop": "https://images.metahub.space/background/medium/tt0816692/img", "overview": "In a dystopian future where Earth has become near-uninhabitable, a team of astronauts embark on a mission to find a new home for humanity."}, {"id": "tt15398776", "type": "movie", "title": "Oppenheimer", "year": "2023", "rating": "8.2", "poster": "https://images.metahub.space/poster/small/tt15398776/img", "backdrop": "https://images.metahub.space/background/medium/tt15398776/img", "overview": "A dramatization of the life story of J. Robert Oppenheimer, the physicist who had a large hand in the development of the atomic bombs that brought an end to World War II."}, {"id": "tt0944947", "type": "series", "title": "Game of Thrones", "year": "2011", "rating": "9.2", "poster": "https://images.metahub.space/poster/small/tt0944947/img", "backdrop": "https://images.metahub.space/background/medium/tt0944947/img", "overview": "Nine noble families vie for control of Westeros and the Iron Throne, while an ancient threat beyond The Wall begins to stir."}, {"id": "tt11280740", "type": "series", "title": "Severance", "year": "2022", "rating": "8.6", "poster": "https://images.metahub.space/poster/small/tt11280740/img", "backdrop": "https://images.metahub.space/background/medium/tt11280740/img", "overview": "Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives. When a mysterious colleague appears outside of work, it begins a journey to discover the truth about their jobs."}, {"id": "tt0903747", "type": "series", "title": "Breaking Bad", "year": "2008", "rating": "9.5", "poster": "https://images.metahub.space/poster/small/tt0903747/img", "backdrop": "https://images.metahub.space/background/medium/tt0903747/img", "overview": "A chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine with a former student to secure his family's future."}, {"id": "tt4574334", "type": "series", "title": "Stranger Things", "year": "2016", "rating": "8.6", "poster": "https://images.metahub.space/poster/small/tt4574334/img", "backdrop": "https://images.metahub.space/background/medium/tt4574334/img", "overview": "In 1980s Indiana, a group of young friends witness supernatural forces and secret government exploits. As they search for answers, the children unravel a series of extraordinary mysteries."}, {"id": "tt3581920", "type": "series", "title": "The Last of Us", "year": "2023", "rating": "8.4", "poster": "https://images.metahub.space/poster/small/tt3581920/img", "backdrop": "https://images.metahub.space/background/medium/tt3581920/img", "overview": "After a global pandemic destroys civilization, a hardened survivor takes charge of a 14-year-old girl who may be humanity's last hope."}, {"id": "tt1190634", "type": "series", "title": "The Boys", "year": "2019", "rating": "8.5", "poster": "https://images.metahub.space/poster/small/tt1190634/img", "backdrop": "https://images.metahub.space/background/medium/tt1190634/img", "overview": "A group of vigilantes set out to take down corrupt superheroes who abuse their superpowers."}, {"id": "tt7660850", "type": "series", "title": "Succession", "year": "2018", "rating": "8.8", "poster": "https://images.metahub.space/poster/small/tt7660850/img", "backdrop": "https://images.metahub.space/background/medium/tt7660850/img", "overview": "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their father steps down from the company."}, {"id": "tt5753856", "type": "series", "title": "Dark", "year": "2017", "rating": "8.7", "poster": "https://images.metahub.space/poster/small/tt5753856/img", "backdrop": "https://images.metahub.space/background/medium/tt5753856/img", "overview": "A family saga with a supernatural twist, set in a German town where the disappearance of two young children exposes the relationships among four families."}, {"id": "tt10919420", "type": "series", "title": "Squid Game", "year": "2021", "rating": "7.9", "poster": "https://images.metahub.space/poster/small/tt10919420/img", "backdrop": "https://images.metahub.space/background/medium/tt10919420/img", "overview": "Hundreds of cash-strapped players accept a strange invitation to compete in children's games. A tempting prize awaits, but with deadly high stakes."}, {"id": "tt13443470", "type": "series", "title": "Wednesday", "year": "2022", "rating": "8.0", "poster": "https://images.metahub.space/poster/small/tt13443470/img", "backdrop": "https://images.metahub.space/background/medium/tt13443470/img", "overview": "Follows Wednesday Addams' years as a student, when she attempts to master her emerging psychic ability, thwart a killing spree, and solve the mystery that embroiled her parents."}, {"id": "tt9140554", "type": "series", "title": "Loki", "year": "2021", "rating": "8.2", "poster": "https://images.metahub.space/poster/small/tt9140554/img", "backdrop": "https://images.metahub.space/background/medium/tt9140554/img", "overview": "The mercurial villain Loki resumes his role as the God of Mischief in a new series that takes place after the events of “Avengers: Endgame.”"}, {"id": "tt14452776", "type": "series", "title": "The Bear", "year": "2022", "rating": "8.5", "poster": "https://images.metahub.space/poster/small/tt14452776/img", "backdrop": "https://images.metahub.space/background/medium/tt14452776/img", "overview": "A young chef from the fine-dining world returns to Chicago to run his family's sandwich shop."}, {"id": "tt13622970", "type": "movie", "title": "Moana 2", "year": "2024", "rating": "6.3", "poster": "https://images.metahub.space/poster/small/tt13622970/img", "backdrop": "https://images.metahub.space/background/medium/tt13622970/img", "overview": "After receiving an unexpected call from her wayfinding ancestors, Moana must journey to the far seas of Oceania and into dangerous, long-lost waters for an adventure unlike anything she's ever faced."}];
+
+const state = {
+    collectionIndex: 0,
+    folder: null,
+    typeFilter: 'all',
+    visibleCount: 12
+};
+
+const collectionDescriptions = {
+    'Plateformes': 'Tes services de streaming, regroupés avec leurs catalogues de nouveautés, tendances et favoris.',
+    'Favoris': 'Tes listes personnelles : nouveautés, à la une, populaires, HK, Trakt et TMDB.',
+    'Genres': 'Parcours les catalogues par genre, films et séries fusionnés.',
+    'Thèmes': 'Des collections thématiques : aliens, cyberpunk, mafia, zombies, et plus.',
+    'Décennies': 'Retrouve les films et séries marquants par décennie.',
+    'Ma sélection': 'Ta watchlist, tes best-of et les tendances globales.',
+    'Iptv': 'Chaînes et VOD depuis ton addon NexoTV — à configurer pour activer les sources.'
+};
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    }[char]));
+}
+
+function currentCollection() {
+    return collections[state.collectionIndex];
+}
+
+function renderCollectionTabs() {
+    const wrap = document.getElementById('collectionTabs');
+    wrap.innerHTML = '';
+    collections.forEach((collection, index) => {
+        const tab = document.createElement('button');
+        tab.className = 'collection-tab' + (index === state.collectionIndex ? ' active' : '');
+        tab.innerHTML = `
+            <img class="collection-tab-thumb" src="${escapeHtml(collection.backdrop || collection.folders[0]?.cover || '')}" alt="">
+            <span class="collection-tab-copy">
+                <span class="collection-tab-name">${escapeHtml(collection.title)}</span>
+                <span class="collection-tab-count">${collection.folders.length} dossiers</span>
+            </span>
+        `;
+        tab.querySelector('img').addEventListener('error', event => { event.target.style.visibility = 'hidden'; });
+        tab.addEventListener('click', () => {
+            state.collectionIndex = index;
+            state.folder = null;
+            state.typeFilter = 'all';
+            state.visibleCount = 12;
+            document.getElementById('folderSearch').value = '';
+            document.getElementById('folderView').classList.remove('open');
+            document.getElementById('browseMain').classList.remove('hidden');
+            renderCollectionTabs();
+            renderBrowse();
+        });
+        wrap.appendChild(tab);
+    });
+}
+
+function renderBrowse() {
+    const collection = currentCollection();
+    const hero = document.getElementById('collectionHero');
+    hero.style.backgroundImage = collection.backdrop ? `url("${collection.backdrop}")` : '';
+    document.getElementById('collectionTitle').textContent = collection.title;
+    document.getElementById('collectionDescription').textContent = collectionDescriptions[collection.title] || 'Collections importées depuis Nuvio.';
+    const totalSources = collection.folders.reduce((sum, folder) => sum + folder.sources, 0);
+    const totalMovies = collection.folders.reduce((sum, folder) => sum + folder.movies, 0);
+    const totalSeries = collection.folders.reduce((sum, folder) => sum + folder.series, 0);
+    document.getElementById('collectionStats').innerHTML = `
+        <span class="stat-pill">${collection.folders.length} dossiers</span>
+        <span class="stat-pill">${totalSources} catalogues fusionnés</span>
+        <span class="stat-pill">${totalMovies} sources films</span>
+        <span class="stat-pill">${totalSeries} sources séries</span>
+    `;
+    document.getElementById('folderSubtitle').textContent = collection.title === 'Iptv'
+        ? 'Aucune source NexoTV configurée pour le moment.'
+        : 'Clique sur un dossier pour fusionner ses catalogues.';
+    renderFolders();
+}
+
+function renderFolders() {
+    const collection = currentCollection();
+    const query = document.getElementById('folderSearch').value.trim().toLowerCase();
+    const grid = document.getElementById('folderGrid');
+    grid.innerHTML = '';
+
+    const folders = collection.folders.filter(folder => !query || folder.title.toLowerCase().includes(query));
+    if (folders.length === 0) {
+        grid.innerHTML = '<div class="folder-empty">Aucun dossier ne correspond au filtre.</div>';
+        return;
+    }
+
+    folders.forEach(folder => {
+        const card = document.createElement('article');
+        card.className = 'folder-card' + (folder.hideTitle ? ' no-title' : '');
+        const cover = folder.cover ? `<img class="folder-cover" src="${escapeHtml(folder.cover)}" alt="${escapeHtml(folder.title)}" loading="lazy">` : '';
+        const logo = folder.logo && !folder.hideTitle ? `<img class="folder-logo" src="${escapeHtml(folder.logo)}" alt="">` : '';
+        const titleOverlay = folder.logo && !folder.hideTitle ? '' : `
+            <div class="folder-title-overlay">
+                <h4>${escapeHtml(folder.title)}</h4>
+                <span class="folder-source-count">${folder.sources} catalogues</span>
+            </div>
+        `;
+        const badge = folder.shape === 'POSTER' ? '<span class="folder-badge">POSTER</span>' : '';
+        card.innerHTML = `
+            ${cover}
+            ${badge}
+            <span class="folder-hover-cta">Ouvrir</span>
+            ${logo}
+            ${titleOverlay}
+        `;
+        card.querySelectorAll('img').forEach(img => {
+            img.addEventListener('error', () => { img.style.display = 'none'; });
+        });
+        card.addEventListener('click', () => openFolder(folder));
+        grid.appendChild(card);
+    });
+}
+
+function openFolder(folder) {
+    state.folder = folder;
+    state.typeFilter = 'all';
+    state.visibleCount = 12;
+    document.getElementById('browseMain').classList.add('hidden');
+    document.getElementById('folderView').classList.add('open');
+    const hero = document.getElementById('folderViewHero');
+    hero.style.backgroundImage = folder.hero ? `url("${folder.hero}")` : (folder.cover ? `url("${folder.cover}")` : '');
+    document.getElementById('folderViewLogoWrap').innerHTML = folder.logo
+        ? `<img class="folder-view-logo" src="${escapeHtml(folder.logo)}" alt="">`
+        : '';
+    document.getElementById('folderViewTitle').textContent = folder.title;
+    document.getElementById('folderViewSubtitle').textContent = 'Items fusionnés et dédupliqués depuis les catalogues du dossier.';
+    document.getElementById('folderViewStats').innerHTML = `
+        <span class="stat-pill">${folder.sources} catalogues</span>
+        <span class="stat-pill">${folder.movies} sources films</span>
+        <span class="stat-pill">${folder.series} sources séries</span>
+        <span class="stat-pill">AIOMetadata · HKStremio</span>
+    `;
+    document.getElementById('folderSourceSummary').textContent = `${folder.sources} catalogues fusionnés · chargement initial par 20`;
+    document.querySelectorAll('#typeFilter button').forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'all'));
+    renderTitles();
+}
+
+function closeFolderView() {
+    state.folder = null;
+    document.getElementById('folderView').classList.remove('open');
+    document.getElementById('browseMain').classList.remove('hidden');
+}
+
+function setTypeFilter(type, button) {
+    state.typeFilter = type;
+    state.visibleCount = 12;
+    document.querySelectorAll('#typeFilter button').forEach(btn => btn.classList.toggle('active', btn === button));
+    renderTitles();
+}
+
+function getFolderTitles() {
+    if (!state.folder) return [];
+    const offset = state.folder.title.length % titles.length;
+    const rotated = titles.slice(offset).concat(titles.slice(0, offset));
+    return rotated.filter(item => state.typeFilter === 'all' || item.type === state.typeFilter);
+}
+
+function renderTitles() {
+    const grid = document.getElementById('posterGrid');
+    const all = getFolderTitles();
+    const visible = all.slice(0, state.visibleCount);
+    grid.innerHTML = '';
+    visible.forEach(item => {
+        const card = document.createElement('article');
+        card.className = 'poster-card';
+        card.innerHTML = `
+            <div class="poster-wrap">
+                <span class="poster-type">${item.type === 'movie' ? 'FILM' : 'SÉRIE'}</span>
+                ${item.rating ? `<span class="poster-rating">${escapeHtml(item.rating)}</span>` : ''}
+                <img src="${escapeHtml(item.poster)}" alt="${escapeHtml(item.title)}" loading="lazy">
+            </div>
+            <div class="poster-body">
+                <h4>${escapeHtml(item.title)}</h4>
+                <div><span>${escapeHtml(item.year)}</span><span class="poster-dot"></span><span>${item.type === 'movie' ? 'Film' : 'Série'}</span></div>
+            </div>
+        `;
+        card.querySelector('img').addEventListener('error', event => { event.target.style.display = 'none'; });
+        card.addEventListener('click', () => openMediaModal(item));
+        grid.appendChild(card);
+    });
+    const btn = document.getElementById('loadMoreBtn');
+    btn.style.display = visible.length < all.length ? 'inline-flex' : 'none';
+}
+
+function loadMoreTitles() {
+    state.visibleCount += 12;
+    renderTitles();
+}
+
+function openMediaModal(item) {
+    document.getElementById('mediaModalHero').style.backgroundImage = `url("${item.backdrop || item.poster}")`;
+    document.getElementById('mediaModalPoster').src = item.poster;
+    document.getElementById('mediaModalPoster').alt = item.title;
+    document.getElementById('mediaModalTitle').textContent = item.title;
+    document.getElementById('mediaModalMeta').innerHTML = `
+        <span class="modal-pill">${item.type === 'movie' ? 'Film' : 'Série'}</span>
+        <span>${escapeHtml(item.year)}</span>
+        ${item.rating ? `<span class="modal-pill">IMDb ${escapeHtml(item.rating)}</span>` : ''}
+    `;
+    document.getElementById('mediaModalOverview').textContent = item.overview || '';
+    document.getElementById('modalSourceList').innerHTML = '';
+    document.getElementById('loadingRow').style.display = 'none';
+    document.getElementById('findSourcesBtn').style.display = 'inline-flex';
+    document.getElementById('findSourcesBtn').disabled = false;
+    document.getElementById('findSourcesBtn').textContent = 'Find sources';
+    document.getElementById('mediaModalSourceSubtitle').textContent = 'Cherche les sources torrent / directes.';
+    document.getElementById('mediaModalBackdrop').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeMediaModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('mediaModalBackdrop').classList.remove('open');
+    document.body.style.overflow = '';
+}
+
+function findSources() {
+    const button = document.getElementById('findSourcesBtn');
+    const loading = document.getElementById('loadingRow');
+    const list = document.getElementById('modalSourceList');
+    button.disabled = true;
+    button.textContent = 'Searching...';
+    loading.style.display = 'block';
+    list.innerHTML = '';
+
+    setTimeout(() => {
+        loading.style.display = 'none';
+        button.style.display = 'none';
+        document.getElementById('mediaModalSourceSubtitle').textContent = '2 sources trouvées · Lumio et HKStremio';
+        list.innerHTML = `
+            <div class="source-row">
+                <div class="source-main">
+                    <div class="source-addon">Lumio · Maison</div>
+                    <div class="source-title">The.Matrix.1999.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-SGF.mkv</div>
+                    <div class="source-meta">4K · 58.59 GB · Direct</div>
+                </div>
+                <button class="btn primary" onclick="showToast('Ajouté à la queue (mockup)')">Add to Queue</button>
+            </div>
+            <div class="source-row">
+                <div class="source-main">
+                    <div class="source-addon">HKStremio</div>
+                    <div class="source-title">Matrix.Trilogy.1999-2003.MULTi.2160p.UHD.BluRay.DTS.5.1.H265-LAZARUS.mkv</div>
+                    <div class="source-meta">4K · 188.45 GB · Direct</div>
+                </div>
+                <button class="btn primary" onclick="showToast('Ajouté à la queue (mockup)')">Add to Queue</button>
+            </div>
+        `;
+    }, 800);
+}
+
+function showToast(message) {
+    const wrap = document.getElementById('toastWrap');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    wrap.appendChild(toast);
+    setTimeout(() => toast.remove(), 3800);
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeMediaModal();
+});
+
+renderCollectionTabs();
+renderBrowse();
+
+const previewParams = new URLSearchParams(location.search);
+if (previewParams.has('folder')) {
+    const index = parseInt(previewParams.get('folder'), 10) || 0;
+    const folder = currentCollection().folders[index] || currentCollection().folders[0];
+    if (folder) openFolder(folder);
+}
+if (previewParams.has('media')) {
+    const index = parseInt(previewParams.get('media'), 10) || 0;
+    openMediaModal(titles[index] || titles[0]);
+    if (previewParams.get('sources') === '1') setTimeout(findSources, 120);
+}
+</script>
+</body>
+</html>

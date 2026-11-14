@@ -3,8 +3,10 @@
 {% block title %}Screen Locked - Downloader{% endblock %}
 
 {% block body %}
-    <div style="max-width: 600px; margin: 4rem auto; text-align: center;">
-        <div style="font-size: 4rem; margin-bottom: 1.5rem;">🔒</div>
+    <div style="max-width: 600px; margin: 2.5rem auto; text-align: center;">
+        <div class="page-icon" style="margin: 0 auto 1.25rem; width: 72px; height: 72px; border-radius: 20px;">
+            {% include '_partials/icons/lock.svg' %}
+        </div>
         <h1 style="color: var(--text-primary); margin-bottom: 1rem;">{{ title|default('Access Restricted') }}</h1>
         <p style="color: var(--text-secondary); font-size: 1.1rem; line-height: 1.6; margin-bottom: 2rem;">
             {{ message|default('This screen is not available because some required configurations are missing.') }}

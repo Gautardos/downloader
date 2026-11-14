@@ -3,19 +3,18 @@
 {% block title %}Queue Management{% endblock %}
 
 {% block body %}
-<div class="container">
-    <div class="header" id="queue-header">
-        <div>
-            <h1 style="display: flex; align-items: center; gap: 0.75rem; margin: 0;">
-                <span style="font-size: 2.5rem;">⚙️</span>
-                Queue Management
-            </h1>
-            <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Monitor and control the download worker state.</p>
-        </div>
-        <button class="btn btn-purge" onclick="purgeQueue()">
-            Purge All Tasks
-        </button>
-    </div>
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Queue Management',
+        subtitle: 'Monitor and control the download worker state.',
+        icon: 'queue'
+    } %}
+        {% block actions %}
+            <button class="btn btn-purge" onclick="purgeQueue()" style="display: flex; align-items: center; gap: 0.5rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                Purge All Tasks
+            </button>
+        {% endblock %}
+    {% endembed %}
 
     <div class="grid" style="grid-template-columns: 1fr;">
         <!-- Active Section -->
@@ -61,7 +60,6 @@
             </div>
         </div>
     </div>
-</div>
 
 <script>
 
@@ -194,6 +192,11 @@ function renderQueueTable(queue) {
     tbody.innerHTML = '';
     queue.forEach((item, index) => {
         const typeIcon = getMediaIcon(item.type);
+        const notBefore = Number(item.not_before || 0);
+        const isScheduled = notBefore > Math.floor(Date.now() / 1000);
+        const scheduleLabel = isScheduled
+            ? new Date(notBefore * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '';
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
         tr.innerHTML = `
@@ -201,10 +204,11 @@ function renderQueueTable(queue) {
             <td style="padding: 1rem;">
                 <div class="queue-filename" title="${item.filename}">
                     ${item.filename}
+                    ${isScheduled ? `<div style="font-size: 0.7rem; color: var(--warning); margin-top: 0.3rem;">Retry programmé à ${scheduleLabel}</div>` : ''}
                 </div>
             </td>
             <td class="hide-mobile" style="padding: 1rem; font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">${item.path || '--'}</td>
-            <td class="hide-mobile" style="padding: 1rem; font-size: 0.8rem; color: var(--text-secondary);">${item.date_added || '--'}</td>
+            <td class="hide-mobile" style="padding: 1rem; font-size: 0.8rem; color: ${isScheduled ? 'var(--warning)' : 'var(--text-secondary)'};">${isScheduled ? 'Retry ' + scheduleLabel : (item.date_added || '--')}</td>
             <td style="padding: 1rem; text-align: right;">
                 <button class="btn btn-remove-task" onclick="removeTask(${index})">
                     Remove
@@ -222,13 +226,6 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <style>
-    #queue-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
-
     .btn-purge {
         background: var(--danger);
         color: white;
@@ -284,12 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     @media (max-width: 768px) {
-        #queue-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 1rem;
-        }
-
         .active-task-wrapper {
             flex-direction: column;
             align-items: center;

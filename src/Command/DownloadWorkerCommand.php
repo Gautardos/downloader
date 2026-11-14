@@ -17,6 +17,9 @@ use Symfony\Component\Process\Process;
 )]
 class DownloadWorkerCommand extends Command
 {
+    private const API_RETRY_DELAY = 300;
+    private const MAX_API_RETRIES = 5;
+
     private QueueManager $queueManager;
     private DownloadManager $downloadManager;
     private string $projectDir;
@@ -52,8 +55,7 @@ class DownloadWorkerCommand extends Command
         }
 
         $log('Starting Download Worker...');
-        // Note: we DO NOT clear the active task unconditionally anymore, 
-        // as the QueueManager should be handling that or the worker will update it.
+        $this->recoverInterruptedTask($storage, $log);
 
         while (true) {
             // Heartbeat loop (UI visibility only)
@@ -77,8 +79,23 @@ class DownloadWorkerCommand extends Command
             $this->addServerNotification($storage, 'info', "Starting $type download", 'Started', $filename, $type);
 
             try {
+                $musicStatus = null;
+
                 if ($type === 'music') {
-                    $this->processMusicTask($item, $storage, $log);
+                    $musicStatus = $this->processMusicTask($item, $storage, $log);
+
+                    if ($musicStatus === 'requeued') {
+                        $log("Requeued [$type]: " . ($item['filename'] ?? 'unknown') . " (retry scheduled)");
+                    } elseif ($musicStatus === 'warning') {
+                        $log("Finished with warnings [$type]: " . ($item['filename'] ?? 'unknown'));
+                        $this->addServerNotification($storage, 'info', "Finished with missing tracks", 'Finished', ($item['filename'] ?? 'unknown'), $type);
+                    } elseif ($musicStatus === 'error') {
+                        $log("Finished with errors [$type]: " . ($item['filename'] ?? 'unknown'));
+                        $this->addServerNotification($storage, 'error', "Failed $type download", 'Failed', ($item['filename'] ?? 'unknown'), $type);
+                    } else {
+                        $log("Finished [$type]: " . ($item['filename'] ?? 'unknown'));
+                        $this->addServerNotification($storage, 'success', "Successfully downloaded $type", 'Finished', ($item['filename'] ?? 'unknown'), $type);
+                    }
                 } else {
                     $result = $this->downloadManager->downloadFile(
                         $url = $item['url'],
@@ -95,10 +112,10 @@ class DownloadWorkerCommand extends Command
 
                     // Add video to history with stats
                     $this->queueManager->recordHistory($item, 'success', 1, $result);
-                }
 
-                $log("Finished [$type]: " . ($item['filename'] ?? 'unknown'));
-                $this->addServerNotification($storage, 'success', "Successfully downloaded $type", 'Finished', ($item['filename'] ?? 'unknown'), $type);
+                    $log("Finished [$type]: " . ($item['filename'] ?? 'unknown'));
+                    $this->addServerNotification($storage, 'success', "Successfully downloaded $type", 'Finished', ($item['filename'] ?? 'unknown'), $type);
+                }
             } catch (\Throwable $e) {
                 $log('Error: ' . $e->getMessage());
                 $log('Stack trace: ' . $e->getTraceAsString());
@@ -120,11 +137,12 @@ class DownloadWorkerCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function processMusicTask(array $item, $storage, callable $log): void
+    private function processMusicTask(array $item, $storage, callable $log): string
     {
         $config = $storage->get('config', []);
         $downloadId = $item['download_id'];
         $url = $item['url'];
+        unset($item['not_before']);
 
         $cmdArgs = [
             '--output' => $config['music_output'] ?? '{artist} - {album} - {song_name}.{ext}',
@@ -188,6 +206,7 @@ class DownloadWorkerCommand extends Command
         $matchedTracks = [];
         $missingTracks = $expectedTracks;
         $validatedCount = 0;
+        $processOutput = '';
 
         // Execute using non-blocking start to maintain heartbeat
         try {
@@ -215,6 +234,11 @@ class DownloadWorkerCommand extends Command
                     file_put_contents($activeLogFile, $buffer, FILE_APPEND);
                     file_put_contents($historyLogFile, $buffer, FILE_APPEND);
 
+                    $processOutput .= $buffer;
+                    if (strlen($processOutput) > 2000000) {
+                        $processOutput = substr($processOutput, -1500000);
+                    }
+
                     // Extract last line for progress
                     $lines = explode("\n", trim($buffer));
                     if (!empty($lines)) {
@@ -236,6 +260,7 @@ class DownloadWorkerCommand extends Command
             if ($buffer !== '') {
                 file_put_contents($activeLogFile, $buffer, FILE_APPEND);
                 file_put_contents($historyLogFile, $buffer, FILE_APPEND);
+                $processOutput .= $buffer;
             }
 
         } catch (\Throwable $e) {
@@ -249,6 +274,7 @@ class DownloadWorkerCommand extends Command
             $errorMsg = "Command failed with exit code " . $process->getExitCode() . "\n";
             $errorMsg .= "ERROR OUTPUT:\n" . $process->getErrorOutput() . "\n";
             $errorMsg .= "STANDARD OUTPUT:\n" . $process->getOutput();
+            $processOutput .= "\n" . $errorMsg;
 
             // Log fatal error but DO NOT throw if we want to retry
             file_put_contents($activeLogFile, "\n[FATAL ERROR]\n" . $errorMsg, FILE_APPEND);
@@ -282,9 +308,9 @@ class DownloadWorkerCommand extends Command
             $found = false;
             foreach ($verifiedTracks as $verified) {
                 if (
-                    strtolower(trim($expected['artist'])) === strtolower(trim($verified['artist'])) &&
-                    strtolower(trim($expected['album'])) === strtolower(trim($verified['album'])) &&
-                    strtolower(trim($expected['song_name'])) === strtolower(trim($verified['song_name']))
+                    $this->normalizeTrackPart($expected['artist'] ?? '') === $this->normalizeTrackPart($verified['artist'] ?? '') &&
+                    $this->normalizeTrackPart($expected['album'] ?? '') === $this->normalizeTrackPart($verified['album'] ?? '') &&
+                    $this->normalizeTrackPart($expected['song_name'] ?? '') === $this->normalizeTrackPart($verified['song_name'] ?? '')
                 ) {
                     $found = true;
                     $matchedTracks[] = $verified;
@@ -309,8 +335,46 @@ class DownloadWorkerCommand extends Command
         }
 
         retry_check:
-        // Retry Logic for failed downloads
-        if ($finalStatus === 'error') {
+        $apiErrorDetected = !empty($expectedTracks) && $this->hasSpotifyApiErrors($processOutput);
+        $downloadErrorDetected = !empty($expectedTracks) && $this->hasSpotifyDownloadErrors($processOutput);
+        $shouldDelayRetry = ($finalStatus === 'error' && $apiErrorDetected)
+            || ($finalStatus === 'warning' && $downloadErrorDetected);
+
+        if ($shouldDelayRetry) {
+            $scheduledRetryCount = (int) ($item['scheduled_retry_count'] ?? 0);
+
+            if ($scheduledRetryCount < self::MAX_API_RETRIES) {
+                $attemptNum = $scheduledRetryCount + 1;
+                $log("Spotify API/audio key error detected. Scheduling retry in " . (self::API_RETRY_DELAY / 60) . " minutes (Attempt $attemptNum/" . self::MAX_API_RETRIES . ").");
+
+                $this->queueManager->recordHistory($item, 'failed_requeued', $validatedCount, [
+                    'downloaded_tracks' => $matchedTracks,
+                    'missing_tracks' => $missingTracks,
+                    'message' => "Spotify API limit detected. Retry scheduled in " . (self::API_RETRY_DELAY / 60) . " minutes (attempt $attemptNum/" . self::MAX_API_RETRIES . ")."
+                ]);
+
+                $item['scheduled_retry_count'] = $attemptNum;
+                $item['not_before'] = time() + self::API_RETRY_DELAY;
+                $item['download_id'] = $downloadId . '_api_retry_' . $attemptNum;
+
+                $this->queueManager->enqueue($item, 'music');
+                $this->addServerNotification(
+                    $storage,
+                    'info',
+                    "Spotify API limit — retry scheduled in " . (self::API_RETRY_DELAY / 60) . " min",
+                    'Requeued',
+                    $item['filename'] ?? 'Music',
+                    'music'
+                );
+
+                return 'requeued';
+            }
+
+            $log("Spotify API retry limit reached (" . self::MAX_API_RETRIES . " attempts).");
+        }
+
+        // Retry Logic for non-API failures
+        if ($finalStatus === 'error' && !$apiErrorDetected) {
             $retryCount = $item['retry_count'] ?? 0;
             $maxRetries = 2; // Total 3 attempts (0, 1, 2)
 
@@ -331,7 +395,7 @@ class DownloadWorkerCommand extends Command
 
                 // Re-enqueue
                 $this->queueManager->enqueue($item, 'music');
-                return;
+                return 'requeued';
             }
         }
 
@@ -341,6 +405,144 @@ class DownloadWorkerCommand extends Command
             'downloaded_tracks' => $matchedTracks,
             'missing_tracks' => $missingTracks
         ]);
+
+        return $finalStatus;
+    }
+
+    private function normalizeTrackPart(?string $value): string
+    {
+        $value = trim((string) $value);
+        $value = str_replace([' / ', ' /', '/ ', '/'], ', ', $value);
+        $value = str_replace(['; ', ';'], ', ', $value);
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+
+        return mb_strtolower($value);
+    }
+
+    private function hasSpotifyApiErrors(string $output): bool
+    {
+        if ($output === '') {
+            return false;
+        }
+
+        $patterns = [
+            '/Spotify API Error.*received an empty response/is',
+            '/received an empty response/i',
+            '/Audio key error/i',
+            '/Failed fetching audio key/i',
+            '/GENERAL DOWNLOAD ERROR/i',
+            "/Couldn't extract expiration/i",
+            '/Failed reading packet/i',
+            '/Connection reset by peer/i',
+            '/Network is unreachable/i',
+            '/Connection aborted/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $output)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hasSpotifyDownloadErrors(string $output): bool
+    {
+        if ($output === '') {
+            return false;
+        }
+
+        $patterns = [
+            '/Audio key error/i',
+            '/Failed fetching audio key/i',
+            '/GENERAL DOWNLOAD ERROR/i',
+            '/Failed reading packet/i',
+            '/Connection reset by peer/i',
+            '/Network is unreachable/i',
+            '/Connection aborted/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $output)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function recoverInterruptedTask($storage, callable $log): void
+    {
+        $active = $storage->get('active_worker_task', null);
+        if (!is_array($active) || empty($active['url'])) {
+            return;
+        }
+
+        $queue = $storage->get('server_queue', []);
+
+        // If the task was already requeued before the crash, keep that copy only.
+        foreach ($queue as $queued) {
+            if (
+                ($queued['url'] ?? null) === ($active['url'] ?? null)
+                && ($queued['filename'] ?? null) === ($active['filename'] ?? null)
+            ) {
+                $storage->set('active_worker_task', null);
+                return;
+            }
+        }
+
+        // If it already reached a final status, it was only a stale active marker.
+        $finalStatuses = ['success', 'warning', 'error', 'canceled'];
+        $history = $storage->get('history', []);
+        foreach (array_reverse($history) as $entry) {
+            if (
+                ($entry['download_id'] ?? null) === ($active['download_id'] ?? null)
+                && in_array($entry['status'] ?? '', $finalStatuses, true)
+            ) {
+                $storage->set('active_worker_task', null);
+                return;
+            }
+        }
+
+        $resumeCount = (int) ($active['resume_count'] ?? 0);
+        if ($resumeCount >= 3) {
+            $this->queueManager->recordHistory($active, 'error', 0, [
+                'message' => 'Interrupted repeatedly during worker restarts.'
+            ]);
+            $this->addServerNotification(
+                $storage,
+                'error',
+                'Interrupted download abandoned',
+                'Failed',
+                $active['filename'] ?? 'Download',
+                $active['type'] ?? 'video'
+            );
+            $storage->set('active_worker_task', null);
+            $log('Interrupted task exceeded resume limit: ' . ($active['filename'] ?? 'unknown'));
+            return;
+        }
+
+        $active['resume_count'] = $resumeCount + 1;
+        unset($active['not_before']);
+
+        if (($active['type'] ?? '') !== 'music') {
+            $active['overwrite'] = true;
+        }
+
+        $queue[] = $active;
+        $storage->set('server_queue', $queue);
+        $storage->set('active_worker_task', null);
+
+        $log('Requeued interrupted task: ' . ($active['filename'] ?? 'unknown'));
+        $this->addServerNotification(
+            $storage,
+            'info',
+            'Resuming interrupted download',
+            'Started',
+            $active['filename'] ?? 'Download',
+            $active['type'] ?? 'video'
+        );
     }
 
     private function addServerNotification($storage, string $type, string $message, string $action = '', string $item = '', string $mediaType = ''): void

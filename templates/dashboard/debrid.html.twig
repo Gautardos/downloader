@@ -1,0 +1,1973 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Debrid Downloads{% endblock %}
+
+{% block body %}
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Debrid Downloads',
+    subtitle: 'Search the local database, add a magnet, or reload the latest debrided links without fetching the full history.',
+    icon: 'download'
+} %}
+    {% block actions %}
+        <button class="btn btn-secondary" onclick="refreshRecentLinks()" id="refresh-recent" style="display: inline-flex; align-items: center; gap: 0.45rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            Refresh
+        </button>
+        <button class="btn btn-secondary" onclick="purgeHistory()" style="display: inline-flex; align-items: center; gap: 0.45rem; background: var(--danger);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            Purge history
+        </button>
+    {% endblock %}
+{% endembed %}
+
+<datalist id="recent-paths-list">
+    {% for path in recent_paths %}
+        <option value="{{ path }}">
+    {% endfor %}
+</datalist>
+
+<div class="db-tabs" role="tablist" aria-label="Debrid views">
+    <a href="{{ path('torrent') }}" class="db-tab active" role="tab" aria-selected="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        Recent links
+    </a>
+    <a href="{{ path('torrent', {view: 'packs'}) }}" class="db-tab" role="tab" aria-selected="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Packs
+        <span class="db-tab-badge">advanced</span>
+    </a>
+</div>
+
+<div class="db-layout">
+    <section class="card db-card" aria-labelledby="db-search-title">
+        <div class="db-card-header">
+            <div>
+                <div class="db-eyebrow">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                    Local SQLite database
+                </div>
+                <h2 id="db-search-title">Search torrents</h2>
+                <p>Searches the local database only. No Alldebrid call is made here.</p>
+            </div>
+            <span class="db-count-pill" id="db-result-count">0 results</span>
+        </div>
+
+        <div class="db-toolbar">
+            <select class="db-category" id="torrent-db-category" aria-label="Category">
+                <option value="all">All categories</option>
+            </select>
+            <div class="db-search-field">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+                </svg>
+                <input type="text" id="torrent-db-query" placeholder="Movie, show, album..." autocomplete="off">
+            </div>
+        </div>
+
+        <div class="db-search-loading" id="torrent-db-loading" style="display: none;">
+            <span class="db-spinner"></span> Searching...
+        </div>
+
+        <div class="db-results" id="torrent-db-results"></div>
+
+        <div class="db-empty" id="torrent-db-empty" style="display: none;">
+            <div class="db-empty-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            </div>
+            <h3>No results</h3>
+            <p>Try another title or category.</p>
+        </div>
+
+        <div class="db-empty" id="torrent-db-init" style="display: none;">
+            <div class="db-empty-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            </div>
+            <h3>Database not initialized</h3>
+            <p>Import the local torrent database to enable search.</p>
+            <button class="btn btn-warning" onclick="initTorrentDb(event)" style="margin-top: 1rem;">Initialize database</button>
+        </div>
+
+        <div class="db-card-footer">
+            <span><span class="db-secure-dot"></span> Local SQLite index</span>
+            <span>Results limited to 50</span>
+        </div>
+    </section>
+
+    <div class="db-side">
+        <section class="card db-add-card" aria-labelledby="db-add-title">
+            <div class="db-add-header">
+                <div>
+                    <h2 id="db-add-title">Add manually</h2>
+                    <p>Paste a magnet or host link, one per line.</p>
+                </div>
+                <span class="db-count-pill">Direct</span>
+            </div>
+
+            <textarea class="db-textarea" id="magnet-input" placeholder="magnet:?xt=urn:btih:...&#10;https://1fichier.com/?..."></textarea>
+
+            <div class="db-drop-zone" id="drop-zone" onclick="document.getElementById('torrent-file-input').click()"
+                 ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+                Drop a .torrent file or click here
+                <input type="file" id="torrent-file-input" accept=".torrent" style="display: none" onchange="handleFileSelect(this)">
+            </div>
+
+            <div class="db-add-actions">
+                <button class="btn btn-primary" id="btn-upload" onclick="submitLinks()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                    Debrid
+                </button>
+                <button class="btn btn-secondary" id="btn-link-preview" onclick="previewLinks()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Preview
+                </button>
+            </div>
+
+            <p class="db-hint">After a successful debrid, the recent list refreshes automatically.</p>
+
+            <div class="db-preview-area" id="preview-results-area" style="display: none;">
+                <div class="db-preview-loading" id="preview-results-loading" style="display: none;">Loading preview...</div>
+                <div id="preview-results-list"></div>
+            </div>
+
+            <div class="db-preview-area" id="debrid-results-area" style="display: none;">
+                <div class="db-preview-loading" id="debrid-results-loading" style="display: none;">Processing links...</div>
+                <div id="debrid-results-list"></div>
+            </div>
+        </section>
+
+        <section class="card db-card" aria-labelledby="db-recent-title">
+            <div class="db-card-header">
+                <div>
+                    <div class="db-eyebrow">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                        Cached history
+                    </div>
+                    <h2 id="db-recent-title">Latest debrided links</h2>
+                    <p>5 links first, then 10 more on demand.</p>
+                </div>
+                <span class="db-count-pill" id="recent-count-pill">-</span>
+            </div>
+
+            <div class="db-recent-list" id="recent-list">
+                <div class="db-skeleton-row"><div class="db-skeleton db-skeleton-icon"></div><div class="db-skeleton-lines"><div class="db-skeleton db-skeleton-line"></div><div class="db-skeleton db-skeleton-line short"></div></div></div>
+                <div class="db-skeleton-row"><div class="db-skeleton db-skeleton-icon"></div><div class="db-skeleton-lines"><div class="db-skeleton db-skeleton-line"></div><div class="db-skeleton db-skeleton-line short"></div></div></div>
+                <div class="db-skeleton-row"><div class="db-skeleton db-skeleton-icon"></div><div class="db-skeleton-lines"><div class="db-skeleton db-skeleton-line"></div><div class="db-skeleton db-skeleton-line short"></div></div></div>
+            </div>
+
+            <div class="db-recent-footer">
+                <button class="db-load-more" id="load-more" onclick="loadMoreRecent()" type="button" disabled>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                    Load 10 more
+                </button>
+                <span class="db-recent-count" id="recent-count">Loading...</span>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="db-modal-backdrop" id="download-modal" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+    <div class="db-modal">
+        <div class="db-modal-header">
+            <div>
+                <h2 id="download-modal-title">Download link</h2>
+                <p id="download-modal-file">movie.mkv</p>
+            </div>
+            <button class="db-modal-close" type="button" onclick="closeDownloadModal()" aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+        <div class="db-modal-body">
+            <div class="db-field">
+                <label for="download-path">Destination folder</label>
+                <input id="download-path" type="text" list="recent-paths-list" placeholder="Override path">
+            </div>
+            <div class="db-field">
+                <label for="download-rename">Rename file (optional)</label>
+                <input id="download-rename" type="text" placeholder="Keep original name if empty">
+            </div>
+        </div>
+        <div class="db-modal-footer">
+            <button class="btn btn-secondary" type="button" onclick="closeDownloadModal()">Cancel</button>
+            <button class="btn btn-primary" type="button" id="confirm-download" onclick="confirmRecentDownload()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                Add to queue
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="db-modal-backdrop" id="description-modal" role="dialog" aria-modal="true" aria-labelledby="description-modal-title">
+    <div class="db-modal" style="max-width: 780px;">
+        <div class="db-modal-header">
+            <div>
+                <h2 id="description-modal-title">Description</h2>
+                <p id="description-modal-hash">torrent hash</p>
+            </div>
+            <button class="db-modal-close" type="button" onclick="closeDescriptionModal()" aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+        <div class="db-description-content" id="description-content"></div>
+    </div>
+</div>
+
+<script>
+if (typeof window.notify !== 'function') {
+    window.notify = function (type, message) {
+        console.log(`[${type}]`, message);
+    };
+}
+
+const DB_ROUTES = {
+    recent: "{{ path('debrid_recent') }}",
+    categories: "{{ path('torrent_db_categories') }}",
+    search: "{{ path('torrent_db_search') }}",
+    description: "{{ path('torrent_db_description') }}",
+    previewHash: "{{ path('torrent_db_preview') }}",
+    uploadTorrent: "{{ path('upload_torrent') }}",
+    uploadDirect: "{{ path('upload_direct_link') }}",
+    magnetInfo: "{{ path('magnet_info') }}",
+    download: "{{ path('download') }}",
+    purge: "{{ path('purge_history') }}",
+    initDb: "{{ path('config_update_hash_db') }}"
+};
+const DB_DEFAULT_PATH = "{{ config.default_path|default('')|e('js') }}";
+
+const dbQueryInput = document.getElementById('torrent-db-query');
+const dbCategory = document.getElementById('torrent-db-category');
+const dbResults = document.getElementById('torrent-db-results');
+const dbLoading = document.getElementById('torrent-db-loading');
+const dbEmpty = document.getElementById('torrent-db-empty');
+const dbInit = document.getElementById('torrent-db-init');
+const dbResultCount = document.getElementById('db-result-count');
+const recentList = document.getElementById('recent-list');
+const recentCountPill = document.getElementById('recent-count-pill');
+const recentCount = document.getElementById('recent-count');
+const loadMoreButton = document.getElementById('load-more');
+const downloadModal = document.getElementById('download-modal');
+const descriptionModal = document.getElementById('description-modal');
+const downloadModalFile = document.getElementById('download-modal-file');
+const downloadPath = document.getElementById('download-path');
+const downloadRename = document.getElementById('download-rename');
+
+let dbCategoriesLoaded = false;
+let dbSearchTimeout = null;
+let recentOffset = 0;
+let recentTotal = 0;
+let recentLoading = false;
+let currentRecentLink = null;
+let selectedFile = null;
+const dropZoneInitialHtml = document.getElementById('drop-zone').innerHTML;
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatSize(bytes) {
+    const size = Number(bytes) || 0;
+    if (size <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+    return `${(size / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+}
+
+function relativeDate(timestamp) {
+    const seconds = Math.max(1, Math.floor(Date.now() / 1000) - Number(timestamp || 0));
+    if (!timestamp) return 'unknown date';
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+}
+
+function fileKind(filename) {
+    const extension = (String(filename).split('.').pop() || '').toLowerCase();
+    if (['mp3', 'flac', 'm4a', 'wav', 'ogg', 'opus'].includes(extension)) return 'audio';
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(extension)) return 'archive';
+    return 'video';
+}
+
+function fileIcon(kind) {
+    if (kind === 'audio') {
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+    }
+    if (kind === 'archive') {
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>';
+    }
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 8 6 4-6 4V8z"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>';
+}
+
+async function loadTorrentDbCategories() {
+    if (dbCategoriesLoaded) return;
+
+    try {
+        const res = await fetch(DB_ROUTES.categories);
+        const data = await res.json();
+
+        if (!data.success && data.error === 'db_not_found') {
+            dbInit.style.display = 'block';
+            return;
+        }
+
+        if (!data.success || !Array.isArray(data.categories)) return;
+
+        dbInit.style.display = 'none';
+
+        data.categories.forEach((cat) => {
+            const option = document.createElement('option');
+            option.value = `${cat.parent_category}-${cat.category}`;
+            option.textContent = cat.category_slug;
+            dbCategory.appendChild(option);
+        });
+
+        dbCategoriesLoaded = true;
+    } catch (e) {
+        console.error('Failed to load categories', e);
+    }
+}
+
+async function initTorrentDb(event) {
+    const button = event.currentTarget;
+    const original = button.innerText;
+    button.disabled = true;
+    button.innerText = 'Initializing...';
+
+    try {
+        const res = await fetch(DB_ROUTES.initDb, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            window.notify('success', 'Database initialized.');
+            dbInit.style.display = 'none';
+            await loadTorrentDbCategories();
+        } else {
+            window.notify('error', data.message || 'Initialization failed.');
+            button.disabled = false;
+            button.innerText = original;
+        }
+    } catch (e) {
+        window.notify('error', 'Network error while initializing the database.');
+        button.disabled = false;
+        button.innerText = original;
+    }
+}
+
+function debouncedTorrentSearch() {
+    clearTimeout(dbSearchTimeout);
+    dbSearchTimeout = setTimeout(searchTorrentDb, 300);
+}
+
+async function searchTorrentDb() {
+    const query = dbQueryInput.value.trim();
+    const categoryId = dbCategory.value;
+
+    if (query.length < 2) {
+        dbResults.innerHTML = '';
+        dbEmpty.style.display = 'none';
+        dbResultCount.textContent = '0 results';
+        return;
+    }
+
+    dbLoading.style.display = 'flex';
+    dbResults.innerHTML = '';
+    dbEmpty.style.display = 'none';
+
+    try {
+        const res = await fetch(DB_ROUTES.search, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ categoryId, query })
+        });
+        const data = await res.json();
+
+        dbLoading.style.display = 'none';
+
+        if (!data.success || !Array.isArray(data.results) || data.results.length === 0) {
+            dbResultCount.textContent = '0 results';
+            dbEmpty.style.display = 'block';
+            return;
+        }
+
+        dbResultCount.textContent = `${data.results.length} result${data.results.length > 1 ? 's' : ''}`;
+
+        data.results.forEach((item) => {
+            const row = document.createElement('article');
+            row.className = 'db-result';
+            const size = item.size ? `<span class="db-size-tag">${formatSize(item.size)}</span>` : '';
+            const description = item.has_description
+                ? `<button class="db-mini-button db-icon-only" type="button" onclick="showDescription('${escapeHtml(item.hash)}')" title="View description" aria-label="View description"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg></button>`
+                : '';
+
+            row.innerHTML = `
+                <div class="db-result-top">
+                    <div class="db-result-main">
+                        <h3 class="db-result-title">${escapeHtml(item.title)}</h3>
+                        <div class="db-result-meta">
+                            ${size}
+                            <span class="db-meta-dot"></span>
+                            <span class="db-hash">hash: ${escapeHtml(String(item.hash).substring(0, 16))}...</span>
+                        </div>
+                    </div>
+                    <div class="db-result-actions">
+                        <button class="db-mini-button db-accent" type="button" onclick="useTorrentResult('${escapeHtml(item.hash)}')">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                            Use magnet
+                        </button>
+                        <button class="db-mini-button db-icon-only" type="button" onclick="previewHash('${escapeHtml(item.hash)}', this)" title="Preview" aria-label="Preview">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                        ${description}
+                    </div>
+                </div>
+                <div class="db-inline-preview" id="preview-${escapeHtml(item.hash)}" style="display: none;"></div>
+            `;
+            dbResults.appendChild(row);
+        });
+    } catch (e) {
+        dbLoading.style.display = 'none';
+        window.notify('error', 'Search failed.');
+    }
+}
+
+function useTorrentResult(hash) {
+    const magnet = `magnet:?xt=urn:btih:${hash}`;
+    const input = document.getElementById('magnet-input');
+    input.value = input.value.trim() ? `${input.value.trim()}\n${magnet}` : magnet;
+    input.focus();
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.notify('success', 'Magnet added to the input.');
+}
+
+async function previewHash(hash, button) {
+    const area = document.getElementById(`preview-${hash}`);
+    if (!area) return;
+
+    if (area.style.display === 'block') {
+        area.style.display = 'none';
+        return;
+    }
+
+    area.style.display = 'block';
+    area.innerHTML = '<span class="db-spinner"></span> Checking Alldebrid status...';
+    button.disabled = true;
+
+    try {
+        const res = await fetch(DB_ROUTES.previewHash, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hash })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            area.innerHTML = `
+                <div class="db-preview-card">
+                    <div><strong>Filename:</strong> ${escapeHtml(data.filename)}</div>
+                    <div><strong>Size:</strong> ${formatSize(data.size)}</div>
+                    <div><strong>Status:</strong> <span class="db-status ${data.isReady ? 'ready' : 'pending'}">${escapeHtml(data.status)}</span></div>
+                </div>
+            `;
+        } else {
+            area.innerHTML = `<span style="color: var(--danger);">${escapeHtml(data.message || 'Preview failed.')}</span>`;
+        }
+    } catch (e) {
+        area.innerHTML = '<span style="color: var(--danger);">Preview failed.</span>';
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function showDescription(hash) {
+    const content = document.getElementById('description-content');
+    document.getElementById('description-modal-hash').textContent = hash;
+    content.textContent = 'Loading description...';
+    descriptionModal.classList.add('visible');
+
+    try {
+        const res = await fetch(DB_ROUTES.description, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hash })
+        });
+        const data = await res.json();
+        content.innerHTML = data.success && data.description
+            ? data.description
+            : '<span style="color: var(--danger);">Description unavailable.</span>';
+    } catch (e) {
+        content.innerHTML = '<span style="color: var(--danger);">Network error.</span>';
+    }
+}
+
+function closeDescriptionModal() {
+    descriptionModal.classList.remove('visible');
+    document.getElementById('description-content').innerHTML = '';
+}
+
+function renderRecentRow(item) {
+    const kind = fileKind(item.filename);
+    const host = item.host ? `<span class="db-host-badge">${escapeHtml(item.host)}</span>` : '';
+    const element = document.createElement('article');
+    element.className = 'db-recent-row';
+    element.innerHTML = `
+        <div class="db-file-icon ${kind}">${fileIcon(kind)}</div>
+        <div class="db-recent-meta">
+            <h3 class="db-recent-name" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</h3>
+            <div class="db-recent-sub">
+                ${host}
+                <span>${formatSize(item.size)}</span>
+                <span class="db-meta-dot"></span>
+                <span>${relativeDate(item.date)}</span>
+            </div>
+        </div>
+        <div class="db-recent-actions">
+            <button class="db-mini-button db-accent" type="button" data-recent-download data-link="${escapeHtml(item.link)}" data-filename="${escapeHtml(item.filename)}" data-date="${Number(item.date) || 0}">Download</button>
+            <button class="db-mini-button db-icon-only" type="button" data-recent-copy data-link="${escapeHtml(item.link)}" title="Copy link" aria-label="Copy link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+        </div>
+    `;
+    return element;
+}
+
+function setRecentEmpty(message) {
+    recentList.innerHTML = `
+        <div class="db-empty visible" style="display:block;">
+            <div class="db-empty-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+            </div>
+            <h3>No recent links</h3>
+            <p>${escapeHtml(message)}</p>
+        </div>
+    `;
+    recentCountPill.textContent = '0 / 0';
+    recentCount.textContent = 'No links loaded';
+    loadMoreButton.disabled = true;
+}
+
+async function loadRecentLinks(reset = false, refresh = false, limit = 5) {
+    if (recentLoading) return;
+    recentLoading = true;
+
+    if (reset) {
+        recentOffset = 0;
+        recentList.innerHTML = '';
+    }
+
+    loadMoreButton.disabled = true;
+
+    try {
+        const params = new URLSearchParams({
+            offset: String(recentOffset),
+            limit: String(limit)
+        });
+        if (refresh) params.set('refresh', '1');
+
+        const res = await fetch(`${DB_ROUTES.recent}?${params.toString()}`);
+        const data = await res.json();
+
+        if (!data.success) {
+            window.notify('error', data.message || 'Could not load recent links.');
+            if (reset) setRecentEmpty('Could not load recent links.');
+            return;
+        }
+
+        if (reset && data.links.length === 0) {
+            setRecentEmpty('Debrid a link or refresh the Alldebrid history.');
+            recentTotal = 0;
+            recentOffset = 0;
+            return;
+        }
+
+        data.links.forEach((item) => recentList.appendChild(renderRecentRow(item)));
+        recentOffset = data.offset + data.links.length;
+        recentTotal = data.total;
+
+        recentCountPill.textContent = `${Math.min(recentOffset, recentTotal)} / ${recentTotal}`;
+        recentCount.textContent = `${Math.min(recentOffset, recentTotal)} links shown of ${recentTotal}`;
+        loadMoreButton.disabled = !data.has_more;
+    } catch (e) {
+        console.error(e);
+        window.notify('error', 'Could not load recent links.');
+        if (reset) setRecentEmpty('Network error while loading recent links.');
+    } finally {
+        recentLoading = false;
+    }
+}
+
+function loadMoreRecent() {
+    loadRecentLinks(false, false, 10);
+}
+
+function refreshRecentLinks() {
+    window.notify('info', 'Refreshing recent links...');
+    loadRecentLinks(true, true, 5);
+}
+
+function openRecentDownload(date, link, filename) {
+    currentRecentLink = { link, filename, date };
+    downloadModalFile.textContent = filename;
+    downloadPath.value = DB_DEFAULT_PATH || '';
+    downloadRename.value = '';
+    downloadModal.classList.add('visible');
+    downloadPath.focus();
+}
+
+function closeDownloadModal() {
+    downloadModal.classList.remove('visible');
+    currentRecentLink = null;
+}
+
+async function confirmRecentDownload() {
+    if (!currentRecentLink) return;
+
+    const formData = new FormData();
+    formData.append('url', currentRecentLink.link);
+    formData.append('filename', currentRecentLink.filename);
+    formData.append('path', downloadPath.value.trim() || DB_DEFAULT_PATH || '');
+    formData.append('download_id', 'dl_' + Math.random().toString(36).slice(2, 11));
+    if (downloadRename.value.trim()) formData.append('override_filename', downloadRename.value.trim());
+
+    try {
+        const res = await fetch(DB_ROUTES.download, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+            window.notify('success', `Queued: ${downloadRename.value.trim() || currentRecentLink.filename}`);
+            closeDownloadModal();
+        } else {
+            window.notify('error', data.message || 'Could not add the link to the queue.');
+        }
+    } catch (e) {
+        window.notify('error', 'Network error while adding the link to the queue.');
+    }
+}
+
+function copyRecentLink(link) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => {
+            window.notify('success', 'Link copied.');
+        }).catch(() => {
+            window.notify('error', 'Could not copy the link.');
+        });
+    } else {
+        window.notify('error', 'Clipboard is not available.');
+    }
+}
+
+function parseInputLines(rawText) {
+    const magnets = [];
+    const directLinks = [];
+    let currentBuffer = '';
+
+    rawText.split('\n').forEach((line) => {
+        const value = line.trim();
+        if (!value) return;
+
+        const isNewLink = value.toLowerCase().startsWith('magnet:')
+            || value.toLowerCase().startsWith('http://')
+            || value.toLowerCase().startsWith('https://')
+            || value.toLowerCase().startsWith('www.');
+
+        if (isNewLink) {
+            if (currentBuffer) {
+                if (currentBuffer.toLowerCase().startsWith('magnet:')) magnets.push(currentBuffer);
+                else directLinks.push(currentBuffer);
+            }
+            currentBuffer = value;
+        } else if (currentBuffer) {
+            currentBuffer += value;
+        } else {
+            currentBuffer = value;
+        }
+    });
+
+    if (currentBuffer) {
+        if (currentBuffer.toLowerCase().startsWith('magnet:')) magnets.push(currentBuffer);
+        else directLinks.push(currentBuffer);
+    }
+
+    return { magnets, directLinks };
+}
+
+function appendMessage(message, color, targetId) {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const element = document.createElement('div');
+    element.style.cssText = `margin-bottom: 8px; font-size: 0.8rem; color: ${color}; word-break: break-all; padding: 4px; border-bottom: 1px solid rgba(255,255,255,0.05);`;
+    element.textContent = message;
+    target.appendChild(element);
+}
+
+function appendResults(links) {
+    const target = document.getElementById('debrid-results-list');
+    links.forEach((link) => {
+        const element = document.createElement('div');
+        element.className = 'db-debrid-result';
+        element.innerHTML = `
+            <div class="db-debrid-name">${escapeHtml(link.filename)}</div>
+            <div class="db-debrid-meta">
+                ${link.host ? `<span class="db-host-badge">${escapeHtml(link.host)}</span>` : ''}
+                ${link.filesize ? formatSize(link.filesize) : ''}
+            </div>
+            <a href="${escapeHtml(link.streaming || link.unlocked)}" target="_blank" rel="noopener" class="db-debrid-link">Download / Stream</a>
+        `;
+        target.appendChild(element);
+    });
+}
+
+async function previewLinks() {
+    const rawText = document.getElementById('magnet-input').value.trim();
+    if (!rawText) {
+        window.notify('warning', 'Paste at least one link first.');
+        return;
+    }
+
+    const { magnets, directLinks } = parseInputLines(rawText);
+    const area = document.getElementById('preview-results-area');
+    const list = document.getElementById('preview-results-list');
+    const loading = document.getElementById('preview-results-loading');
+    const button = document.getElementById('btn-link-preview');
+    const originalHtml = button.innerHTML;
+
+    area.style.display = 'block';
+    list.innerHTML = '';
+    loading.style.display = 'block';
+    button.disabled = true;
+    button.innerText = 'Loading...';
+
+    try {
+        for (const magnet of magnets) {
+            try {
+                const res = await fetch(DB_ROUTES.magnetInfo, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ magnet })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showLinkPreview(data.data, true);
+                } else {
+                    appendMessage(data.message || 'Magnet preview failed.', 'var(--danger)', 'preview-results-list');
+                }
+            } catch (e) {
+                appendMessage('Magnet preview network error.', 'var(--danger)', 'preview-results-list');
+            }
+        }
+
+        if (directLinks.length > 0) {
+            try {
+                const res = await fetch(DB_ROUTES.uploadDirect, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ links: directLinks })
+                });
+                const data = await res.json();
+                if (data.links) {
+                    data.links.forEach((link) => showLinkPreview({
+                        filename: link.filename,
+                        size: link.filesize,
+                        host: link.host,
+                        link: link.unlocked
+                    }, false));
+                }
+                if (data.errors) {
+                    data.errors.forEach((error) => appendMessage(`Link failed: ${error}`, 'var(--danger)', 'preview-results-list'));
+                }
+            } catch (e) {
+                appendMessage('Direct link preview network error.', 'var(--danger)', 'preview-results-list');
+            }
+        }
+    } finally {
+        loading.style.display = 'none';
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    }
+}
+
+function showLinkPreview(info, isMagnet) {
+    const list = document.getElementById('preview-results-list');
+    const element = document.createElement('div');
+    element.className = 'db-preview-result';
+
+    if (isMagnet && info.status === 'pending') {
+        element.innerHTML = '<strong>Processing...</strong> Alldebrid is still analyzing this torrent.';
+        list.appendChild(element);
+        return;
+    }
+
+    const size = info.total_size || info.size || 0;
+    let html = `
+        <div class="db-debrid-name">${escapeHtml(info.filename || 'Unknown file')}</div>
+        <div class="db-debrid-meta">${size ? formatSize(size) : ''}${info.host ? ` · ${escapeHtml(info.host)}` : ''}</div>
+    `;
+
+    if (isMagnet && info.files) {
+        html += '<div class="db-preview-files">';
+        info.files.slice(0, 20).forEach((file) => {
+            const name = file.filename || file.n || '';
+            const fileSize = file.size || file.s || 0;
+            const path = file.path ? `${file.path}/` : '';
+            html += `<div class="db-preview-file"><span>${escapeHtml(path + name)}</span><span>${formatSize(fileSize)}</span></div>`;
+        });
+        html += '</div>';
+    }
+
+    element.innerHTML = html;
+    list.appendChild(element);
+}
+
+async function submitLinks() {
+    const rawText = document.getElementById('magnet-input').value.trim();
+    const button = document.getElementById('btn-upload');
+    const originalHtml = button.innerHTML;
+
+    if (selectedFile) {
+        return submitTorrentFile();
+    }
+
+    if (!rawText) {
+        window.notify('warning', 'Enter at least one link or select a .torrent file.');
+        return;
+    }
+
+    const { magnets, directLinks } = parseInputLines(rawText);
+    const area = document.getElementById('debrid-results-area');
+    const list = document.getElementById('debrid-results-list');
+    const loading = document.getElementById('debrid-results-loading');
+
+    document.getElementById('preview-results-area').style.display = 'none';
+    area.style.display = 'block';
+    list.innerHTML = '';
+    loading.style.display = 'block';
+    button.disabled = true;
+    button.innerText = 'Debriding...';
+
+    let success = false;
+
+    try {
+        for (const magnet of magnets) {
+            const formData = new FormData();
+            formData.append('magnet', magnet);
+
+            try {
+                const res = await fetch(DB_ROUTES.uploadTorrent, { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    success = true;
+                    if (data.links && data.links.length > 0) appendResults(data.links);
+                    else appendMessage('Magnet added to Alldebrid (downloading...).', 'var(--text-secondary)', 'debrid-results-list');
+                } else {
+                    appendMessage(`Magnet failed: ${data.message || 'unknown error'}`, 'var(--danger)', 'debrid-results-list');
+                }
+            } catch (e) {
+                appendMessage('Magnet network error.', 'var(--danger)', 'debrid-results-list');
+            }
+        }
+
+        if (directLinks.length > 0) {
+            try {
+                const res = await fetch(DB_ROUTES.uploadDirect, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ links: directLinks })
+                });
+                const data = await res.json();
+                if (data.links && data.links.length > 0) {
+                    success = true;
+                    appendResults(data.links);
+                }
+                if (data.errors) {
+                    data.errors.forEach((error) => appendMessage(`Link failed: ${error}`, 'var(--danger)', 'debrid-results-list'));
+                }
+            } catch (e) {
+                appendMessage('Direct link network error.', 'var(--danger)', 'debrid-results-list');
+            }
+        }
+
+        if (success) {
+            appendMessage('Debrid completed. Recent links are being refreshed.', 'var(--success)', 'debrid-results-list');
+            await loadRecentLinks(true, true, 5);
+        }
+    } finally {
+        loading.style.display = 'none';
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    }
+}
+
+async function submitTorrentFile() {
+    const button = document.getElementById('btn-upload');
+    const area = document.getElementById('debrid-results-area');
+    const list = document.getElementById('debrid-results-list');
+    const loading = document.getElementById('debrid-results-loading');
+    const originalHtml = button.innerHTML;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    area.style.display = 'block';
+    list.innerHTML = '';
+    loading.style.display = 'block';
+    button.disabled = true;
+    button.innerText = 'Debriding...';
+
+    try {
+        const res = await fetch(DB_ROUTES.uploadTorrent, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+            if (data.links && data.links.length > 0) appendResults(data.links);
+            else appendMessage('Torrent added to Alldebrid (downloading...).', 'var(--text-secondary)', 'debrid-results-list');
+            selectedFile = null;
+            document.getElementById('drop-zone').innerHTML = dropZoneInitialHtml;
+            appendMessage('Debrid completed. Recent links are being refreshed.', 'var(--success)', 'debrid-results-list');
+            await loadRecentLinks(true, true, 5);
+        } else {
+            appendMessage(`Upload failed: ${data.message || 'unknown error'}`, 'var(--danger)', 'debrid-results-list');
+        }
+    } catch (e) {
+        appendMessage('Upload network error.', 'var(--danger)', 'debrid-results-list');
+    } finally {
+        loading.style.display = 'none';
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    }
+}
+
+function handleDragOver(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('dragover');
+}
+
+function handleDragLeave(event) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('dragover');
+}
+
+function handleDrop(event) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('dragover');
+    if (event.dataTransfer.files.length > 0) handleFiles(event.dataTransfer.files);
+}
+
+function handleFileSelect(input) {
+    if (input.files.length > 0) handleFiles(input.files);
+}
+
+function handleFiles(files) {
+    const file = files[0];
+    if (!file || !file.name.endsWith('.torrent')) {
+        window.notify('error', 'Please select a valid .torrent file.');
+        return;
+    }
+
+    selectedFile = file;
+    document.getElementById('drop-zone').innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        ${escapeHtml(file.name)} ready to upload
+        <input type="file" id="torrent-file-input" accept=".torrent" style="display: none" onchange="handleFileSelect(this)">
+    `;
+}
+
+async function purgeHistory() {
+    if (!confirm('Purge your AllDebrid history? This clears all recent links from the dashboard.')) return;
+
+    try {
+        const res = await fetch(DB_ROUTES.purge, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            window.notify('success', 'History purged successfully.');
+            await loadRecentLinks(true, true, 5);
+        } else {
+            window.notify('error', data.message || 'Could not purge history.');
+        }
+    } catch (e) {
+        window.notify('error', 'Network error while purging history.');
+    }
+}
+
+recentList.addEventListener('click', (event) => {
+    const downloadButton = event.target.closest('[data-recent-download]');
+    if (downloadButton) {
+        openRecentDownload(
+            Number(downloadButton.dataset.date) || 0,
+            downloadButton.dataset.link || '',
+            downloadButton.dataset.filename || ''
+        );
+        return;
+    }
+
+    const copyButton = event.target.closest('[data-recent-copy]');
+    if (copyButton) {
+        copyRecentLink(copyButton.dataset.link || '');
+    }
+});
+
+dbQueryInput.addEventListener('input', debouncedTorrentSearch);
+dbCategory.addEventListener('change', searchTorrentDb);
+downloadModal.addEventListener('click', (event) => {
+    if (event.target === downloadModal) closeDownloadModal();
+});
+descriptionModal.addEventListener('click', (event) => {
+    if (event.target === descriptionModal) closeDescriptionModal();
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeDownloadModal();
+        closeDescriptionModal();
+    }
+});
+
+loadTorrentDbCategories();
+loadRecentLinks(true, false, 5);
+</script>
+
+<style>
+    :root {
+        --text-muted: #64748b;
+        --border-strong: rgba(255, 255, 255, 0.14);
+    }
+
+    .db-tabs {
+        display: inline-flex;
+        gap: 0.3rem;
+        padding: 4px;
+        margin-bottom: 1.35rem;
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        background: rgba(15, 23, 42, 0.55);
+    }
+
+    .db-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.58rem 0.9rem;
+        border-radius: 9px;
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.82rem;
+        font-weight: 700;
+        transition: 0.18s ease;
+    }
+
+    .db-tab:hover {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .db-tab.active {
+        color: var(--text-primary);
+        background: rgba(56, 189, 248, 0.15);
+        box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.25);
+    }
+
+    .db-tab-badge {
+        padding: 0.12rem 0.38rem;
+        border-radius: 999px;
+        color: #fbbf24;
+        background: rgba(245, 158, 11, 0.12);
+        font-size: 0.6rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .db-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.85fr);
+        gap: 1.25rem;
+        align-items: start;
+    }
+
+    .db-side {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        min-width: 0;
+    }
+
+    .db-card {
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .db-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1.25rem;
+        padding: 1.35rem 1.4rem 1.1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    }
+
+    .db-eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.45rem;
+        color: var(--accent);
+        font-size: 0.67rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+    }
+
+    .db-card-header h2 {
+        margin: 0;
+        font-size: 1.12rem;
+        letter-spacing: -0.025em;
+    }
+
+    .db-card-header p {
+        margin: 0.42rem 0 0;
+        color: var(--text-secondary);
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
+
+    .db-count-pill {
+        padding: 0.42rem 0.68rem;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--text-secondary);
+        background: rgba(255, 255, 255, 0.035);
+        font-size: 0.71rem;
+        font-weight: 650;
+        white-space: nowrap;
+    }
+
+    .db-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.9rem 1.1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+        background: rgba(15, 23, 42, 0.2);
+    }
+
+    .db-category {
+        height: 40px;
+        max-width: 190px;
+        padding: 0 2rem 0 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    .db-search-field {
+        position: relative;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .db-search-field > svg {
+        position: absolute;
+        top: 50%;
+        left: 0.85rem;
+        color: var(--text-muted);
+        transform: translateY(-50%);
+        pointer-events: none;
+    }
+
+    .db-search-field input {
+        height: 40px;
+        padding: 0 0.9rem 0 2.4rem;
+        margin: 0;
+        font-size: 0.84rem;
+    }
+
+    .db-search-loading {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 1rem 1.1rem;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+    }
+
+    .db-spinner {
+        width: 14px;
+        height: 14px;
+        display: inline-block;
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        border-left-color: var(--accent);
+        border-radius: 50%;
+        animation: db-spin 0.8s linear infinite;
+        vertical-align: middle;
+    }
+
+    @keyframes db-spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .db-results {
+        padding: 0.55rem;
+        max-height: 610px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+    }
+
+    .db-results::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .db-results::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.28);
+        background-clip: padding-box;
+    }
+
+    .db-result {
+        padding: 0.9rem 0.85rem;
+        border: 1px solid transparent;
+        border-radius: 13px;
+        transition: 0.18s ease;
+    }
+
+    .db-result + .db-result {
+        margin-top: 0.2rem;
+    }
+
+    .db-result:hover {
+        border-color: rgba(255, 255, 255, 0.065);
+        background: rgba(255, 255, 255, 0.035);
+    }
+
+    .db-result-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .db-result-main {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .db-result-title {
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 650;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+    }
+
+    .db-result-meta {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.38rem;
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+    }
+
+    .db-meta-dot {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: var(--text-muted);
+    }
+
+    .db-size-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.18rem 0.42rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        background: rgba(255, 255, 255, 0.04);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.68rem;
+        white-space: nowrap;
+    }
+
+    .db-hash {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: var(--text-muted);
+    }
+
+    .db-result-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex: 0 0 auto;
+    }
+
+    .db-mini-button {
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.38rem;
+        padding: 0 0.62rem;
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        color: var(--text-secondary);
+        background: rgba(255, 255, 255, 0.035);
+        font-size: 0.7rem;
+        font-weight: 700;
+        white-space: nowrap;
+        transition: 0.18s ease;
+    }
+
+    .db-mini-button:hover {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .db-mini-button.db-accent {
+        border-color: rgba(56, 189, 248, 0.3);
+        color: var(--accent);
+        background: rgba(56, 189, 248, 0.08);
+    }
+
+    .db-mini-button.db-accent:hover {
+        border-color: var(--accent);
+        color: #07111f;
+        background: var(--accent);
+    }
+
+    .db-mini-button.db-icon-only {
+        width: 32px;
+        padding: 0;
+    }
+
+    .db-inline-preview {
+        margin-top: 0.65rem;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        color: var(--text-secondary);
+        background: rgba(15, 23, 42, 0.45);
+        font-size: 0.75rem;
+    }
+
+    .db-preview-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .db-status {
+        padding: 0.1rem 0.35rem;
+        border-radius: 5px;
+        font-size: 0.68rem;
+        font-weight: 700;
+    }
+
+    .db-status.ready {
+        color: #86efac;
+        background: rgba(34, 197, 94, 0.1);
+    }
+
+    .db-status.pending {
+        color: #fbbf24;
+        background: rgba(245, 158, 11, 0.1);
+    }
+
+    .db-empty {
+        padding: 3rem 1.5rem;
+        text-align: center;
+    }
+
+    .db-empty-icon {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.035);
+    }
+
+    .db-empty h3 {
+        margin: 0 0 0.35rem;
+        font-size: 0.95rem;
+    }
+
+    .db-empty p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 0.82rem;
+    }
+
+    .db-card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.85rem 1.1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        color: var(--text-muted);
+        background: rgba(15, 23, 42, 0.26);
+        font-size: 0.71rem;
+    }
+
+    .db-secure-dot {
+        width: 6px;
+        height: 6px;
+        display: inline-block;
+        border-radius: 50%;
+        background: var(--success);
+        margin-right: 0.25rem;
+    }
+
+    .db-add-card {
+        padding: 1.25rem;
+    }
+
+    .db-add-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.9rem;
+    }
+
+    .db-add-header h2 {
+        margin: 0;
+        font-size: 1.02rem;
+    }
+
+    .db-add-header p {
+        margin: 0.3rem 0 0;
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        line-height: 1.5;
+    }
+
+    .db-textarea {
+        width: 100%;
+        min-height: 92px;
+        padding: 0.8rem 0.9rem;
+        resize: vertical;
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.76rem;
+        line-height: 1.55;
+    }
+
+    .db-drop-zone {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        margin-top: 0.6rem;
+        padding: 0.7rem;
+        border: 1px dashed rgba(255, 255, 255, 0.15);
+        border-radius: 10px;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.02);
+        font-size: 0.72rem;
+        text-align: center;
+        transition: 0.18s ease;
+        cursor: pointer;
+    }
+
+    .db-drop-zone:hover,
+    .db-drop-zone.dragover {
+        border-color: rgba(56, 189, 248, 0.4);
+        color: var(--text-secondary);
+        background: rgba(56, 189, 248, 0.045);
+    }
+
+    .db-add-actions {
+        display: flex;
+        gap: 0.55rem;
+        margin-top: 0.75rem;
+    }
+
+    .db-hint {
+        margin: 0.6rem 0 0;
+        color: var(--text-muted);
+        font-size: 0.68rem;
+        line-height: 1.5;
+    }
+
+    .db-preview-area {
+        margin-top: 0.8rem;
+        padding: 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.4);
+    }
+
+    .db-preview-loading {
+        color: var(--text-secondary);
+        font-size: 0.76rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .db-preview-result,
+    .db-debrid-result {
+        padding: 0.55rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+        font-size: 0.76rem;
+    }
+
+    .db-preview-result:last-child,
+    .db-debrid-result:last-child {
+        border-bottom: 0;
+    }
+
+    .db-debrid-name {
+        color: var(--text-primary);
+        font-weight: 650;
+        overflow-wrap: anywhere;
+    }
+
+    .db-debrid-meta {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.2rem;
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+    }
+
+    .db-host-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.12rem 0.35rem;
+        border-radius: 5px;
+        color: var(--text-secondary);
+        background: rgba(255, 255, 255, 0.055);
+        font-size: 0.6rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .db-debrid-link {
+        display: inline-block;
+        margin-top: 0.3rem;
+        color: var(--success);
+        font-size: 0.72rem;
+        text-decoration: none;
+    }
+
+    .db-debrid-link:hover {
+        text-decoration: underline;
+    }
+
+    .db-preview-files {
+        max-height: 150px;
+        overflow-y: auto;
+        margin-top: 0.4rem;
+        padding: 0.4rem;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.2);
+        font-size: 0.68rem;
+    }
+
+    .db-preview-file {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.18rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .db-preview-file:last-child {
+        border-bottom: 0;
+    }
+
+    .db-preview-file span:first-child {
+        overflow-wrap: anywhere;
+    }
+
+    .db-recent-list {
+        padding: 0.5rem;
+        max-height: 430px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+    }
+
+    .db-recent-list::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .db-recent-list::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.28);
+        background-clip: padding-box;
+    }
+
+    .db-recent-row {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.68rem 0.6rem;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        transition: 0.18s ease;
+    }
+
+    .db-recent-row + .db-recent-row {
+        margin-top: 0.15rem;
+    }
+
+    .db-recent-row:hover {
+        border-color: rgba(255, 255, 255, 0.06);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .db-file-icon {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        color: var(--accent);
+        background: rgba(56, 189, 248, 0.07);
+    }
+
+    .db-file-icon.audio {
+        color: #c4b5fd;
+        background: rgba(168, 85, 247, 0.08);
+    }
+
+    .db-file-icon.archive {
+        color: #fbbf24;
+        background: rgba(245, 158, 11, 0.08);
+    }
+
+    .db-recent-meta {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .db-recent-name {
+        margin: 0;
+        overflow: hidden;
+        color: var(--text-primary);
+        font-size: 0.78rem;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .db-recent-sub {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.22rem;
+        color: var(--text-secondary);
+        font-size: 0.66rem;
+    }
+
+    .db-recent-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        flex: 0 0 auto;
+    }
+
+    .db-recent-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.8rem;
+        padding: 0.8rem 1.1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(15, 23, 42, 0.26);
+    }
+
+    .db-load-more {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.42rem;
+        height: 34px;
+        padding: 0 0.72rem;
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        border-radius: 8px;
+        color: var(--accent);
+        background: rgba(56, 189, 248, 0.07);
+        font-size: 0.71rem;
+        font-weight: 750;
+        transition: 0.18s ease;
+    }
+
+    .db-load-more:hover:not(:disabled) {
+        border-color: var(--accent);
+        color: #07111f;
+        background: var(--accent);
+    }
+
+    .db-load-more:disabled {
+        cursor: default;
+        border-color: var(--border);
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .db-recent-count {
+        color: var(--text-muted);
+        font-size: 0.68rem;
+        white-space: nowrap;
+    }
+
+    .db-skeleton-row {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.7rem 0.6rem;
+    }
+
+    .db-skeleton-lines {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    .db-skeleton {
+        position: relative;
+        overflow: hidden;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.055);
+    }
+
+    .db-skeleton::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+        animation: db-shimmer 1.25s infinite;
+    }
+
+    .db-skeleton-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
+    }
+
+    .db-skeleton-line {
+        height: 9px;
+        width: 78%;
+    }
+
+    .db-skeleton-line.short {
+        width: 45%;
+    }
+
+    @keyframes db-shimmer {
+        to { transform: translateX(100%); }
+    }
+
+    .db-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: rgba(2, 6, 23, 0.78);
+        backdrop-filter: blur(8px);
+    }
+
+    .db-modal-backdrop.visible {
+        display: flex;
+    }
+
+    .db-modal {
+        width: min(560px, 100%);
+        overflow: hidden;
+        border: 1px solid var(--border-strong);
+        border-radius: 18px;
+        background: var(--bg-secondary);
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+    }
+
+    .db-modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.25rem 1.35rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .db-modal-header h2 {
+        margin: 0;
+        font-size: 1.05rem;
+    }
+
+    .db-modal-header p {
+        margin: 0.35rem 0 0;
+        max-width: 420px;
+        overflow: hidden;
+        color: var(--text-secondary);
+        font-size: 0.76rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .db-modal-close {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        color: var(--text-secondary);
+        background: transparent;
+    }
+
+    .db-modal-close:hover {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    .db-modal-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        padding: 1.25rem 1.35rem;
+    }
+
+    .db-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.38rem;
+    }
+
+    .db-field label {
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+        font-weight: 650;
+    }
+
+    .db-field input {
+        height: 40px;
+        padding: 0 0.8rem;
+        margin: 0;
+        font-size: 0.8rem;
+    }
+
+    .db-modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.55rem;
+        padding: 1rem 1.35rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .db-description-content {
+        max-height: 60vh;
+        overflow-y: auto;
+        padding: 1.25rem 1.35rem;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        line-height: 1.65;
+    }
+
+    @media (max-width: 1020px) {
+        .db-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .db-side {
+            display: grid;
+            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+            align-items: start;
+        }
+    }
+
+    @media (max-width: 860px) {
+        .db-side {
+            grid-template-columns: 1fr;
+        }
+
+        .db-toolbar {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .db-category {
+            max-width: none;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .db-tabs {
+            display: flex;
+            width: 100%;
+        }
+
+        .db-tab {
+            flex: 1 1 auto;
+            justify-content: center;
+        }
+
+        .db-result-top {
+            flex-direction: column;
+        }
+
+        .db-result-actions {
+            width: 100%;
+        }
+
+        .db-result-actions .db-mini-button.db-accent {
+            flex: 1 1 auto;
+        }
+
+        .db-recent-row {
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .db-recent-actions {
+            width: 100%;
+            justify-content: flex-end;
+        }
+
+        .db-recent-footer,
+        .db-add-actions,
+        .db-modal-footer {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .db-load-more {
+            width: 100%;
+        }
+
+        .db-recent-count {
+            text-align: center;
+        }
+
+        .db-card-footer {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.35rem;
+        }
+
+        .db-modal-backdrop {
+            padding: 0.8rem;
+        }
+    }
+</style>
+{% endblock %}

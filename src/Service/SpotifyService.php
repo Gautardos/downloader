@@ -9,6 +9,7 @@ class SpotifyService
     private ?string $accessToken = null;
     private ?int $tokenExpiresAt = null;
     private array $logs = [];
+    private ?string $lastError = null;
 
     public function __construct(
         private JsonStorage $storage
@@ -23,6 +24,11 @@ class SpotifyService
     public function getLogs(): array
     {
         return $this->logs;
+    }
+
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
     }
 
     public function testCredentials(): bool
@@ -105,7 +111,157 @@ class SpotifyService
         return null;
     }
 
-    private function parseUrl(string $url): ?array
+    public function search(string $query, string $type = 'all', int $limit = 15): ?array
+    {
+        $this->logs = [];
+        $this->lastError = null;
+        $query = trim($query);
+        if ($query === '') {
+            $this->lastError = 'Empty search query.';
+            return null;
+        }
+
+        $validTypes = ['track', 'album', 'playlist'];
+        $types = in_array($type, $validTypes, true) ? [$type] : $validTypes;
+        $limit = max(1, min($limit, 50));
+
+        $token = $this->getAccessToken();
+        if (!$token) {
+            $this->lastError = 'Failed to get Spotify access token.';
+            return null;
+        }
+
+        $this->addLog('Searching Spotify for: ' . $query);
+        $client = new Client(['headers' => ['Authorization' => 'Bearer ' . $token]]);
+
+        try {
+            $response = $client->get('https://api.spotify.com/v1/search', [
+                'query' => [
+                    'q' => $query,
+                    'type' => implode(',', $types),
+                    'limit' => $limit,
+                ],
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+            if (!is_array($data)) {
+                throw new \Exception('Invalid Spotify search response.');
+            }
+
+            return $this->mapSearchResults($data, $types);
+        } catch (\Exception $e) {
+            $this->lastError = $e->getMessage();
+            $this->addLog('Search failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function mapSearchResults(array $data, array $types): array
+    {
+        $results = [];
+
+        foreach ($types as $type) {
+            $items = $data[$type . 's']['items'] ?? [];
+            if (!is_array($items)) {
+                continue;
+            }
+
+            foreach ($items as $item) {
+                if (!is_array($item) || empty($item['id'])) {
+                    continue;
+                }
+
+                $mapped = $this->mapSearchItem($type, $item);
+                if ($mapped !== null) {
+                    $results[] = $mapped;
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    private function mapSearchItem(string $type, array $item): ?array
+    {
+        $id = (string) $item['id'];
+        $name = (string) ($item['name'] ?? '');
+        $url = (string) ($item['external_urls']['spotify'] ?? '');
+
+        if ($type === 'track') {
+            $artists = $this->joinArtists($item['artists'] ?? []);
+            $album = $item['album'] ?? [];
+
+            return [
+                'id' => $id,
+                'type' => 'track',
+                'badge' => 'Titre',
+                'name' => $name,
+                'subtitle' => $artists,
+                'meta' => (string) ($album['name'] ?? ''),
+                'image' => $this->getSearchImage($item),
+                'url' => $url !== '' ? $url : 'https://open.spotify.com/track/' . $id,
+            ];
+        }
+
+        if ($type === 'album') {
+            $artists = $this->joinArtists($item['artists'] ?? []);
+            $trackCount = (int) ($item['total_tracks'] ?? 0);
+
+            return [
+                'id' => $id,
+                'type' => 'album',
+                'badge' => 'Album',
+                'name' => $name,
+                'subtitle' => $artists,
+                'meta' => $trackCount . ' titre' . ($trackCount > 1 ? 's' : ''),
+                'image' => $this->getSearchImage($item),
+                'url' => $url !== '' ? $url : 'https://open.spotify.com/album/' . $id,
+            ];
+        }
+
+        if ($type === 'playlist') {
+            $owner = $item['owner'] ?? [];
+            $ownerName = (string) ($owner['display_name'] ?? $owner['id'] ?? '');
+            $trackCount = (int) ($item['tracks']['total'] ?? 0);
+
+            return [
+                'id' => $id,
+                'type' => 'playlist',
+                'badge' => 'Playlist',
+                'name' => $name,
+                'subtitle' => $ownerName !== '' ? 'Par ' . $ownerName : '',
+                'meta' => $trackCount . ' titre' . ($trackCount > 1 ? 's' : ''),
+                'image' => $this->getSearchImage($item),
+                'url' => $url !== '' ? $url : 'https://open.spotify.com/playlist/' . $id,
+            ];
+        }
+
+        return null;
+    }
+
+    private function joinArtists(array $artists): string
+    {
+        $names = [];
+        foreach ($artists as $artist) {
+            if (is_array($artist) && !empty($artist['name'])) {
+                $names[] = (string) $artist['name'];
+            }
+        }
+        return implode(', ', $names);
+    }
+
+    private function getSearchImage(array $item): ?string
+    {
+        if (!empty($item['images'][0]['url'])) {
+            return (string) $item['images'][0]['url'];
+        }
+        if (!empty($item['album']['images'][0]['url'])) {
+            return (string) $item['album']['images'][0]['url'];
+        }
+        return null;
+    }
+
+    public function parseUrl(string $url): ?array
     {
         // Handle common Spotify URL formats, including those with query parameters (?si=...)
         // and various locale segments (e.g. /intl-fr/ or /fr-fr/)

@@ -94,11 +94,27 @@ class QueueManager
 
     public function pop(): ?array
     {
-        $queue = $this->getQueue();
-        if (empty($queue))
+        $queue = $this->storage->get(self::QUEUE_KEY, []);
+        if (empty($queue)) {
             return null;
+        }
 
-        $item = array_shift($queue);
+        $now = time();
+        $selectedIndex = null;
+        foreach ($queue as $index => $candidate) {
+            $notBefore = (int) ($candidate['not_before'] ?? 0);
+            if ($notBefore <= $now) {
+                $selectedIndex = $index;
+                break;
+            }
+        }
+
+        if ($selectedIndex === null) {
+            return null;
+        }
+
+        $item = $queue[$selectedIndex];
+        array_splice($queue, $selectedIndex, 1);
         $this->storage->set(self::QUEUE_KEY, $queue);
         return $item;
     }

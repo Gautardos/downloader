@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Downloader — Maquette playlists Spotify</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-elevated: #243247;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --music: #a855f7;
+            --music-soft: rgba(168, 85, 247, 0.14);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: rgba(255, 255, 255, 0.08);
+            --border-strong: rgba(255, 255, 255, 0.14);
+            --glass: rgba(30, 41, 59, 0.72);
+            --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            overflow-x: hidden;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text-primary);
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background:
+                radial-gradient(900px 520px at 12% -8%, rgba(56, 189, 248, 0.13), transparent 62%),
+                radial-gradient(760px 460px at 96% 4%, rgba(168, 85, 247, 0.13), transparent 62%),
+                var(--bg-primary);
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        svg {
+            display: block;
+        }
+
+        .container {
+            width: min(1080px, calc(100% - 2rem));
+            margin: 0 auto;
+            padding: 2rem 0 4rem;
+        }
+
+        /* ─── Navigation ─────────────────────────────────────────────── */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(14px);
+        }
+
+        nav .nav-inner {
+            width: min(1080px, calc(100% - 2rem));
+            height: 64px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 750;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--music));
+            color: #07111f;
+            box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .nav-links a {
+            padding: 0.55rem 0.8rem;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            font-weight: 550;
+            transition: 0.18s ease;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-links a.active {
+            color: var(--text-primary);
+            background: rgba(56, 189, 248, 0.12);
+            box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.22);
+        }
+
+        .nav-menu {
+            display: none;
+            width: 38px;
+            height: 38px;
+            place-items: center;
+            border: 1px solid var(--border-strong);
+            border-radius: 10px;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        /* ─── Header ─────────────────────────────────────────────────── */
+        .page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1.5rem;
+            margin: 3rem 0 2rem;
+        }
+
+        .page-heading {
+            display: flex;
+            align-items: center;
+            gap: 1.1rem;
+        }
+
+        .page-icon {
+            width: 62px;
+            height: 62px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            border-radius: 18px;
+            color: #fff;
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.95), rgba(56, 189, 248, 0.9));
+            box-shadow: 0 16px 40px rgba(168, 85, 247, 0.28);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(1.7rem, 4vw, 2.35rem);
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+        }
+
+        .page-subtitle {
+            margin: 0.55rem 0 0;
+            max-width: 580px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 0.8rem;
+            border: 1px solid rgba(34, 197, 94, 0.24);
+            border-radius: 999px;
+            color: #86efac;
+            background: rgba(34, 197, 94, 0.08);
+            font-size: 0.75rem;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.13);
+        }
+
+        /* ─── Cards ──────────────────────────────────────────────────── */
+        .card {
+            position: relative;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: var(--glass);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(12px);
+        }
+
+        .playlist-card {
+            overflow: hidden;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1.25rem;
+            padding: 1.5rem 1.5rem 1.2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+        }
+
+        .eyebrow {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            margin-bottom: 0.45rem;
+            color: var(--music);
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .card-header h2 {
+            margin: 0;
+            font-size: 1.28rem;
+            letter-spacing: -0.025em;
+        }
+
+        .card-header p {
+            margin: 0.45rem 0 0;
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+            line-height: 1.5;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            flex: 0 0 auto;
+        }
+
+        .count-pill {
+            padding: 0.42rem 0.68rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.035);
+            font-size: 0.72rem;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+
+        .icon-button {
+            width: 38px;
+            height: 38px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--border-strong);
+            border-radius: 11px;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.045);
+            transition: 0.18s ease;
+        }
+
+        .icon-button:hover {
+            border-color: rgba(56, 189, 248, 0.38);
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent);
+        }
+
+        .icon-button.is-loading svg {
+            animation: spin 0.8s linear infinite;
+        }
+
+        /* ─── Toolbar ────────────────────────────────────────────────── */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+            background: rgba(15, 23, 42, 0.2);
+        }
+
+        .search-field {
+            position: relative;
+            flex: 1 1 260px;
+            max-width: 380px;
+        }
+
+        .search-field svg {
+            position: absolute;
+            top: 50%;
+            left: 0.85rem;
+            color: var(--text-muted);
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+
+        .search-field input {
+            width: 100%;
+            height: 40px;
+            padding: 0 0.9rem 0 2.4rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            outline: none;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            font-size: 0.86rem;
+            transition: 0.18s ease;
+        }
+
+        .search-field input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-field input:focus {
+            border-color: rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+
+        .filter-pills {
+            display: flex;
+            gap: 0.35rem;
+            padding: 3px;
+            border: 1px solid var(--border);
+            border-radius: 11px;
+            background: rgba(15, 23, 42, 0.45);
+        }
+
+        .filter-pills button {
+            padding: 0.42rem 0.72rem;
+            border: 0;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            background: transparent;
+            font-size: 0.76rem;
+            font-weight: 650;
+            transition: 0.18s ease;
+        }
+
+        .filter-pills button:hover {
+            color: var(--text-primary);
+        }
+
+        .filter-pills button.active {
+            color: var(--text-primary);
+            background: rgba(56, 189, 248, 0.15);
+            box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.25);
+        }
+
+        /* ─── Playlist rows ──────────────────────────────────────────── */
+        .playlist-list {
+            max-height: 520px;
+            overflow-y: auto;
+            padding: 0.55rem;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+        }
+
+        .playlist-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .playlist-list::-webkit-scrollbar-thumb {
+            border: 2px solid transparent;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.28);
+            background-clip: padding-box;
+        }
+
+        .playlist-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem 0.8rem;
+            border: 1px solid transparent;
+            border-radius: 13px;
+            transition: 0.18s ease;
+        }
+
+        .playlist-row + .playlist-row {
+            margin-top: 0.2rem;
+        }
+
+        .playlist-row:hover {
+            border-color: rgba(255, 255, 255, 0.065);
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .cover {
+            position: relative;
+            width: 52px;
+            height: 52px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            overflow: hidden;
+            border-radius: 11px;
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 850;
+            letter-spacing: -0.04em;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+        }
+
+        .cover::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent 55%);
+            pointer-events: none;
+        }
+
+        .cover-a { background: linear-gradient(135deg, #7c3aed, #2563eb); }
+        .cover-b { background: linear-gradient(135deg, #db2777, #f59e0b); }
+        .cover-c { background: linear-gradient(135deg, #0891b2, #16a34a); }
+        .cover-d { background: linear-gradient(135deg, #4338ca, #a855f7); }
+        .cover-e { background: linear-gradient(135deg, #be123c, #fb923c); }
+        .cover-f { background: linear-gradient(135deg, #0f766e, #38bdf8); }
+        .cover-g { background: linear-gradient(135deg, #a16207, #84cc16); }
+        .cover-h { background: linear-gradient(135deg, #475569, #94a3b8); }
+
+        .playlist-meta {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .name-line {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-width: 0;
+        }
+
+        .name-line h3 {
+            margin: 0;
+            overflow: hidden;
+            color: var(--text-primary);
+            font-size: 0.94rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .subline {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.24rem;
+            color: var(--text-secondary);
+            font-size: 0.76rem;
+        }
+
+        .subline .dot {
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .visibility-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.28rem;
+            padding: 0.2rem 0.42rem;
+            border-radius: 999px;
+            font-size: 0.62rem;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        .visibility-badge.private {
+            color: #c4b5fd;
+            background: rgba(168, 85, 247, 0.14);
+            box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.22);
+        }
+
+        .visibility-badge.public {
+            color: #86efac;
+            background: rgba(34, 197, 94, 0.1);
+            box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.18);
+        }
+
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.48rem;
+            height: 38px;
+            padding: 0 0.85rem;
+            flex: 0 0 auto;
+            border: 1px solid rgba(56, 189, 248, 0.32);
+            border-radius: 10px;
+            color: var(--accent);
+            background: rgba(56, 189, 248, 0.08);
+            font-size: 0.78rem;
+            font-weight: 750;
+            white-space: nowrap;
+            transition: 0.18s ease;
+        }
+
+        .download-btn:hover {
+            border-color: var(--accent);
+            color: #07111f;
+            background: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        .download-btn:active {
+            transform: translateY(0);
+        }
+
+        .download-btn:disabled {
+            cursor: wait;
+            opacity: 0.72;
+            transform: none;
+        }
+
+        .download-btn.is-done {
+            border-color: rgba(34, 197, 94, 0.45);
+            color: #86efac;
+            background: rgba(34, 197, 94, 0.1);
+        }
+
+        .download-btn.is-done:hover {
+            color: #07111f;
+            background: var(--success);
+        }
+
+        .empty-state {
+            display: none;
+            padding: 3rem 1.5rem;
+            text-align: center;
+        }
+
+        .empty-state.visible {
+            display: block;
+        }
+
+        .empty-icon {
+            width: 48px;
+            height: 48px;
+            display: grid;
+            place-items: center;
+            margin: 0 auto 0.85rem;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .empty-state h3 {
+            margin: 0 0 0.35rem;
+            font-size: 0.95rem;
+        }
+
+        .empty-state p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.9rem 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+            background: rgba(15, 23, 42, 0.26);
+            font-size: 0.72rem;
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .secure-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        /* ─── Manual add ─────────────────────────────────────────────── */
+        .manual-card {
+            margin-top: 1.35rem;
+            padding: 1.5rem;
+        }
+
+        .manual-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .manual-header h2 {
+            margin: 0;
+            font-size: 1.02rem;
+        }
+
+        .manual-header p {
+            margin: 0.3rem 0 0;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .manual-textarea {
+            width: 100%;
+            min-height: 118px;
+            padding: 0.9rem 1rem;
+            resize: vertical;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            outline: none;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.82rem;
+            line-height: 1.6;
+            transition: 0.18s ease;
+        }
+
+        .manual-textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .manual-textarea:focus {
+            border-color: rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+
+        .manual-actions {
+            display: flex;
+            gap: 0.65rem;
+            margin-top: 0.85rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            height: 42px;
+            padding: 0 1.1rem;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            font-size: 0.84rem;
+            font-weight: 700;
+            transition: 0.18s ease;
+        }
+
+        .btn-primary {
+            flex: 1 1 auto;
+            color: #07111f;
+            background: linear-gradient(135deg, var(--accent), #60a5fa);
+            box-shadow: 0 10px 26px rgba(56, 189, 248, 0.18);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--accent-hover), #3b82f6);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            flex: 0 0 auto;
+            border-color: var(--border-strong);
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        /* ─── Info box ───────────────────────────────────────────────── */
+        .info-box {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.9rem;
+            margin-top: 1.35rem;
+            padding: 1.1rem 1.2rem;
+            border: 1px solid rgba(56, 189, 248, 0.18);
+            border-radius: 14px;
+            background: rgba(56, 189, 248, 0.045);
+        }
+
+        .info-icon {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            border-radius: 9px;
+            color: var(--accent);
+            background: rgba(56, 189, 248, 0.1);
+        }
+
+        .info-box h3 {
+            margin: 0 0 0.25rem;
+            font-size: 0.86rem;
+        }
+
+        .info-box p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            line-height: 1.6;
+        }
+
+        .info-box a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .info-box a:hover {
+            text-decoration: underline;
+        }
+
+        /* ─── Toast ──────────────────────────────────────────────────── */
+        .toast-container {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 1.25rem;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            pointer-events: none;
+        }
+
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            min-width: 280px;
+            max-width: 420px;
+            padding: 0.85rem 1rem;
+            border: 1px solid var(--border-strong);
+            border-left: 3px solid var(--accent);
+            border-radius: 11px;
+            color: var(--text-primary);
+            background: rgba(30, 41, 59, 0.97);
+            box-shadow: 0 16px 42px rgba(0, 0, 0, 0.45);
+            font-size: 0.82rem;
+            animation: toast-in 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: auto;
+        }
+
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
+
+        .toast.leaving {
+            animation: toast-out 0.2s ease forwards;
+        }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(12px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes toast-out {
+            to { opacity: 0; transform: translateY(8px) scale(0.98); }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ─── Responsive ─────────────────────────────────────────────── */
+        @media (max-width: 860px) {
+            .nav-links {
+                display: none;
+            }
+
+            .nav-menu {
+                display: grid;
+            }
+
+            .page-header {
+                align-items: flex-start;
+                flex-direction: column;
+                margin-top: 2rem;
+            }
+
+            .card-header {
+                flex-direction: column;
+            }
+
+            .toolbar {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .search-field {
+                flex: 0 0 auto;
+                max-width: none;
+            }
+
+            .filter-pills {
+                align-self: flex-start;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                width: min(100% - 1.2rem, 1080px);
+                padding-top: 1.25rem;
+            }
+
+            nav .nav-inner {
+                width: calc(100% - 1.2rem);
+            }
+
+            .page-heading {
+                gap: 0.85rem;
+            }
+
+            .page-icon {
+                width: 52px;
+                height: 52px;
+                border-radius: 15px;
+            }
+
+            .header-badge {
+                display: none;
+            }
+
+            .playlist-row {
+                align-items: flex-start;
+                flex-wrap: wrap;
+                gap: 0.75rem;
+            }
+
+            .cover {
+                width: 46px;
+                height: 46px;
+                border-radius: 10px;
+            }
+
+            .download-btn {
+                width: 100%;
+                margin-top: 0.2rem;
+            }
+
+            .card-footer,
+            .manual-actions {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .card-footer {
+                gap: 0.35rem;
+            }
+
+            .btn-secondary {
+                flex: 1 1 auto;
+            }
+
+            .toast-container {
+                right: 0.7rem;
+                bottom: 0.7rem;
+                left: 0.7rem;
+            }
+
+            .toast {
+                min-width: 0;
+                max-width: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a class="brand" href="#">
+                <span class="brand-mark">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 3v12.5a3.5 3.5 0 1 1-3.5-3.5H12"/>
+                        <path d="M12 3l7 4v9"/>
+                    </svg>
+                </span>
+                <span>Downloader</span>
+            </a>
+
+            <div class="nav-links">
+                <a href="#">Debrid</a>
+                <a href="#">Media</a>
+                <a href="#" class="active">Music</a>
+                <a href="#">Music Downloads</a>
+                <a href="#">Queue</a>
+                <a href="#">History</a>
+                <a href="#">Settings</a>
+            </div>
+
+            <button class="nav-menu" type="button" aria-label="Ouvrir le menu">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <main class="container">
+        <header class="page-header">
+            <div class="page-heading">
+                <div class="page-icon">
+                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M9 18V5l12-2v13"/>
+                        <circle cx="6" cy="18" r="3"/>
+                        <circle cx="18" cy="16" r="3"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>Music Downloader</h1>
+                    <p class="page-subtitle">Sélectionnez une de vos playlists Spotify ou collez vos liens pour les ajouter à la file de téléchargement.</p>
+                </div>
+            </div>
+            <span class="header-badge">
+                <span class="pulse-dot"></span>
+                Session Zotify active
+            </span>
+        </header>
+
+        <section class="card playlist-card" aria-labelledby="playlists-title">
+            <div class="card-header">
+                <div>
+                    <div class="eyebrow">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                        Connecté via votre compte
+                    </div>
+                    <h2 id="playlists-title">Mes playlists Spotify</h2>
+                    <p>Playlists privées et publiques récupérées avec votre token d’authentification Zotify.</p>
+                </div>
+                <div class="header-actions">
+                    <span class="count-pill" id="playlist-count">8 playlists</span>
+                    <button class="icon-button" id="refresh-playlists" type="button" title="Rafraîchir les playlists" aria-label="Rafraîchir les playlists">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+                            <path d="M21 3v6h-6"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <div class="search-field">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7"/>
+                        <path d="m20 20-3.5-3.5"/>
+                    </svg>
+                    <input type="text" id="playlist-search" placeholder="Filtrer par nom de playlist…" autocomplete="off">
+                </div>
+                <div class="filter-pills" id="visibility-filters">
+                    <button type="button" class="active" data-filter="all">Toutes</button>
+                    <button type="button" data-filter="private">Privées</button>
+                    <button type="button" data-filter="public">Publiques</button>
+                </div>
+            </div>
+
+            <div class="playlist-list" id="playlist-list">
+                <article class="playlist-row" data-name="2026-08" data-visibility="private">
+                    <div class="cover cover-a">08</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>2026-08</h3>
+                            <span class="visibility-badge private">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                                Privée
+                            </span>
+                        </div>
+                        <div class="subline"><span>3 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="2026-08">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+
+                <article class="playlist-row" data-name="Bangers!" data-visibility="public">
+                    <div class="cover cover-b">B!</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>Bangers!</h3>
+                            <span class="visibility-badge public">Publique</span>
+                        </div>
+                        <div class="subline"><span>11 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="Bangers!">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+
+                <article class="playlist-row" data-name="2026-07" data-visibility="private">
+                    <div class="cover cover-c">07</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>2026-07</h3>
+                            <span class="visibility-badge private">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                                Privée
+                            </span>
+                        </div>
+                        <div class="subline"><span>103 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="2026-07">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+
+                <article class="playlist-row" data-name="Rap FR" data-visibility="public">
+                    <div class="cover cover-d">FR</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>Rap FR</h3>
+                            <span class="visibility-badge public">Publique</span>
+                        </div>
+                        <div class="subline"><span>87 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="Rap FR">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+
+                <article class="playlist-row" data-name="2026-06" data-visibility="private">
+                    <div class="cover cover-e">06</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>2026-06</h3>
+                            <span class="visibility-badge private">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                                Privée
+                            </span>
+                        </div>
+                        <div class="subline"><span>101 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="2026-06">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+
+                <article class="playlist-row" data-name="Chill & Focus" data-visibility="private">
+                    <div class="cover cover-f">C&amp;F</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>Chill &amp; Focus</h3>
+                            <span class="visibility-badge private">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                                Privée
+                            </span>
+                        </div>
+                        <div class="subline"><span>64 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="Chill & Focus">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+
+                <article class="playlist-row" data-name="2026-05" data-visibility="public">
+                    <div class="cover cover-g">05</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>2026-05</h3>
+                            <span class="visibility-badge public">Publique</span>
+                        </div>
+                        <div class="subline"><span>83 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="2026-05">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+
+                <article class="playlist-row" data-name="Test" data-visibility="private">
+                    <div class="cover cover-h">T</div>
+                    <div class="playlist-meta">
+                        <div class="name-line">
+                            <h3>Test</h3>
+                            <span class="visibility-badge private">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                                Privée
+                            </span>
+                        </div>
+                        <div class="subline"><span>3 titres</span><span class="dot"></span><span>Playlist personnelle</span></div>
+                    </div>
+                    <button class="download-btn" type="button" data-playlist="Test">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        Télécharger
+                    </button>
+                </article>
+            </div>
+
+            <div class="empty-state" id="empty-state">
+                <div class="empty-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                </div>
+                <h3>Aucune playlist trouvée</h3>
+                <p>Essayez un autre nom ou changez le filtre de visibilité.</p>
+            </div>
+
+            <div class="card-footer">
+                <span class="footer-left"><span class="secure-dot"></span> Session Zotify · playlists privées incluses</span>
+                <span id="last-sync">Synchronisé à l’instant</span>
+            </div>
+        </section>
+
+        <section class="card manual-card" aria-labelledby="manual-title">
+            <div class="manual-header">
+                <div>
+                    <h2 id="manual-title">Ajout manuel</h2>
+                    <p>Collez un ou plusieurs liens Spotify, un par ligne.</p>
+                </div>
+            </div>
+            <textarea class="manual-textarea" id="manual-links" placeholder="https://open.spotify.com/playlist/…&#10;https://open.spotify.com/album/…&#10;https://open.spotify.com/track/…"></textarea>
+            <div class="manual-actions">
+                <button class="btn btn-primary" type="button" id="manual-add">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                    Ajouter à la file
+                </button>
+                <button class="btn btn-secondary" type="button" id="import-csv">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
+                    Importer CSV
+                </button>
+            </div>
+        </section>
+
+        <aside class="info-box">
+            <span class="info-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2z"/></svg>
+            </span>
+            <div>
+                <h3>Un souci avec une playlist ?</h3>
+                <p>Si une playlist ne remonte pas, utilisez <a href="#" onclick="return false;">Chosic Playlist Exporter</a> pour l’exporter en CSV, puis importez le fichier avec le bouton ci-dessus.</p>
+            </div>
+        </aside>
+    </main>
+
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+    <script>
+        const rows = Array.from(document.querySelectorAll('.playlist-row'));
+        const searchInput = document.getElementById('playlist-search');
+        const filterButtons = Array.from(document.querySelectorAll('#visibility-filters button'));
+        const emptyState = document.getElementById('empty-state');
+        const countPill = document.getElementById('playlist-count');
+        const toastContainer = document.getElementById('toast-container');
+        const refreshButton = document.getElementById('refresh-playlists');
+        const lastSync = document.getElementById('last-sync');
+        const manualAdd = document.getElementById('manual-add');
+        const manualLinks = document.getElementById('manual-links');
+        const importCsv = document.getElementById('import-csv');
+
+        let activeFilter = 'all';
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    ${type === 'success'
+                        ? '<path d="M20 6 9 17l-5-5"/>'
+                        : '<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/>'}
+                </svg>
+                <span>${message}</span>
+            `;
+            toastContainer.appendChild(toast);
+            window.setTimeout(() => {
+                toast.classList.add('leaving');
+                window.setTimeout(() => toast.remove(), 220);
+            }, 3200);
+        }
+
+        function applyFilters() {
+            const query = searchInput.value.trim().toLowerCase();
+            let visible = 0;
+
+            rows.forEach((row) => {
+                const name = (row.dataset.name || '').toLowerCase();
+                const visibility = row.dataset.visibility || 'public';
+                const matchesSearch = !query || name.includes(query);
+                const matchesFilter = activeFilter === 'all' || visibility === activeFilter;
+                const show = matchesSearch && matchesFilter;
+                row.style.display = show ? '' : 'none';
+                if (show) visible += 1;
+            });
+
+            emptyState.classList.toggle('visible', visible === 0);
+            countPill.textContent = `${visible} playlist${visible > 1 ? 's' : ''}`;
+        }
+
+        searchInput.addEventListener('input', applyFilters);
+
+        filterButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                activeFilter = button.dataset.filter;
+                filterButtons.forEach((item) => item.classList.toggle('active', item === button));
+                applyFilters();
+            });
+        });
+
+        document.querySelectorAll('.download-btn').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (button.disabled) return;
+
+                const playlistName = button.closest('.playlist-row').dataset.name;
+                const originalHtml = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = `
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+                        <path d="M21 3v6h-6"/>
+                    </svg>
+                    Ajout…
+                `;
+                button.querySelector('svg').style.animation = 'spin 0.8s linear infinite';
+
+                window.setTimeout(() => {
+                    button.disabled = false;
+                    button.classList.add('is-done');
+                    button.innerHTML = `
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M20 6 9 17l-5-5"/>
+                        </svg>
+                        Ajoutée
+                    `;
+                    showToast(`« ${playlistName} » ajoutée à la file.`, 'success');
+                    window.setTimeout(() => {
+                        button.classList.remove('is-done');
+                        button.innerHTML = originalHtml;
+                    }, 2600);
+                }, 850);
+            });
+        });
+
+        refreshButton.addEventListener('click', () => {
+            if (refreshButton.classList.contains('is-loading')) return;
+            refreshButton.classList.add('is-loading');
+            refreshButton.disabled = true;
+
+            window.setTimeout(() => {
+                refreshButton.classList.remove('is-loading');
+                refreshButton.disabled = false;
+                lastSync.textContent = 'Synchronisé à l’instant';
+                applyFilters();
+                showToast('Playlists Spotify actualisées.', 'success');
+            }, 900);
+        });
+
+        manualAdd.addEventListener('click', () => {
+            const links = manualLinks.value.trim();
+            if (!links) {
+                showToast('Collez au moins un lien Spotify.', 'error');
+                return;
+            }
+            showToast('Liens ajoutés à la file de téléchargement.', 'success');
+            manualLinks.value = '';
+        });
+
+        importCsv.addEventListener('click', () => {
+            showToast('Sélecteur de fichier CSV (maquette).', 'success');
+        });
+
+        applyFilters();
+    </script>
+</body>
+</html>

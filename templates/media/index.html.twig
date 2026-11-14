@@ -1,0 +1,1875 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Discover - Downloader{% endblock %}
+
+{% block body %}
+<div class="discover-page">
+    {% embed '_partials/page_header.html.twig' with {
+        title: 'Discover',
+        subtitle: 'Search movies and series with TMDB, then pick a torrent source and send it to Alldebrid. Stremio/Nuvio stream manifests are used only for sources.',
+        icon: 'compass'
+    } %}
+        {% block actions %}
+            <button class="btn btn-secondary" onclick="openAddonsDrawer()" style="display: flex; align-items: center; gap: 0.5rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Media addons
+            </button>
+        {% endblock %}
+    {% endembed %}
+
+    {% if not tmdb_configured %}
+    <div class="discover-notice">
+        <div>
+            <strong>TMDB is not configured.</strong>
+            <span>Add a TMDB API key in Media addons to enable search and metadata.</span>
+        </div>
+        <button class="btn btn-primary" onclick="openAddonsDrawer()">Configure</button>
+    </div>
+    {% endif %}
+
+    <datalist id="mediaRecentPaths">
+        {% for path in recent_paths %}
+        <option value="{{ path|e('html_attr') }}"></option>
+        {% endfor %}
+    </datalist>
+
+    <div class="discover-mode-row">
+        <div class="discover-mode-switch">
+            <button type="button" id="mode-search-btn" onclick="setDiscoveryMode('search')">Search</button>
+            <button type="button" id="mode-browse-btn" onclick="setDiscoveryMode('browse')">Browse</button>
+        </div>
+        <div class="discover-status" id="discoverStatus"></div>
+    </div>
+
+    <div id="searchMode">
+    <section class="discover-toolbar">
+        <div class="discover-search">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+            <input id="mediaSearchInput" type="text" placeholder="Search a movie or a series..." oninput="debouncedMediaSearch()">
+        </div>
+        <div class="discover-filters" id="mediaTypeFilters">
+            <button class="active" data-type="all" onclick="setMediaType('all', this)">All</button>
+            <button data-type="movie" onclick="setMediaType('movie', this)">Movies</button>
+            <button data-type="series" onclick="setMediaType('series', this)">Series</button>
+        </div>
+    </section>
+
+    <div class="discover-results-head">
+        <h2 id="mediaResultsTitle">Popular picks</h2>
+        <span id="mediaResultsCount"></span>
+    </div>
+
+    <section class="discover-grid" id="mediaGrid"></section>
+    <div class="discover-empty" id="mediaEmptyState">No title matches your search.</div>
+    </div>
+
+    <div id="browseMode" style="display:none;">
+        <div id="browseEmpty" class="discover-empty" style="display:none; padding:2.5rem 1rem;">
+            <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.4rem;">Aucune collection Nuvio importée.</div>
+            <div style="margin-bottom:1rem;">Importe ton JSON Nuvio pour retrouver tes collections AIOMetadata.</div>
+            <button class="btn btn-primary" onclick="openAddonsDrawer()">Import collections</button>
+        </div>
+
+        <div id="browseContent" style="display:none;">
+            <div class="browse-collection-tabs" id="browseCollectionTabs"></div>
+
+            <div class="browse-hero" id="browseHero">
+                <div class="browse-hero-copy">
+                    <div class="browse-eyebrow">Nuvio collection</div>
+                    <h2 id="browseCollectionTitle"></h2>
+                    <p id="browseCollectionDescription"></p>
+                    <div class="browse-hero-stats" id="browseCollectionStats"></div>
+                    <div class="browse-hero-actions">
+                        <button class="btn btn-secondary browse-danger-btn" onclick="deleteCurrentBrowseCollection()">Supprimer la collection</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="browse-folder-toolbar">
+                <div>
+                    <h3>Dossiers</h3>
+                    <small id="browseFolderSubtitle"></small>
+                </div>
+                <label class="browse-folder-search">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                    <input id="browseFolderSearch" type="text" placeholder="Filtrer les dossiers..." oninput="renderBrowseFolders()">
+                </label>
+            </div>
+
+            <section class="browse-folder-grid" id="browseFolderGrid"></section>
+        </div>
+
+        <div class="browse-folder-view" id="browseFolderView">
+            <div class="browse-folder-hero" id="browseFolderHero">
+                <div class="browse-folder-copy">
+                    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                        <button class="btn btn-secondary" onclick="closeBrowseFolder()">&larr; Retour aux dossiers</button>
+                        <button class="btn btn-secondary browse-danger-btn" id="browseFolderDeleteBtn" onclick="deleteCurrentBrowseFolder()">Supprimer le dossier</button>
+                    </div>
+                    <div id="browseFolderLogoWrap"></div>
+                    <h2 id="browseFolderTitle"></h2>
+                    <p id="browseFolderSubtitle2"></p>
+                    <div class="browse-hero-stats" id="browseFolderStats"></div>
+                </div>
+            </div>
+
+            <div class="browse-folder-view-actions">
+                <div class="discover-filters" id="browseTypeFilters">
+                    <button class="active" data-type="all" onclick="setBrowseType('all', this)">Tous</button>
+                    <button data-type="movie" onclick="setBrowseType('movie', this)">Films</button>
+                    <button data-type="series" onclick="setBrowseType('series', this)">Séries</button>
+                </div>
+                <span class="browse-source-summary" id="browseSourceSummary"></span>
+            </div>
+
+            <section class="browse-poster-grid" id="browsePosterGrid"></section>
+            <div class="browse-load-more">
+                <button class="btn btn-secondary" id="browseLoadMoreBtn" onclick="loadMoreBrowseItems()">Load more</button>
+            </div>
+        </div>
+    </div>
+
+<div class="discover-modal-backdrop" id="mediaDetailBackdrop" onclick="closeMediaDetail(event)">
+    <div class="discover-detail" role="dialog" aria-modal="true">
+        <button class="discover-close" onclick="closeMediaDetail()">×</button>
+        <div class="discover-detail-hero" id="mediaDetailHero">
+            <div class="discover-detail-hero-content">
+                <img class="discover-detail-poster" id="mediaDetailPoster" alt="">
+                <div class="discover-detail-copy">
+                    <h2 id="mediaDetailTitle"></h2>
+                    <div class="discover-meta" id="mediaDetailMeta"></div>
+                    <p class="discover-overview" id="mediaDetailOverview"></p>
+                </div>
+            </div>
+        </div>
+        <div class="discover-detail-body">
+            <div class="discover-section-head">
+                <div>
+                    <h3>Sources</h3>
+                    <small id="mediaSourceSubtitle">Find torrent sources from your configured addons.</small>
+                </div>
+                <button class="btn btn-primary" id="mediaFindSourcesBtn" onclick="findMediaSources()">Find sources</button>
+            </div>
+
+            <div class="discover-destination">
+                <label for="mediaDestinationPath">Download destination</label>
+                <div class="discover-filename-row">
+                    <input id="mediaDestinationPath" list="mediaRecentPaths" value="{{ default_path|e('html_attr') }}">
+                    <button class="btn btn-secondary" id="mediaAiPathButton" onclick="suggestMediaDestination(this)" title="AI Rename path">AI Path</button>
+                </div>
+                <small>Container path. Recent folders are suggested.</small>
+            </div>
+
+            <div class="discover-episode-row" id="mediaEpisodeRow" style="display:none;">
+                <label class="discover-select">Season
+                    <select id="mediaSeasonSelect" onchange="loadSelectedSeason()"></select>
+                </label>
+                <label class="discover-select">Episode
+                    <select id="mediaEpisodeSelect" onchange="updateMediaSourceSubtitle()"></select>
+                </label>
+            </div>
+
+            <div class="discover-loading" id="mediaStreamLoading">
+                <div class="discover-spinner"></div>
+                Querying configured stream addons...
+            </div>
+
+            <div class="discover-source-list" id="mediaSourceList"></div>
+        </div>
+    </div>
+</div>
+
+<div class="discover-modal-backdrop" id="mediaConfirmBackdrop" onclick="closeMediaConfirm(event)">
+    <div class="discover-confirm" role="dialog" aria-modal="true">
+        <h3>Send to Debrid</h3>
+        <p id="mediaConfirmDescription"></p>
+        <div class="discover-confirm-file" id="mediaConfirmFile"></div>
+        <div class="discover-field">
+            <label for="mediaConfirmFilename">File name</label>
+            <div class="discover-filename-row">
+                <input id="mediaConfirmFilename" placeholder="Keep source filename">
+                <button class="btn btn-secondary" id="mediaAiRenameButton" onclick="suggestMediaFilename(this)" title="AI Rename">AI Rename</button>
+            </div>
+            <small>Leave empty to keep the source filename, or let AI suggest a clean name.</small>
+        </div>
+        <div class="discover-field">
+            <label for="mediaConfirmPath">Destination path</label>
+            <div class="discover-filename-row">
+                <input id="mediaConfirmPath" list="mediaRecentPaths" value="{{ default_path|e('html_attr') }}">
+                <button class="btn btn-secondary" onclick="suggestMediaDestination(this)" title="AI Rename path">AI Path</button>
+            </div>
+            <small>This path is a container path, like the existing Debrid download flow.</small>
+            <div class="discover-recent-paths" id="mediaRecentPathChips"></div>
+        </div>
+        <div id="mediaConfirmStatus" class="discover-inline-status" style="display:none;"></div>
+        <div class="discover-confirm-actions">
+            <button class="btn btn-secondary" onclick="closeMediaConfirm()">Cancel</button>
+            <button class="btn btn-primary" id="mediaConfirmButton" onclick="confirmMediaDebrid()">Add to queue</button>
+        </div>
+    </div>
+</div>
+
+<div class="addons-backdrop" id="addonsBackdrop" onclick="closeAddonsDrawer()"></div>
+<aside class="addons-drawer" id="addonsDrawer" aria-label="Media addons settings">
+    <div class="addons-head">
+        <h2>Media addons</h2>
+        <button class="btn btn-secondary" onclick="closeAddonsDrawer()">Close</button>
+    </div>
+    <div class="addons-body">
+        <div class="addon-field">
+            <label for="tmdbApiKey">TMDB API key</label>
+            <input type="password" id="tmdbApiKey" value="{{ tmdb_api_key|e('html_attr') }}" placeholder="TMDB API key or v4 read token" autocomplete="off">
+            <small>Used for search, metadata, seasons and IMDb ID resolution.</small>
+        </div>
+        <div class="addon-field">
+            <label for="tmdbLanguage">Metadata language</label>
+            <select id="tmdbLanguage">
+                {% for code, label in {'fr-FR': 'Français (fr-FR)', 'en-US': 'English (en-US)', 'en-GB': 'English (en-GB)', 'es-ES': 'Español (es-ES)', 'de-DE': 'Deutsch (de-DE)', 'it-IT': 'Italiano (it-IT)', 'pt-BR': 'Português (pt-BR)'} %}
+                <option value="{{ code }}" {{ tmdb_language == code ? 'selected' : '' }}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="discover-section-head" style="margin-top:1.4rem;">
+            <div>
+                <h3>Stream manifests</h3>
+                <small>HTTPS public URLs only. Lower priority numbers appear first.</small>
+            </div>
+        </div>
+
+        <div class="addon-list" id="mediaAddonList"></div>
+
+        <div class="addon-field" style="margin-top:1rem;">
+            <label for="mediaAddonUrl">Add manifest URL</label>
+            <input id="mediaAddonUrl" placeholder="https://addon.example/manifest.json" autocomplete="off">
+            <small>Accepts a manifest URL or a configured addon URL that serves manifest JSON.</small>
+        </div>
+        <div class="addons-actions">
+            <button class="btn btn-secondary" id="mediaValidateAddonButton" onclick="validateMediaAddon()">Validate</button>
+            <button class="btn btn-primary" onclick="addMediaAddon()">Add addon</button>
+        </div>
+        <div id="mediaAddonStatus" class="discover-inline-status" style="display:none;"></div>
+
+        <div class="discover-section-head" style="margin-top:1.6rem;">
+            <div>
+                <h3>Nuvio collections</h3>
+                <small>Import a Nuvio collections JSON export.</small>
+            </div>
+        </div>
+        <div class="addon-field">
+            <label for="nuvioCollectionsFile">Collections JSON file</label>
+            <input type="file" id="nuvioCollectionsFile" accept=".json,application/json" style="padding:0.5rem;">
+            <small>Export from Nuvio → Collections. Sources from unconfigured addons stay pending and activate after the addon is added above.</small>
+        </div>
+        <div class="addon-field">
+            <label for="nuvioCollectionsJson">Or paste JSON</label>
+            <textarea id="nuvioCollectionsJson" rows="5" placeholder='[{"title":"Plateformes","folders":[...]}]' style="width:100%; padding:0.7rem; border-radius:9px; border:1px solid var(--border); background:rgba(15,23,42,0.8); color:var(--text-primary); font-family:monospace; font-size:0.72rem; resize:vertical;"></textarea>
+        </div>
+        <div class="addons-actions">
+            <button class="btn btn-primary" id="nuvioImportButton" onclick="importNuvioCollections()">Import collections</button>
+            <button class="btn btn-secondary" onclick="clearNuvioCollections()">Clear</button>
+        </div>
+        <div id="nuvioImportStatus" class="discover-inline-status" style="display:none;"></div>
+
+        <div class="addons-save-row">
+            <button class="btn btn-primary btn-full" id="mediaSaveSettingsButton" onclick="saveMediaSettings()">Save settings</button>
+        </div>
+    </div>
+</aside>
+
+<style>
+    .discover-page { position: relative; }
+    .discover-notice { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:.9rem 1rem; margin-bottom:1rem; border:1px solid rgba(245,158,11,.25); background:rgba(245,158,11,.08); border-radius:12px; color:#fbbf24; font-size:.85rem; }
+    .discover-notice strong { display:block; color:#fbbf24; margin-bottom:.15rem; }
+    .discover-notice span { color:var(--text-secondary); }
+    .discover-toolbar { display:flex; gap:.8rem; flex-wrap:wrap; align-items:center; background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:.9rem; margin-bottom:1.5rem; backdrop-filter:blur(10px); }
+    .discover-search { position:relative; flex:1; min-width:260px; }
+    .discover-search svg { position:absolute; left:.95rem; top:50%; transform:translateY(-50%); opacity:.55; }
+    .discover-search input { width:100%; padding:.85rem 1rem .85rem 2.8rem; border-radius:11px; border:1px solid var(--border); background:rgba(15,23,42,.8); color:var(--text-primary); outline:none; }
+    .discover-filters { display:flex; gap:.3rem; padding:.25rem; background:rgba(15,23,42,.75); border:1px solid var(--border); border-radius:11px; }
+    .discover-filters button { background:transparent; border:none; color:var(--text-secondary); padding:.55rem .9rem; border-radius:8px; font-size:.82rem; font-weight:650; cursor:pointer; }
+    .discover-filters button.active { background:rgba(56,189,248,.15); color:var(--accent); }
+    .discover-results-head { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1rem; }
+    .discover-results-head h2 { margin:0; font-size:1rem; }
+    .discover-results-head span { color:var(--text-secondary); font-size:.82rem; }
+    .discover-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); gap:1rem; }
+    .media-card { position:relative; border-radius:14px; overflow:hidden; background:var(--panel-solid); border:1px solid var(--border); cursor:pointer; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+    .media-card:hover { transform:translateY(-4px); border-color:rgba(56,189,248,.35); box-shadow:0 18px 40px rgba(0,0,0,.35); }
+    .media-poster-wrap { position:relative; aspect-ratio:2/3; background:linear-gradient(135deg,rgba(56,189,248,.12),rgba(129,140,248,.12)); }
+    .media-poster-wrap img { width:100%; height:100%; object-fit:cover; display:block; }
+    .media-poster-wrap::after { content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(15,23,42,.95),transparent 45%); }
+    .media-type-badge { position:absolute; top:.6rem; left:.6rem; z-index:2; font-size:.62rem; font-weight:800; letter-spacing:.06em; padding:.28rem .45rem; border-radius:6px; background:rgba(15,23,42,.82); border:1px solid rgba(255,255,255,.12); backdrop-filter:blur(8px); }
+    .media-rating { position:absolute; right:.6rem; top:.6rem; z-index:2; font-size:.68rem; font-weight:800; color:#fbbf24; background:rgba(15,23,42,.82); border:1px solid rgba(251,191,36,.18); border-radius:6px; padding:.25rem .4rem; }
+    .media-card-body { padding:.8rem .85rem .95rem; }
+    .media-card-title { font-weight:750; font-size:.9rem; line-height:1.25; margin:0 0 .35rem; }
+    .media-card-meta { color:var(--text-secondary); font-size:.75rem; display:flex; gap:.45rem; align-items:center; }
+    .discover-dot { width:3px; height:3px; border-radius:50%; background:var(--text-secondary); }
+    .discover-empty { display:none; padding:3rem 1rem; text-align:center; color:var(--text-secondary); border:1px dashed var(--border); border-radius:16px; }
+    .discover-modal-backdrop { position:fixed; inset:0; z-index:2000; display:none; align-items:center; justify-content:center; padding:1.5rem; background:rgba(2,6,23,.78); backdrop-filter:blur(12px); }
+    .discover-modal-backdrop.open { display:flex; }
+    .discover-detail { width:min(980px,100%); max-height:92vh; overflow:auto; border-radius:20px; border:1px solid rgba(255,255,255,.1); background:var(--panel-solid); box-shadow:0 30px 90px rgba(0,0,0,.65); position:relative; }
+    .discover-detail-hero { min-height:340px; position:relative; display:flex; align-items:flex-end; padding:2rem; background-size:cover; background-position:center; }
+    .discover-detail-hero::before { content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(30,41,59,1) 4%,rgba(30,41,59,.75) 35%,rgba(15,23,42,.35) 100%),linear-gradient(to right,rgba(15,23,42,.7),transparent 60%); }
+    .discover-detail-hero-content { position:relative; z-index:2; display:flex; gap:1.5rem; align-items:flex-end; width:100%; }
+    .discover-detail-poster { width:150px; aspect-ratio:2/3; border-radius:12px; object-fit:cover; box-shadow:0 16px 42px rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.12); flex-shrink:0; }
+    .discover-detail-copy { flex:1; min-width:0; }
+    .discover-detail-copy h2 { margin:0 0 .35rem; font-size:clamp(1.5rem,3vw,2.2rem); letter-spacing:-.03em; }
+    .discover-meta { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; color:var(--text-secondary); font-size:.85rem; margin-bottom:.8rem; }
+    .discover-pill { display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.28rem .55rem; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:.72rem; color:var(--text-primary); }
+    .discover-overview { margin:0; color:#cbd5e1; line-height:1.55; font-size:.9rem; max-width:720px; }
+    .discover-close { position:absolute; top:1rem; right:1rem; z-index:5; width:38px; height:38px; border-radius:10px; border:1px solid rgba(255,255,255,.1); background:rgba(15,23,42,.8); color:var(--text-primary); font-size:1.5rem; line-height:1; cursor:pointer; }
+    .discover-detail-body { padding:1.5rem 2rem 2rem; }
+    .discover-section-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:.85rem; }
+    .discover-section-head h3 { margin:0; font-size:1rem; }
+    .discover-section-head small { color:var(--text-secondary); }
+    .discover-episode-row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
+    .discover-select { display:flex; align-items:center; gap:.5rem; background:rgba(15,23,42,.7); border:1px solid var(--border); border-radius:10px; padding:.35rem .5rem; color:var(--text-secondary); font-size:.8rem; }
+    .discover-select select { border:none; background:transparent; color:var(--text-primary); outline:none; padding:.35rem; }
+    .discover-source-list { display:grid; gap:.65rem; }
+    .discover-source { display:flex; gap:1rem; align-items:center; justify-content:space-between; background:rgba(15,23,42,.55); border:1px solid var(--border); border-radius:12px; padding:.85rem 1rem; transition:border-color .15s ease,background .15s ease; }
+    .discover-source:hover { border-color:rgba(56,189,248,.3); background:rgba(15,23,42,.8); }
+    .discover-source-main { min-width:0; }
+    .discover-source-top { display:flex; gap:.45rem; align-items:center; flex-wrap:wrap; margin-bottom:.25rem; }
+    .discover-source-addon { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
+    .discover-source-quality { font-weight:800; font-size:.82rem; }
+    .discover-source-title { color:var(--text-secondary); font-size:.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:560px; }
+    .discover-source-meta { display:flex; gap:.65rem; flex-wrap:wrap; margin-top:.45rem; font-size:.72rem; color:var(--text-secondary); }
+    .discover-seeders { color:var(--success); font-weight:700; }
+    .discover-loading { display:none; padding:2rem; border:1px dashed var(--border); border-radius:12px; text-align:center; color:var(--text-secondary); }
+    .discover-spinner { width:24px; height:24px; border:3px solid rgba(255,255,255,.08); border-top-color:var(--accent); border-radius:50%; animation:discover-spin .9s linear infinite; margin:0 auto .75rem; }
+    @keyframes discover-spin { to { transform:rotate(360deg); } }
+    .addons-backdrop { position:fixed; inset:0; background:rgba(2,6,23,.65); backdrop-filter:blur(8px); z-index:3000; display:none; }
+    .addons-backdrop.open { display:block; }
+    .addons-drawer { position:fixed; top:0; right:0; bottom:0; width:min(520px,100%); z-index:3100; background:var(--panel-solid); border-left:1px solid var(--border); transform:translateX(102%); transition:transform .25s ease; display:flex; flex-direction:column; }
+    .addons-drawer.open { transform:translateX(0); }
+    .addons-head { padding:1.25rem 1.4rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+    .addons-head h2 { margin:0; font-size:1.05rem; }
+    .addons-body { padding:1.25rem 1.4rem 2rem; overflow-y:auto; }
+    .addon-field { margin-bottom:1.1rem; }
+    .addon-field label { display:block; font-size:.78rem; color:var(--text-secondary); margin-bottom:.45rem; }
+    .addon-field input, .addon-field select { width:100%; padding:.7rem .8rem; border-radius:9px; border:1px solid var(--border); background:rgba(15,23,42,.8); color:var(--text-primary); outline:none; }
+    .addon-field small { display:block; color:var(--text-secondary); font-size:.7rem; margin-top:.4rem; line-height:1.4; }
+    .addon-list { display:grid; gap:.65rem; margin-bottom:1rem; }
+    .addon-row { display:flex; align-items:center; gap:.8rem; padding:.8rem; border-radius:11px; border:1px solid var(--border); background:rgba(15,23,42,.45); width:100%; min-width:0; overflow:hidden; }
+    .addon-status { width:9px; height:9px; border-radius:50%; background:var(--success); box-shadow:0 0 10px rgba(34,197,94,.6); flex-shrink:0; }
+    .addon-status.off { background:var(--text-secondary); box-shadow:none; }
+    .addon-status.pending { background:#fbbf24; box-shadow:0 0 10px rgba(251,191,36,.6); }
+    .addon-main { flex:1 1 0; min-width:0; overflow:hidden; }
+    .addon-name { font-weight:700; font-size:.86rem; margin-bottom:.15rem; }
+    .addon-url { color:var(--text-secondary); font-size:.7rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .addon-kind { font-size:.65rem; color:var(--accent); font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+    .addon-switch { width:38px; height:21px; border-radius:999px; background:rgba(255,255,255,.12); border:1px solid var(--border); position:relative; flex-shrink:0; cursor:pointer; }
+    .addon-switch::after { content:""; position:absolute; width:15px; height:15px; border-radius:50%; background:#fff; top:2px; left:2px; transition:transform .2s ease; }
+    .addon-switch.on { background:rgba(56,189,248,.4); border-color:rgba(56,189,248,.55); }
+    .addon-switch.on::after { transform:translateX(17px); background:var(--accent); }
+    .addon-remove { background:none; border:none; color:var(--text-secondary); font-size:1.1rem; cursor:pointer; padding:.15rem .3rem; }
+    .addon-remove:hover { color:var(--danger); }
+    .addons-actions { display:flex; gap:.6rem; }
+    .addons-save-row { margin-top:1.5rem; padding-top:1.2rem; border-top:1px solid var(--border); }
+    .discover-inline-status { display:none; margin-top:.8rem; padding:.7rem .8rem; border-radius:9px; font-size:.8rem; line-height:1.4; }
+    .discover-destination { display:flex; flex-direction:column; gap:.35rem; margin-bottom:1rem; padding:.8rem .9rem; background:rgba(15,23,42,.45); border:1px solid var(--border); border-radius:11px; }
+    .discover-destination label { font-size:.75rem; color:var(--text-secondary); font-weight:650; }
+    .discover-destination .discover-filename-row input { width:100%; padding:.62rem .7rem; border-radius:8px; border:1px solid var(--border); background:rgba(15,23,42,.8); color:var(--text-primary); outline:none; }
+    .discover-destination small { color:var(--text-secondary); font-size:.68rem; }
+    .discover-recent-paths { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.55rem; }
+    .discover-recent-path { background:rgba(255,255,255,.04); border:1px solid var(--border); color:var(--text-secondary); border-radius:999px; padding:.28rem .55rem; font-size:.68rem; cursor:pointer; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .discover-recent-path:hover { color:var(--accent); border-color:rgba(56,189,248,.35); }
+    .addon-priority-wrap { display:flex; flex-direction:column; gap:.15rem; align-items:center; flex-shrink:0; }
+    .addon-priority-wrap span { font-size:.58rem; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.05em; }
+    .addon-priority { width:54px; padding:.28rem .25rem; border-radius:6px; border:1px solid var(--border); background:rgba(15,23,42,.8); color:var(--text-primary); text-align:center; font-size:.75rem; outline:none; }
+    .addon-priority:focus { border-color:rgba(56,189,248,.5); }
+    .discover-confirm { width:min(560px,100%); border-radius:16px; border:1px solid var(--border); background:var(--panel-solid); padding:1.4rem; box-shadow:0 30px 90px rgba(0,0,0,.65); }
+    .discover-confirm h3 { margin:0 0 .35rem; }
+    .discover-confirm p { margin:0 0 1rem; color:var(--text-secondary); font-size:.82rem; line-height:1.45; }
+    .discover-confirm-file { background:rgba(15,23,42,.7); border:1px solid var(--border); border-radius:10px; padding:.8rem; margin-bottom:1rem; font-family:ui-monospace,monospace; font-size:.75rem; word-break:break-all; }
+    .discover-confirm-actions { display:flex; justify-content:flex-end; gap:.6rem; }
+    .discover-field { margin-bottom:1rem; }
+    .discover-field label { display:block; font-size:.78rem; color:var(--text-secondary); margin-bottom:.45rem; }
+    .discover-field input { width:100%; padding:.7rem .8rem; border-radius:9px; border:1px solid var(--border); background:rgba(15,23,42,.8); color:var(--text-primary); outline:none; }
+    .discover-field small { display:block; color:var(--text-secondary); font-size:.7rem; margin-top:.4rem; }
+    .discover-filename-row { display:flex; gap:.5rem; align-items:stretch; }
+    .discover-filename-row input { flex:1; min-width:0; }
+    .discover-filename-row .btn { flex-shrink:0; padding:.7rem .8rem; font-size:.75rem; white-space:nowrap; }
+    @media (max-width:760px) {
+        .discover-toolbar { align-items:stretch; }
+        .discover-filters { align-self:flex-start; }
+        .discover-detail-hero { padding:1.25rem; }
+        .discover-detail-hero-content { flex-direction:column; align-items:flex-start; }
+        .discover-detail-poster { width:100px; }
+        .discover-detail-body { padding:1.25rem; }
+        .discover-source { flex-direction:column; align-items:stretch; }
+        .discover-source-title { white-space:normal; }
+        .discover-source .btn { width:100%; }
+        .discover-notice { flex-direction:column; align-items:flex-start; }
+    }
+
+    .discover-mode-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.2rem; }
+    .discover-mode-switch { display:flex; gap:0.25rem; padding:0.25rem; border-radius:11px; border:1px solid var(--border); background:rgba(15,23,42,.72); }
+    .discover-mode-switch button { border:none; background:transparent; color:var(--text-secondary); padding:0.55rem 0.95rem; border-radius:8px; font-size:0.82rem; font-weight:700; cursor:pointer; }
+    .discover-mode-switch button.active { background:rgba(56,189,248,.15); color:var(--accent); }
+    .discover-status { display:inline-flex; align-items:center; gap:.45rem; color:var(--text-secondary); font-size:.76rem; }
+    .browse-collection-tabs { display:flex; flex-wrap:wrap; gap:.55rem; padding:0.15rem 0.1rem 0.8rem; margin-bottom:0.8rem; }
+    .browse-collection-tab { position:relative; display:flex; align-items:center; gap:.6rem; padding:.45rem 2.15rem .45rem .45rem; border-radius:11px; border:1px solid var(--border); background:rgba(30,41,59,.55); color:var(--text-secondary); cursor:pointer; transition:border-color .15s ease,background .15s ease,color .15s ease; }
+    .browse-collection-tab:hover { color:var(--text-primary); border-color:rgba(255,255,255,.16); }
+    .browse-collection-tab.active { color:var(--text-primary); border-color:rgba(56,189,248,.5); background:rgba(56,189,248,.09); }
+    .browse-collection-thumb { width:42px; height:28px; border-radius:7px; object-fit:cover; background:linear-gradient(135deg,rgba(56,189,248,.25),rgba(129,140,248,.25)); border:1px solid rgba(255,255,255,.08); }
+    .browse-collection-name { font-size:.8rem; font-weight:750; line-height:1.2; text-align:left; }
+    .browse-collection-count { font-size:.65rem; color:var(--text-secondary); margin-top:.12rem; text-align:left; }
+    .browse-collection-delete { position:absolute; top:50%; right:.35rem; transform:translateY(-50%); width:22px; height:22px; border-radius:7px; border:1px solid transparent; background:transparent; color:#fca5a5; display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:0; transition:opacity .16s ease,background .16s ease,border-color .16s ease,color .16s ease; }
+    .browse-collection-tab:hover .browse-collection-delete, .browse-collection-delete:focus { opacity:1; }
+    .browse-collection-delete:hover { background:rgba(239,68,68,.2); border-color:rgba(239,68,68,.5); color:#fff; }
+    .browse-hero-actions { margin-top:.9rem; display:flex; gap:.5rem; flex-wrap:wrap; }
+    .browse-hero { position:relative; min-height:220px; border-radius:18px; overflow:hidden; border:1px solid var(--border); background:linear-gradient(135deg,rgba(56,189,248,.15),rgba(129,140,248,.12)); background-size:cover; background-position:center; display:flex; align-items:flex-end; padding:2rem; margin-bottom:1.2rem; box-shadow:0 18px 50px rgba(0,0,0,.28); }
+    .browse-hero::before { content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(30,41,59,.95) 3%,rgba(30,41,59,.55) 45%,rgba(15,23,42,.25) 100%),linear-gradient(to right,rgba(15,23,42,.8),transparent 65%); }
+    .browse-hero-copy { position:relative; z-index:2; }
+    .browse-eyebrow { display:inline-flex; align-items:center; gap:.45rem; font-size:.68rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin-bottom:.45rem; }
+    .browse-hero h2 { margin:0 0 .35rem; font-size:clamp(1.6rem,3vw,2.3rem); letter-spacing:-.035em; }
+    .browse-hero p { margin:0; max-width:680px; color:var(--text-secondary); font-size:.88rem; line-height:1.5; }
+    .browse-hero-stats { display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.9rem; }
+    .browse-stat-pill { border:1px solid rgba(255,255,255,.1); background:rgba(15,23,42,.55); backdrop-filter:blur(8px); border-radius:999px; padding:.3rem .6rem; font-size:.7rem; color:var(--text-primary); }
+    .browse-stat-pill.pending { border-color:rgba(251,191,36,.3); color:#fbbf24; background:rgba(251,191,36,.08); }
+    .browse-folder-toolbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:.9rem; flex-wrap:wrap; }
+    .browse-folder-toolbar h3 { margin:0; font-size:.98rem; }
+    .browse-folder-toolbar small { color:var(--text-secondary); }
+    .browse-folder-search { display:flex; align-items:center; gap:.5rem; padding:.45rem .65rem; border-radius:9px; background:rgba(15,23,42,.75); border:1px solid var(--border); color:var(--text-secondary); }
+    .browse-folder-search input { border:none; background:transparent; color:var(--text-primary); outline:none; width:180px; font-size:.78rem; }
+    .browse-folder-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; }
+    .browse-folder-card { position:relative; aspect-ratio:16/9; border-radius:14px; overflow:hidden; border:1px solid var(--border); background:linear-gradient(135deg,rgba(56,189,248,.17),rgba(129,140,248,.13)); cursor:pointer; transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease; }
+    .browse-folder-card:hover { transform:translateY(-4px) scale(1.012); border-color:rgba(56,189,248,.4); box-shadow:0 22px 48px rgba(0,0,0,.42),0 0 30px rgba(56,189,248,.08); }
+    .browse-folder-cover { width:100%; height:100%; object-fit:cover; transition:transform .35s ease,filter .35s ease; }
+    .browse-folder-card:hover .browse-folder-cover { transform:scale(1.05); filter:brightness(1.06); }
+    .browse-folder-card::after { content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(15,23,42,.9) 0%,rgba(15,23,42,.05) 55%,transparent 100%); pointer-events:none; }
+    .browse-folder-cta { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(.96); z-index:3; opacity:0; border-radius:999px; padding:.5rem .85rem; background:rgba(56,189,248,.92); color:#07111f; font-size:.75rem; font-weight:800; transition:opacity .18s ease,transform .18s ease; pointer-events:none; }
+    .browse-folder-card:hover .browse-folder-cta { opacity:1; transform:translate(-50%,-50%) scale(1); }
+    .browse-folder-title { position:absolute; left:.8rem; right:.8rem; bottom:.7rem; z-index:2; display:flex; justify-content:space-between; align-items:flex-end; gap:.6rem; }
+    .browse-folder-title h4 { margin:0; font-size:.95rem; text-shadow:0 2px 12px rgba(0,0,0,.7); }
+    .browse-folder-source-count { font-size:.65rem; color:#e2e8f0; white-space:nowrap; }
+    .browse-folder-logo { position:absolute; left:.8rem; bottom:.7rem; z-index:2; max-width:62%; max-height:32px; object-fit:contain; filter:drop-shadow(0 2px 8px rgba(0,0,0,.6)); }
+    .browse-folder-card.no-title .browse-folder-title { display:none; }
+    .browse-folder-delete { position:absolute; top:.55rem; right:.55rem; z-index:4; width:30px; height:30px; border-radius:9px; border:1px solid rgba(255,255,255,.16); background:rgba(15,23,42,.75); color:#fca5a5; display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:0; transform:translateY(-2px); transition:opacity .16s ease,transform .16s ease,background .16s ease,border-color .16s ease,color .16s ease; backdrop-filter:blur(8px); }
+    .browse-folder-card:hover .browse-folder-delete, .browse-folder-delete:focus { opacity:1; transform:none; }
+    .browse-folder-delete:hover { background:rgba(239,68,68,.22); border-color:rgba(239,68,68,.55); color:#fff; }
+    .browse-danger-btn { color:#fca5a5; border-color:rgba(239,68,68,.32); }
+    .browse-danger-btn:hover { background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.55); color:#fff; }
+    @media (hover:none) { .browse-folder-delete { opacity:1; transform:none; } .browse-collection-delete { opacity:1; } }
+    .browse-folder-view { display:none; }
+    .browse-folder-view.open { display:block; animation:discover-spin-fade .25s ease; }
+    @keyframes discover-spin-fade { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    .browse-folder-hero { position:relative; min-height:250px; border-radius:18px; overflow:hidden; border:1px solid var(--border); background-size:cover; background-position:center; background-color:rgba(15,23,42,.8); display:flex; align-items:flex-end; padding:2rem; margin-bottom:1.2rem; box-shadow:0 18px 50px rgba(0,0,0,.32); }
+    .browse-folder-hero::before { content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(30,41,59,.97) 4%,rgba(30,41,59,.6) 50%,rgba(15,23,42,.2) 100%),linear-gradient(to right,rgba(15,23,42,.7),transparent 60%); }
+    .browse-folder-copy { position:relative; z-index:2; }
+    .browse-folder-copy h2 { margin:0 0 .4rem; font-size:clamp(1.5rem,3vw,2.1rem); letter-spacing:-.035em; }
+    .browse-folder-copy p { margin:0; color:var(--text-secondary); font-size:.86rem; }
+    .browse-folder-logo-large { max-height:48px; max-width:300px; object-fit:contain; margin-bottom:.65rem; filter:drop-shadow(0 3px 14px rgba(0,0,0,.55)); }
+    .browse-folder-view-actions { display:flex; gap:.6rem; align-items:center; margin-bottom:1rem; flex-wrap:wrap; }
+    .browse-source-summary { color:var(--text-secondary); font-size:.76rem; }
+    .browse-poster-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:1rem; }
+    .browse-poster-card { position:relative; border-radius:13px; overflow:hidden; border:1px solid var(--border); background:var(--bg-secondary); cursor:pointer; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+    .browse-poster-card:hover { transform:translateY(-4px); border-color:rgba(56,189,248,.35); box-shadow:0 18px 36px rgba(0,0,0,.35); }
+    .browse-poster-wrap { position:relative; aspect-ratio:2/3; background:linear-gradient(135deg,rgba(56,189,248,.12),rgba(129,140,248,.12)); }
+    .browse-poster-wrap img { width:100%; height:100%; object-fit:cover; }
+    .browse-poster-wrap::after { content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(15,23,42,.95),transparent 45%); }
+    .browse-poster-type { position:absolute; top:.5rem; left:.5rem; z-index:2; font-size:.56rem; font-weight:800; letter-spacing:.06em; padding:.22rem .36rem; border-radius:5px; background:rgba(15,23,42,.82); border:1px solid rgba(255,255,255,.12); }
+    .browse-poster-rating { position:absolute; top:.5rem; right:.5rem; z-index:2; font-size:.62rem; font-weight:800; color:#fbbf24; background:rgba(15,23,42,.82); border:1px solid rgba(251,191,36,.18); border-radius:5px; padding:.2rem .34rem; }
+    .browse-poster-body { padding:.7rem .75rem .85rem; }
+    .browse-poster-body h4 { margin:0 0 .25rem; font-size:.82rem; line-height:1.25; }
+    .browse-poster-body div { color:var(--text-secondary); font-size:.68rem; display:flex; gap:.4rem; align-items:center; }
+    .browse-load-more { display:flex; justify-content:center; margin-top:1.3rem; }
+    .browse-empty-state { grid-column:1/-1; padding:3rem; border-radius:14px; border:1px dashed var(--border); text-align:center; color:var(--text-secondary); }
+    @media (max-width:1100px) {
+        .browse-folder-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .browse-poster-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    }
+    @media (max-width:760px) {
+        .browse-folder-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; }
+        .browse-poster-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:.7rem; }
+        .browse-hero, .browse-folder-hero { min-height:180px; padding:1.2rem; }
+    }
+    @media (max-width:520px) {
+        .browse-folder-grid { grid-template-columns:1fr; }
+        .browse-poster-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+</style>
+
+<script>
+const initialMedia = {{ trending|json_encode|raw }};
+const mediaLanguage = {{ tmdb_language|json_encode|raw }};
+const tmdbConfigured = {{ tmdb_configured ? 'true' : 'false' }};
+const savedTmdbApiKey = {{ tmdb_api_key|json_encode|raw }};
+const defaultMediaPath = {{ default_path|json_encode|raw }};
+const recentMediaPaths = {{ recent_paths|json_encode|raw }};
+let mediaResults = initialMedia;
+let destinationAutoValue = '';
+let activeMedia = null;
+let activeMediaDetails = null;
+let activeType = 'all';
+let mediaSearchTimer = null;
+let mediaStreams = [];
+let activeEpisodes = [];
+let pendingStream = null;
+let pendingAddon = null;
+let addonsState = {{ media_addons|json_encode|raw }};
+const nuvioCollections = {{ nuvio_collections|json_encode|raw }};
+const nuvioMeta = {{ nuvio_meta|json_encode|raw }};
+const mediaDetailsRoute = "{{ path('media_details', {type: 'TYPE', id: 0}) }}";
+const mediaSeasonRoute = "{{ path('media_season', {id: 0, season: 0}) }}";
+
+if (!Array.isArray(addonsState)) addonsState = [];
+
+let discoveryMode = 'search';
+let browseCollectionIndex = 0;
+let browseFolder = null;
+let browseType = 'all';
+let browseVisible = 12;
+let browseSourceStates = [];
+let browseMergedItems = [];
+let browseFilteredItems = [];
+
+function escapeMediaHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    }[char]));
+}
+
+function renderMediaCards() {
+    const grid = document.getElementById('mediaGrid');
+    const empty = document.getElementById('mediaEmptyState');
+    grid.innerHTML = '';
+
+    mediaResults.forEach(item => {
+        const card = document.createElement('article');
+        card.className = 'media-card';
+        const poster = item.poster
+            ? `<img src="${escapeMediaHtml(item.poster)}" alt="${escapeMediaHtml(item.title)}" loading="lazy">`
+            : '';
+        card.innerHTML = `
+            <div class="media-poster-wrap">
+                <span class="media-type-badge">${item.type === 'movie' ? 'MOVIE' : 'SERIES'}</span>
+                ${item.rating ? `<span class="media-rating">${escapeMediaHtml(item.rating)}</span>` : ''}
+                ${poster}
+            </div>
+            <div class="media-card-body">
+                <h3 class="media-card-title">${escapeMediaHtml(item.title)}</h3>
+                <div class="media-card-meta">
+                    <span>${escapeMediaHtml(item.year || '—')}</span>
+                    <span class="discover-dot"></span>
+                    <span>${item.type === 'movie' ? 'Movie' : 'Series'}</span>
+                </div>
+            </div>
+        `;
+        card.addEventListener('click', () => openMediaDetail(item));
+        grid.appendChild(card);
+    });
+
+    empty.style.display = mediaResults.length === 0 ? 'block' : 'none';
+    document.getElementById('mediaResultsCount').textContent = mediaResults.length + ' title' + (mediaResults.length === 1 ? '' : 's');
+    document.getElementById('mediaResultsTitle').textContent = document.getElementById('mediaSearchInput').value.trim() ? 'Search results' : 'Popular picks';
+}
+
+function setMediaType(type, button) {
+    activeType = type;
+    document.querySelectorAll('#mediaTypeFilters button').forEach(btn => btn.classList.toggle('active', btn === button));
+    performMediaSearch();
+}
+
+function debouncedMediaSearch() {
+    clearTimeout(mediaSearchTimer);
+    mediaSearchTimer = setTimeout(performMediaSearch, 350);
+}
+
+async function performMediaSearch() {
+    const query = document.getElementById('mediaSearchInput').value.trim();
+    if (!query) {
+        mediaResults = activeType === 'all' ? initialMedia : initialMedia.filter(item => item.type === activeType);
+        renderMediaCards();
+        return;
+    }
+
+    try {
+        const response = await fetch(`{{ path('media_search') }}?q=${encodeURIComponent(query)}&type=${encodeURIComponent(activeType)}`);
+        const data = await response.json();
+        mediaResults = Array.isArray(data.results) ? data.results : [];
+    } catch (error) {
+        mediaResults = [];
+    }
+    renderMediaCards();
+}
+
+async function openMediaDetail(item) {
+    activeMedia = item;
+    activeMediaDetails = null;
+    activeEpisodes = [];
+    mediaStreams = [];
+    document.getElementById('mediaDetailHero').style.backgroundImage = item.backdrop ? `url("${item.backdrop}")` : '';
+    document.getElementById('mediaDetailPoster').src = item.poster || '';
+    document.getElementById('mediaDetailPoster').alt = item.title;
+    document.getElementById('mediaDetailTitle').textContent = item.title;
+    document.getElementById('mediaDetailOverview').textContent = item.overview || '';
+    document.getElementById('mediaDetailMeta').innerHTML = `
+        <span class="discover-pill">${item.type === 'movie' ? 'Movie' : 'Series'}</span>
+        <span>${escapeMediaHtml(item.year || '')}</span>
+        ${item.rating ? `<span class="discover-dot"></span><span>IMDb ${escapeMediaHtml(item.rating)}</span>` : ''}
+    `;
+    document.getElementById('mediaEpisodeRow').style.display = item.type === 'series' ? 'flex' : 'none';
+    document.getElementById('mediaSourceList').innerHTML = '';
+    document.getElementById('mediaStreamLoading').style.display = 'none';
+    document.getElementById('mediaFindSourcesBtn').style.display = 'inline-flex';
+    document.getElementById('mediaFindSourcesBtn').disabled = false;
+    document.getElementById('mediaFindSourcesBtn').textContent = 'Find sources';
+    document.getElementById('mediaSourceSubtitle').textContent = 'Find torrent sources from your configured addons.';
+    document.getElementById('mediaDestinationPath').value = buildMediaDestination(item.type, item.title, item.year, 1);
+    destinationAutoValue = document.getElementById('mediaDestinationPath').value;
+    document.getElementById('mediaDetailBackdrop').classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    try {
+        const response = await fetch(mediaDetailsRoute.replace('TYPE', item.type).replace(/\/0$/, '/' + item.id));
+        const data = await response.json();
+        if (!data.success || !data.details) return;
+
+        activeMediaDetails = data.details;
+        document.getElementById('mediaDetailHero').style.backgroundImage = activeMediaDetails.backdrop ? `url("${activeMediaDetails.backdrop}")` : '';
+        document.getElementById('mediaDetailPoster').src = activeMediaDetails.poster || item.poster || '';
+        document.getElementById('mediaDetailTitle').textContent = activeMediaDetails.title;
+        document.getElementById('mediaDetailOverview').textContent = activeMediaDetails.overview || '';
+        document.getElementById('mediaDetailMeta').innerHTML = `
+            <span class="discover-pill">${activeMediaDetails.type === 'movie' ? 'Movie' : 'Series'}</span>
+            <span>${escapeMediaHtml(activeMediaDetails.year || '')}</span>
+            ${activeMediaDetails.rating ? `<span class="discover-dot"></span><span>IMDb ${escapeMediaHtml(activeMediaDetails.rating)}</span>` : ''}
+            ${(activeMediaDetails.genres || []).map(genre => `<span class="discover-pill">${escapeMediaHtml(genre)}</span>`).join('')}
+        `;
+
+        if (activeMediaDetails.type === 'series') {
+            const seasons = (activeMediaDetails.seasons || []).filter(season => season.episode_count > 0 && season.season_number > 0);
+            const seasonSelect = document.getElementById('mediaSeasonSelect');
+            seasonSelect.innerHTML = seasons.map(season => `<option value="${season.season_number}">${escapeMediaHtml(season.name)}</option>`).join('');
+            if (seasons.length > 0) {
+                await loadSelectedSeason();
+            } else {
+                document.getElementById('mediaEpisodeSelect').innerHTML = '';
+            }
+            updateAutoDestination();
+        }
+    } catch (error) {
+        console.warn('Media details failed', error);
+    }
+}
+
+function updateAutoDestination(force = false) {
+    if (!activeMediaDetails) return;
+    const input = document.getElementById('mediaDestinationPath');
+    if (!input) return;
+    const season = activeMediaDetails.type === 'series'
+        ? document.getElementById('mediaSeasonSelect').value
+        : null;
+    const next = buildMediaDestination(activeMediaDetails.type, activeMediaDetails.title, activeMediaDetails.year, season);
+    if (force || !input.value.trim() || input.value === destinationAutoValue) {
+        input.value = next;
+        destinationAutoValue = next;
+    }
+}
+
+function renderRecentPathChips() {
+    const container = document.getElementById('mediaRecentPathChips');
+    if (!container) return;
+    container.innerHTML = '';
+    recentMediaPaths.slice(-8).reverse().forEach(path => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'discover-recent-path';
+        chip.textContent = path;
+        chip.title = path;
+        chip.addEventListener('click', () => {
+            document.getElementById('mediaConfirmPath').value = path;
+        });
+        container.appendChild(chip);
+    });
+}
+
+function updateMediaSourceSubtitle() {
+    if (!activeMedia || activeMedia.type !== 'series') return;
+    const season = document.getElementById('mediaSeasonSelect').value;
+    const episode = document.getElementById('mediaEpisodeSelect').value;
+    document.getElementById('mediaSourceSubtitle').textContent = `Sources for S${season}E${episode}`;
+    if (mediaStreams.length > 0) {
+        mediaStreams = [];
+        document.getElementById('mediaSourceList').innerHTML = '';
+    }
+}
+
+async function loadSelectedSeason() {
+    if (!activeMediaDetails || activeMediaDetails.type !== 'series') return;
+    const season = document.getElementById('mediaSeasonSelect').value;
+    if (!season) return;
+
+    try {
+        const response = await fetch(mediaSeasonRoute.replace('/0/0', '/' + activeMediaDetails.id + '/' + season));
+        const data = await response.json();
+        const episodes = Array.isArray(data.episodes) ? data.episodes : [];
+        activeEpisodes = episodes;
+        const episodeSelect = document.getElementById('mediaEpisodeSelect');
+        episodeSelect.innerHTML = episodes.map(episode => `<option value="${episode.episode_number}">E${episode.episode_number} · ${escapeMediaHtml(episode.name)}</option>`).join('');
+        updateMediaSourceSubtitle();
+        updateAutoDestination();
+    } catch (error) {
+        console.warn('Season load failed', error);
+    }
+}
+
+async function findMediaSources() {
+    if (!activeMediaDetails) return;
+    const button = document.getElementById('mediaFindSourcesBtn');
+    const loading = document.getElementById('mediaStreamLoading');
+    const list = document.getElementById('mediaSourceList');
+    button.disabled = true;
+    button.textContent = 'Searching...';
+    list.innerHTML = '';
+    loading.style.display = 'block';
+
+    const payload = {
+        type: activeMediaDetails.type,
+        tmdb_id: activeMediaDetails.id,
+        season: activeMediaDetails.type === 'series' ? Number(document.getElementById('mediaSeasonSelect').value) : null,
+        episode: activeMediaDetails.type === 'series' ? Number(document.getElementById('mediaEpisodeSelect').value) : null
+    };
+
+    try {
+        const response = await fetch("{{ path('media_streams') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Could not find sources.');
+        }
+        mediaStreams = Array.isArray(data.streams) ? data.streams : [];
+        renderMediaStreams();
+    } catch (error) {
+        mediaStreams = [];
+        list.innerHTML = `<div class="discover-empty" style="display:block;">${escapeMediaHtml(error.message)}</div>`;
+    } finally {
+        loading.style.display = 'none';
+        button.disabled = false;
+        button.textContent = 'Find sources';
+    }
+}
+
+function renderMediaStreams() {
+    const list = document.getElementById('mediaSourceList');
+    list.innerHTML = '';
+    document.getElementById('mediaSourceSubtitle').textContent = mediaStreams.length > 0
+        ? mediaStreams.length + ' sources found'
+        : 'No compatible torrent source found.';
+
+    if (mediaStreams.length === 0) {
+        list.innerHTML = '<div class="discover-empty" style="display:block;">No compatible torrent source found.</div>';
+        return;
+    }
+
+    mediaStreams.forEach((stream, index) => {
+        const card = document.createElement('div');
+        card.className = 'discover-source';
+        const kindLabel = stream.kind === 'direct' ? 'Direct' : 'Torrent';
+        const actionLabel = stream.kind === 'direct' ? 'Add to Queue' : 'Send to Debrid';
+        card.innerHTML = `
+            <div class="discover-source-main">
+                <div class="discover-source-top">
+                    <span class="discover-source-addon">${escapeMediaHtml(stream.addon)}</span>
+                    <span class="discover-source-quality">${escapeMediaHtml(stream.quality || stream.name || 'Video')}</span>
+                    <span class="discover-pill">${kindLabel}</span>
+                </div>
+                <div class="discover-source-title">${escapeMediaHtml(stream.title || stream.filename || '')}</div>
+                <div class="discover-source-meta">
+                    ${stream.size ? `<span>${escapeMediaHtml(stream.size)}</span><span class="discover-dot"></span>` : ''}
+                    ${stream.seeders !== null && stream.seeders !== undefined ? `<span class="discover-seeders">${stream.seeders} seeders</span><span class="discover-dot"></span>` : ''}
+                    <span>${escapeMediaHtml(stream.addon)}</span>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="openMediaConfirm(${index})">${actionLabel}</button>
+        `;
+        list.appendChild(card);
+    });
+}
+
+function joinMediaPath(base, relative) {
+    const cleanBase = String(base || '').replace(/\/+$/, '');
+    const cleanRelative = String(relative || '').replace(/^\/+/, '');
+    if (!cleanRelative) return cleanBase;
+    return cleanBase + '/' + cleanRelative;
+}
+
+function withVideoExtension(name, stream) {
+    const value = String(name || '').trim();
+    if (!value || stream.kind !== 'direct') return value;
+    if (/\.(mkv|mp4|avi|mov|m4v|webm|wmv|ts|m2ts|mpg|mpeg)$/i.test(value)) return value;
+    return value + '.mkv';
+}
+
+function mediaStreamFilename(stream) {
+    if (!stream) return 'Selected file';
+
+    const explicit = String(stream.filename || '').trim();
+    if (explicit) return withVideoExtension(explicit, stream);
+
+    const lines = String(stream.title || '')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    for (const line of lines) {
+        const folderMatch = line.match(/(?:📁|📂)\s*([^\n]+)/u);
+        if (folderMatch && folderMatch[1].trim()) {
+            const folderName = folderMatch[1].replace(/[^\p{L}\p{N}\u0029\u005D._-]+$/u, '').trim();
+            return withVideoExtension(folderName, stream);
+        }
+    }
+
+    const videoLine = [...lines].reverse().find(line => /\.(mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i.test(line));
+    if (videoLine) return videoLine;
+
+    if (stream.kind === 'direct' && lines.length > 0) {
+        const lastLine = lines[lines.length - 1];
+        if (lastLine) return withVideoExtension(lastLine, stream);
+    }
+
+    try {
+        if (!stream.url) throw new Error('No URL');
+        const path = new URL(stream.url).pathname;
+        const base = decodeURIComponent(path.split('/').filter(Boolean).pop() || '');
+        if (base) return withVideoExtension(base, stream);
+    } catch (error) {
+    }
+
+    return stream.kind === 'direct' ? withVideoExtension('Direct video source', stream) : 'Selected torrent file';
+}
+
+function getMediaAiContext() {
+    const season = activeMediaDetails && activeMediaDetails.type === 'series'
+        ? document.getElementById('mediaSeasonSelect').value
+        : null;
+    const episode = activeMediaDetails && activeMediaDetails.type === 'series'
+        ? document.getElementById('mediaEpisodeSelect').value
+        : null;
+    const suffix = season && episode
+        ? ` S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
+        : '';
+    const packName = activeMediaDetails.title
+        + (activeMediaDetails.year ? ' (' + activeMediaDetails.year + ')' : '')
+        + suffix;
+    const sourceName = (pendingStream && mediaStreamFilename(pendingStream))
+        || (activeMediaDetails.title + (activeMediaDetails.year ? ' (' + activeMediaDetails.year + ')' : '') + suffix + '.mkv');
+
+    return { packName, sourceName };
+}
+
+async function requestMediaAiSuggestion(button) {
+    const context = getMediaAiContext();
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.textContent = 'AI...';
+
+    try {
+        const formData = new FormData();
+        formData.append('packName', context.packName);
+        formData.append('files[]', context.sourceName);
+
+        const response = await fetch("{{ path('post_rename_ai') }}", {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        const suggestions = data.suggestions || {};
+        return suggestions[context.sourceName] || Object.values(suggestions)[0] || null;
+    } catch (error) {
+        window.notify('error', 'AI rename failed: ' + error.message);
+        return null;
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalText;
+    }
+}
+
+function applyMediaAiPath(suggestion) {
+    if (!suggestion || !suggestion.path) return false;
+    const destination = joinMediaPath(defaultMediaPath, suggestion.path);
+    document.getElementById('mediaDestinationPath').value = destination;
+    destinationAutoValue = destination;
+    const confirmPath = document.getElementById('mediaConfirmPath');
+    if (confirmPath) confirmPath.value = destination;
+    return true;
+}
+
+async function suggestMediaDestination(button) {
+    if (!activeMediaDetails) return;
+    const suggestion = await requestMediaAiSuggestion(button);
+    if (!suggestion) {
+        window.notify('info', 'AI did not return a path suggestion.');
+        return;
+    }
+    if (!applyMediaAiPath(suggestion)) {
+        window.notify('info', 'AI did not return a path suggestion.');
+    }
+}
+
+async function suggestMediaFilename(button) {
+    if (!pendingStream || !activeMediaDetails) return;
+
+    const suggestion = await requestMediaAiSuggestion(button);
+    if (!suggestion || !suggestion.filename) {
+        window.notify('info', 'AI did not return a filename suggestion.');
+        return;
+    }
+
+    document.getElementById('mediaConfirmFilename').value = suggestion.filename;
+    if (suggestion.path) {
+        applyMediaAiPath(suggestion);
+    }
+}
+
+function sanitizeMediaFilenamePart(value) {
+    return String(value || '')
+        .replace(/[\\/:*?"<>|]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function getSelectedEpisode() {
+    if (!activeMediaDetails || activeMediaDetails.type !== 'series') return null;
+    const season = Number(document.getElementById('mediaSeasonSelect').value);
+    const episode = Number(document.getElementById('mediaEpisodeSelect').value);
+    if (!season || !episode) return null;
+    const match = activeEpisodes.find(entry => Number(entry.episode_number) === episode);
+    return { season, episode, title: match ? match.name : '' };
+}
+
+function videoExtensionFor(stream) {
+    const source = mediaStreamFilename(stream);
+    const match = String(source || '').match(/\.(mkv|mp4|avi|mov|m4v|webm|wmv|ts|m2ts|mpg|mpeg)$/i);
+    return match ? match[0] : '.mkv';
+}
+
+function buildMediaFilename(stream) {
+    if (!activeMediaDetails) return '';
+    const title = sanitizeMediaFilenamePart(activeMediaDetails.title);
+    if (!title) return '';
+    const year = activeMediaDetails.year ? ' (' + activeMediaDetails.year + ')' : '';
+    const extension = videoExtensionFor(stream);
+
+    if (activeMediaDetails.type === 'series') {
+        const selected = getSelectedEpisode();
+        if (!selected) return '';
+        const code = 'S'
+            + String(selected.season).padStart(2, '0')
+            + 'E'
+            + String(selected.episode).padStart(2, '0');
+        const episodeTitle = selected.title ? ' - ' + sanitizeMediaFilenamePart(selected.title) : '';
+        return `${title}${year} - ${code}${episodeTitle}${extension}`;
+    }
+
+    return `${title}${year}${extension}`;
+}
+
+function buildMediaDestination(type, title, year, season) {
+    const base = defaultMediaPath ? defaultMediaPath.replace(/\/+$/, '') : '/nas';
+    const safeTitle = String(title || '').replace(/[/\\]/g, '-');
+    if (type === 'series') {
+        const folder = safeTitle + (year ? ' (' + year + ')' : '');
+        const seasonNumber = String(Number(season) || 1).padStart(2, '0');
+        return `${base}/Video/TV Shows/${folder}/Season ${seasonNumber}/`;
+    }
+    return `${base}/Video/Movies/${safeTitle}${year ? ' (' + year + ')' : ''}/`;
+}
+
+function openMediaConfirm(index) {
+    pendingStream = mediaStreams[index];
+    if (!pendingStream) return;
+    const season = activeMediaDetails.type === 'series' ? document.getElementById('mediaSeasonSelect').value : null;
+    document.getElementById('mediaConfirmDescription').textContent = pendingStream.kind === 'direct'
+        ? 'This direct video source will be added to the download queue.'
+        : 'The torrent will be added to Alldebrid, then the selected file will be queued for download.';
+    document.getElementById('mediaConfirmFile').textContent = mediaStreamFilename(pendingStream);
+    const jellyfinFilename = buildMediaFilename(pendingStream);
+    document.getElementById('mediaConfirmFilename').value = jellyfinFilename || pendingStream.filename || '';
+    const destinationInput = document.getElementById('mediaDestinationPath');
+    document.getElementById('mediaConfirmPath').value = destinationInput.value.trim()
+        || buildMediaDestination(activeMediaDetails.type, activeMediaDetails.title, activeMediaDetails.year, season);
+    document.getElementById('mediaConfirmStatus').style.display = 'none';
+    renderRecentPathChips();
+    document.getElementById('mediaConfirmButton').disabled = false;
+    document.getElementById('mediaConfirmButton').textContent = 'Add to queue';
+    document.getElementById('mediaConfirmBackdrop').classList.add('open');
+}
+
+function closeMediaConfirm(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('mediaConfirmBackdrop').classList.remove('open');
+    pendingStream = null;
+}
+
+async function confirmMediaDebrid() {
+    if (!pendingStream) return;
+    const button = document.getElementById('mediaConfirmButton');
+    const status = document.getElementById('mediaConfirmStatus');
+    button.disabled = true;
+    button.textContent = 'Adding...';
+    status.style.display = 'block';
+    status.style.background = 'rgba(255,255,255,0.05)';
+    status.style.color = 'var(--text-secondary)';
+    status.textContent = 'Adding torrent to Alldebrid...';
+
+    try {
+        const response = await fetch("{{ path('media_debrid') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                info_hash: pendingStream.info_hash,
+                file_idx: pendingStream.file_idx,
+                url: pendingStream.url,
+                kind: pendingStream.kind,
+                size: pendingStream.size,
+                filename: mediaStreamFilename(pendingStream),
+                override_filename: document.getElementById('mediaConfirmFilename').value.trim(),
+                sources: pendingStream.sources || [],
+                title: pendingStream.title,
+                addon: pendingStream.addon,
+                path: document.getElementById('mediaConfirmPath').value,
+                media_title: activeMediaDetails.title
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Could not add this torrent to Alldebrid.');
+        }
+
+        status.style.color = 'var(--success)';
+        status.textContent = 'Added to queue: ' + data.filename;
+        const usedPath = document.getElementById('mediaConfirmPath').value.trim();
+        if (usedPath && !recentMediaPaths.includes(usedPath)) {
+            recentMediaPaths.push(usedPath);
+        }
+        document.getElementById('mediaDestinationPath').value = usedPath;
+        destinationAutoValue = usedPath;
+        window.notify('success', {
+            action: 'Finished',
+            media_type: 'video',
+            item: data.filename + ' added to the download queue'
+        });
+        setTimeout(closeMediaConfirm, 700);
+    } catch (error) {
+        status.style.color = 'var(--danger)';
+        status.textContent = error.message;
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Add to queue';
+    }
+}
+
+function closeMediaDetail(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('mediaDetailBackdrop').classList.remove('open');
+    document.body.style.overflow = '';
+}
+
+function renderAddonsList() {
+    const list = document.getElementById('mediaAddonList');
+    list.innerHTML = '';
+
+    if (addonsState.length === 0) {
+        list.innerHTML = '<div class="discover-empty" style="display:block;padding:1.2rem;">No stream addon configured.</div>';
+        return;
+    }
+
+    addonsState.forEach((addon, index) => {
+        const row = document.createElement('div');
+        row.className = 'addon-row';
+        row.innerHTML = `
+            <span class="addon-status ${addon.enabled ? '' : 'off'}"></span>
+            <div class="addon-main">
+                <div class="addon-name">${escapeMediaHtml(addon.name || 'Unnamed addon')}</div>
+                <div class="addon-url">${escapeMediaHtml(addon.manifest_url || '')}</div>
+                <div class="addon-kind">stream · tt</div>
+            </div>
+            <div class="addon-priority-wrap">
+                <span>Priority</span>
+                <input type="number" class="addon-priority" min="1" max="999" value="${Number(addon.priority || 100)}" title="Lower number = higher priority">
+            </div>
+            <span class="addon-switch ${addon.enabled ? 'on' : ''}" role="switch" aria-checked="${addon.enabled ? 'true' : 'false'}"></span>
+            <button class="addon-remove" title="Remove addon" onclick="removeMediaAddon(${index})">×</button>
+        `;
+        row.querySelector('.addon-switch').addEventListener('click', () => {
+            addonsState[index].enabled = !addonsState[index].enabled;
+            renderAddonsList();
+        });
+        row.querySelector('.addon-priority').addEventListener('input', event => {
+            const value = parseInt(event.target.value, 10);
+            addonsState[index].priority = Number.isFinite(value) ? Math.max(1, Math.min(999, value)) : 100;
+            event.target.value = addonsState[index].priority;
+        });
+        list.appendChild(row);
+    });
+}
+
+function removeMediaAddon(index) {
+    addonsState.splice(index, 1);
+    renderAddonsList();
+}
+
+function setAddonStatus(message, type) {
+    const status = document.getElementById('mediaAddonStatus');
+    status.style.display = 'block';
+    if (type === 'error') {
+        status.style.background = 'rgba(220,53,69,.1)';
+        status.style.color = 'var(--danger)';
+        status.style.border = '1px solid rgba(220,53,69,.35)';
+    } else if (type === 'success') {
+        status.style.background = 'rgba(40,167,69,.1)';
+        status.style.color = 'var(--success)';
+        status.style.border = '1px solid rgba(40,167,69,.35)';
+    } else {
+        status.style.background = 'rgba(255,255,255,.05)';
+        status.style.color = 'var(--text-secondary)';
+        status.style.border = '1px solid var(--border)';
+    }
+    status.textContent = message;
+}
+
+async function validateMediaAddon() {
+    const url = document.getElementById('mediaAddonUrl').value.trim();
+    if (!url) {
+        setAddonStatus('Enter a manifest URL first.', 'error');
+        return null;
+    }
+
+    const button = document.getElementById('mediaValidateAddonButton');
+    button.disabled = true;
+    setAddonStatus('Validating manifest...', 'info');
+
+    try {
+        const response = await fetch("{{ path('media_addons_validate') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Invalid manifest.');
+        }
+
+        pendingAddon = {
+            id: data.manifest.id || url,
+            name: data.manifest.name || 'Unnamed addon',
+            manifest_url: data.manifest_url,
+            enabled: true,
+            priority: 100,
+            timeout: 10
+        };
+        setAddonStatus(`Valid manifest: ${pendingAddon.name}`, 'success');
+        return pendingAddon;
+    } catch (error) {
+        pendingAddon = null;
+        setAddonStatus(error.message, 'error');
+        return null;
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function addMediaAddon() {
+    if (!pendingAddon || document.getElementById('mediaAddonUrl').value.trim() !== pendingAddon.manifest_url) {
+        const validated = await validateMediaAddon();
+        if (!validated) return;
+    }
+
+    if (addonsState.some(addon => addon.manifest_url === pendingAddon.manifest_url)) {
+        setAddonStatus('This addon is already configured.', 'error');
+        return;
+    }
+
+    addonsState.push({ ...pendingAddon });
+    pendingAddon = null;
+    document.getElementById('mediaAddonUrl').value = '';
+    renderAddonsList();
+    setAddonStatus('Addon added. Save settings to persist it.', 'success');
+}
+
+async function saveMediaSettings() {
+    const button = document.getElementById('mediaSaveSettingsButton');
+    button.disabled = true;
+    button.textContent = 'Saving...';
+    setAddonStatus('Saving TMDB and addon settings...', 'info');
+
+    try {
+        const settingsResponse = await fetch("{{ path('media_settings') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tmdb_api_key: document.getElementById('tmdbApiKey').value.trim(),
+                tmdb_language: document.getElementById('tmdbLanguage').value
+            })
+        });
+        const settingsData = await settingsResponse.json();
+        if (!settingsResponse.ok || settingsData.success === false) {
+            throw new Error(settingsData.message || 'Could not save TMDB settings.');
+        }
+
+        const addonsResponse = await fetch("{{ path('media_addons_save') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ addons: addonsState })
+        });
+        const addonsData = await addonsResponse.json();
+        if (!addonsResponse.ok || addonsData.success === false) {
+            throw new Error(addonsData.message || 'Could not save addons.');
+        }
+
+        if (Array.isArray(addonsData.addons)) {
+            addonsState = addonsData.addons;
+            renderAddonsList();
+        }
+        setAddonStatus('Settings saved. Reloading...', 'success');
+        setTimeout(() => window.location.reload(), 900);
+    } catch (error) {
+        setAddonStatus(error.message, 'error');
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Save settings';
+    }
+}
+
+function openAddonsDrawer() {
+    renderAddonsList();
+    document.getElementById('addonsBackdrop').classList.add('open');
+    document.getElementById('addonsDrawer').classList.add('open');
+}
+
+function closeAddonsDrawer() {
+    document.getElementById('addonsBackdrop').classList.remove('open');
+    document.getElementById('addonsDrawer').classList.remove('open');
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+        closeMediaDetail();
+        closeMediaConfirm();
+        closeAddonsDrawer();
+    }
+});
+
+const browseDescriptions = {
+    'Plateformes': 'Tes services de streaming, regroupés avec leurs catalogues de nouveautés, tendances et favoris.',
+    'Favoris': 'Tes listes personnelles : nouveautés, à la une, populaires, HK, Trakt et TMDB.',
+    'Genres': 'Parcours les catalogues par genre, films et séries fusionnés.',
+    'Thèmes': 'Des collections thématiques : aliens, cyberpunk, mafia, zombies, et plus.',
+    'Décennies': 'Retrouve les films et séries marquants par décennie.',
+    'Ma sélection': 'Ta watchlist, tes best-of et les tendances globales.',
+    'Iptv': 'Chaînes et VOD depuis ton addon NexoTV — à configurer pour activer les sources.'
+};
+
+const addonLabels = {
+    'aio-metadata': 'AIOMetadata',
+    'org.stremio.HKStremio': 'HKStremio',
+    'uuid.d4f0a37e.topstreaming.flixpatrol': 'FlixPatrol',
+    'community.nexotv.enhanced': 'NexoTV',
+    'community.lumio.stream': 'Lumio'
+};
+
+function addonLabel(id) {
+    return addonLabels[id] || id || 'Addon inconnu';
+}
+
+function setDiscoveryMode(mode) {
+    discoveryMode = mode;
+    document.getElementById('searchMode').style.display = mode === 'search' ? 'block' : 'none';
+    document.getElementById('browseMode').style.display = mode === 'browse' ? 'block' : 'none';
+    document.getElementById('mode-search-btn').classList.toggle('active', mode === 'search');
+    document.getElementById('mode-browse-btn').classList.toggle('active', mode === 'browse');
+
+    if (mode === 'browse') {
+        renderBrowse();
+    }
+}
+
+function renderDiscoverStatus() {
+    const status = document.getElementById('discoverStatus');
+    if (!status) return;
+
+    const meta = nuvioMeta || {};
+    if (!meta.imported_at || nuvioCollections.length === 0) {
+        status.textContent = 'Aucune collection Nuvio importée';
+        return;
+    }
+
+    const date = new Date(Number(meta.imported_at) * 1000);
+    const pending = {};
+    nuvioCollections.forEach(collection => {
+        (collection.folders || []).forEach(folder => {
+            Object.entries(folder.pending_addons || {}).forEach(([id, count]) => {
+                pending[id] = (pending[id] || 0) + Number(count || 0);
+            });
+        });
+    });
+    const pendingCount = Object.values(pending).reduce((sum, count) => sum + count, 0);
+    let html = '<span class="addon-status' + (pendingCount > 0 ? ' pending' : '') + '"></span> Nuvio Collections · importées le ' + date.toLocaleDateString('fr-FR');
+    if (pendingCount > 0) {
+        html += ` <span style="color:#fbbf24;">· ${pendingCount} sources en attente (${Object.keys(pending).map(addonLabel).join(', ')})</span>`;
+    }
+    status.innerHTML = html;
+}
+
+function currentBrowseCollection() {
+    return nuvioCollections[browseCollectionIndex] || null;
+}
+
+function renderBrowse() {
+    const empty = document.getElementById('browseEmpty');
+    const content = document.getElementById('browseContent');
+
+    if (!Array.isArray(nuvioCollections) || nuvioCollections.length === 0) {
+        empty.style.display = 'block';
+        content.style.display = 'none';
+        document.getElementById('browseFolderView').classList.remove('open');
+        return;
+    }
+
+    empty.style.display = 'none';
+    content.style.display = 'block';
+    document.getElementById('browseFolderView').classList.remove('open');
+
+    if (browseCollectionIndex >= nuvioCollections.length) browseCollectionIndex = 0;
+    renderBrowseCollectionTabs();
+
+    const collection = currentBrowseCollection();
+    if (!collection) return;
+
+    const hero = document.getElementById('browseHero');
+    hero.style.backgroundImage = collection.backdrop ? `url("${collection.backdrop}")` : '';
+    document.getElementById('browseCollectionTitle').textContent = collection.title;
+    document.getElementById('browseCollectionDescription').textContent = browseDescriptions[collection.title] || 'Collections importées depuis Nuvio.';
+    const folders = collection.folders || [];
+    const sourceCount = folders.reduce((sum, folder) => sum + Number(folder.source_count || 0), 0);
+    const matchedCount = folders.reduce((sum, folder) => sum + Number(folder.matched_count || 0), 0);
+    const movieCount = folders.reduce((sum, folder) => sum + (folder.sources || []).filter(source => source.type === 'movie').length, 0);
+    const seriesCount = folders.reduce((sum, folder) => sum + (folder.sources || []).filter(source => source.type === 'series').length, 0);
+    document.getElementById('browseCollectionStats').innerHTML = `
+        <span class="browse-stat-pill">${folders.length} dossiers</span>
+        <span class="browse-stat-pill">${matchedCount} catalogues fusionnés</span>
+        <span class="browse-stat-pill">${movieCount} sources films</span>
+        <span class="browse-stat-pill">${seriesCount} sources séries</span>
+    `;
+    document.getElementById('browseFolderSubtitle').textContent = collection.title === 'Iptv'
+        ? 'Aucune source NexoTV configurée pour le moment.'
+        : 'Clique sur un dossier pour fusionner ses catalogues.';
+    document.getElementById('browseFolderSearch').value = '';
+    renderBrowseFolders();
+}
+
+function renderBrowseCollectionTabs() {
+    const wrap = document.getElementById('browseCollectionTabs');
+    wrap.innerHTML = '';
+
+    nuvioCollections.forEach((collection, index) => {
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'browse-collection-tab' + (index === browseCollectionIndex ? ' active' : '');
+        const thumb = collection.backdrop || collection.folders?.[0]?.cover || '';
+        tab.innerHTML = `
+            <img class="browse-collection-thumb" src="${escapeMediaHtml(thumb)}" alt="">
+            <span>
+                <span class="browse-collection-name">${escapeMediaHtml(collection.title)}</span>
+                <span class="browse-collection-count">${(collection.folders || []).length} dossiers</span>
+            </span>
+        `;
+        const deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'browse-collection-delete';
+        deleteButton.title = 'Supprimer la collection';
+        deleteButton.setAttribute('aria-label', `Supprimer la collection ${collection.title}`);
+        deleteButton.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+        deleteButton.addEventListener('click', event => {
+            event.stopPropagation();
+            deleteBrowseCollection(collection.id, collection.title);
+        });
+        tab.appendChild(deleteButton);
+        const image = tab.querySelector('img');
+        image.addEventListener('error', () => { image.style.visibility = 'hidden'; });
+        tab.addEventListener('click', () => {
+            browseCollectionIndex = index;
+            browseFolder = null;
+            renderBrowse();
+        });
+        wrap.appendChild(tab);
+    });
+}
+
+function renderBrowseFolders() {
+    const collection = currentBrowseCollection();
+    const grid = document.getElementById('browseFolderGrid');
+    if (!collection) return;
+
+    const query = (document.getElementById('browseFolderSearch').value || '').trim().toLowerCase();
+    const folders = (collection.folders || []).filter(folder => !query || String(folder.title || '').toLowerCase().includes(query));
+    grid.innerHTML = '';
+
+    if (folders.length === 0) {
+        grid.innerHTML = '<div class="browse-empty-state">Aucun dossier ne correspond au filtre.</div>';
+        return;
+    }
+
+    folders.forEach(folder => {
+        const card = document.createElement('article');
+        card.className = 'browse-folder-card' + (folder.hide_title ? ' no-title' : '');
+        const cover = folder.cover ? `<img class="browse-folder-cover" src="${escapeMediaHtml(folder.cover)}" alt="${escapeMediaHtml(folder.title)}" loading="lazy">` : '';
+        const logo = folder.logo && !folder.hide_title ? `<img class="browse-folder-logo" src="${escapeMediaHtml(folder.logo)}" alt="">` : '';
+        const titleOverlay = folder.logo && !folder.hide_title ? '' : `
+            <div class="browse-folder-title">
+                <h4>${escapeMediaHtml(folder.title)}</h4>
+                <span class="browse-folder-source-count">${folder.matched_count}/${folder.source_count} sources</span>
+            </div>
+        `;
+        card.innerHTML = `
+            ${cover}
+            <span class="browse-folder-cta">Ouvrir</span>
+            ${logo}
+            ${titleOverlay}
+        `;
+        const deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'browse-folder-delete';
+        deleteButton.title = 'Supprimer le dossier';
+        deleteButton.setAttribute('aria-label', `Supprimer le dossier ${folder.title}`);
+        deleteButton.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+        deleteButton.addEventListener('click', event => {
+            event.stopPropagation();
+            deleteBrowseFolder(collection.id, folder.id, folder.title);
+        });
+        card.appendChild(deleteButton);
+        card.querySelectorAll('img').forEach(img => img.addEventListener('error', () => { img.style.display = 'none'; }));
+        card.addEventListener('click', () => openBrowseFolder(folder));
+        grid.appendChild(card);
+    });
+}
+
+async function deleteBrowseCollection(collectionId, title) {
+    if (!confirm(`Supprimer la collection « ${title} » et tous ses dossiers ?`)) return;
+
+    try {
+        const response = await fetch("{{ path('media_collections_delete') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collection_id: collectionId })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Could not delete this collection.');
+        }
+
+        const index = nuvioCollections.findIndex(item => String(item.id) === String(collectionId));
+        if (index === -1) {
+            throw new Error('Collection not found locally.');
+        }
+
+        nuvioCollections.splice(index, 1);
+        if (index < browseCollectionIndex) browseCollectionIndex--;
+        else if (index === browseCollectionIndex) browseCollectionIndex = Math.min(index, nuvioCollections.length - 1);
+        browseCollectionIndex = Math.max(0, Math.min(browseCollectionIndex, nuvioCollections.length - 1));
+        browseFolder = null;
+        renderBrowse();
+        renderDiscoverStatus();
+        window.notify('success', `Collection « ${title} » supprimée.`);
+    } catch (error) {
+        window.notify('error', error.message);
+    }
+}
+
+function deleteCurrentBrowseCollection() {
+    const collection = currentBrowseCollection();
+    if (!collection) return;
+    deleteBrowseCollection(collection.id, collection.title);
+}
+
+async function deleteBrowseFolder(collectionId, folderId, title) {
+    if (!confirm(`Supprimer le dossier « ${title} » de cette collection ?`)) return;
+
+    try {
+        const response = await fetch("{{ path('media_collections_folder_delete') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collection_id: collectionId, folder_id: folderId })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Could not delete this folder.');
+        }
+
+        const collection = nuvioCollections.find(item => String(item.id) === String(collectionId));
+        if (collection) {
+            collection.folders = (collection.folders || []).filter(folder => String(folder.id) !== String(folderId));
+        }
+        if (browseFolder && String(browseFolder.id) === String(folderId)) {
+            closeBrowseFolder();
+        }
+        renderBrowse();
+        renderDiscoverStatus();
+        window.notify('success', `Dossier « ${title} » supprimé.`);
+    } catch (error) {
+        window.notify('error', error.message);
+    }
+}
+
+function deleteCurrentBrowseFolder() {
+    const collection = currentBrowseCollection();
+    if (!browseFolder || !collection) return;
+    deleteBrowseFolder(collection.id, browseFolder.id, browseFolder.title);
+}
+
+function openBrowseFolder(folder) {
+    browseFolder = folder;
+    browseType = 'all';
+    browseVisible = 12;
+    browseMergedItems = [];
+    browseSourceStates = (folder.sources || []).map(source => ({
+        source: source,
+        items: [],
+        skip: 0,
+        done: false,
+        error: null
+    }));
+
+    document.getElementById('browseContent').style.display = 'none';
+    document.getElementById('browseFolderView').classList.add('open');
+    const hero = document.getElementById('browseFolderHero');
+    hero.style.backgroundImage = folder.hero || folder.cover ? `url("${folder.hero || folder.cover}")` : '';
+    document.getElementById('browseFolderLogoWrap').innerHTML = folder.logo
+        ? `<img class="browse-folder-logo-large" src="${escapeMediaHtml(folder.logo)}" alt="">`
+        : '';
+    document.getElementById('browseFolderTitle').textContent = folder.title;
+    document.getElementById('browseFolderSubtitle2').textContent = 'Items fusionnés et dédupliqués depuis les catalogues du dossier.';
+    const pendingAddons = Object.keys(folder.pending_addons || {}).map(addonLabel);
+    document.getElementById('browseFolderStats').innerHTML = `
+        <span class="browse-stat-pill">${folder.matched_count}/${folder.source_count} catalogues</span>
+        <span class="browse-stat-pill">${(folder.sources || []).filter(s => s.type === 'movie').length} sources films</span>
+        <span class="browse-stat-pill">${(folder.sources || []).filter(s => s.type === 'series').length} sources séries</span>
+        ${pendingAddons.length ? `<span class="browse-stat-pill pending">En attente : ${escapeMediaHtml(pendingAddons.join(', '))}</span>` : ''}
+    `;
+    document.querySelectorAll('#browseTypeFilters button').forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'all'));
+    document.getElementById('browsePosterGrid').innerHTML = '';
+    document.getElementById('browseLoadMoreBtn').style.display = 'none';
+    document.getElementById('browseSourceSummary').textContent = 'Chargement des catalogues...';
+
+    loadBrowseItems(true);
+}
+
+function closeBrowseFolder() {
+    browseFolder = null;
+    browseSourceStates = [];
+    browseMergedItems = [];
+    document.getElementById('browseFolderView').classList.remove('open');
+    document.getElementById('browseContent').style.display = 'block';
+}
+
+function setBrowseType(type, button) {
+    browseType = type;
+    browseVisible = 12;
+    document.querySelectorAll('#browseTypeFilters button').forEach(btn => btn.classList.toggle('active', btn === button));
+    renderBrowsePosters();
+}
+
+function mapLimit(items, limit, worker) {
+    return new Promise(resolve => {
+        let next = 0;
+        let active = 0;
+        const results = new Array(items.length);
+        if (items.length === 0) return resolve(results);
+
+        const launch = () => {
+            while (active < limit && next < items.length) {
+                const index = next++;
+                active++;
+                Promise.resolve(worker(items[index], index)).then(result => {
+                    results[index] = result;
+                }).catch(error => {
+                    results[index] = { error: error.message || 'Request failed' };
+                }).finally(() => {
+                    active--;
+                    if (next < items.length) launch();
+                    else if (active === 0) resolve(results);
+                });
+            }
+        };
+        launch();
+    });
+}
+
+async function fetchBrowseSource(state) {
+    if (state.done) return;
+    const source = state.source;
+    try {
+        const response = await fetch("{{ path('media_catalog_items') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                addon_id: source.addon_id,
+                type: source.type,
+                catalog_id: source.catalog_id,
+                genre: source.genre || null,
+                skip: state.skip
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Catalog request failed.');
+        }
+        const items = Array.isArray(data.items) ? data.items : [];
+        state.items = state.items.concat(items);
+        state.skip += items.length;
+        state.done = items.length === 0;
+    } catch (error) {
+        state.error = error.message;
+        state.done = true;
+    }
+}
+
+async function loadBrowseItems(initial = false) {
+    if (!browseFolder) return;
+
+    const summary = document.getElementById('browseSourceSummary');
+    if (browseSourceStates.length === 0) {
+        browseMergedItems = [];
+        summary.textContent = `${browseFolder.matched_count}/${browseFolder.source_count} catalogues fusionnés`;
+        renderBrowsePosters();
+        return;
+    }
+
+    if (initial) {
+        const states = browseSourceStates;
+        await mapLimit(states, 4, state => fetchBrowseSource(state));
+    } else {
+        const pending = browseSourceStates.filter(state => !state.done);
+        await mapLimit(pending, 4, state => fetchBrowseSource(state));
+    }
+
+    const seen = new Set();
+    browseMergedItems = [];
+    browseSourceStates.forEach(state => {
+        state.items.forEach(item => {
+            const key = item.tmdb_id ? 'tmdb:' + item.tmdb_id : (item.imdb_id ? 'imdb:' + item.imdb_id : 'id:' + item.id);
+            if (seen.has(key)) return;
+            seen.add(key);
+            browseMergedItems.push(item);
+        });
+    });
+
+    const errorCount = browseSourceStates.filter(state => state.error).length;
+    summary.textContent = `${browseFolder.matched_count}/${browseFolder.source_count} catalogues fusionnés · ${browseMergedItems.length} titres` + (errorCount ? ` · ${errorCount} erreur(s)` : '');
+    renderBrowsePosters();
+}
+
+function browseItemType(item) {
+    if (item.media_type === 'movie' || item.media_type === 'series') return item.media_type;
+    if (item.type === 'movie') return 'movie';
+    if (item.type === 'series' || item.type === 'tv' || item.type === 'anime') return 'series';
+    return null;
+}
+
+function renderBrowsePosters() {
+    const grid = document.getElementById('browsePosterGrid');
+    const button = document.getElementById('browseLoadMoreBtn');
+    if (!grid) return;
+
+    browseFilteredItems = browseMergedItems.filter(item => browseType === 'all' || browseItemType(item) === browseType);
+    const visible = browseFilteredItems.slice(0, browseVisible);
+    grid.innerHTML = '';
+
+    if (visible.length === 0) {
+        let message = 'Aucun titre trouvé pour ce filtre.';
+        let action = '';
+        if (browseSourceStates.length === 0) {
+            const pendingAddons = Object.keys(browseFolder.pending_addons || {}).map(addonLabel);
+            if (Number(browseFolder.source_count || 0) > 0 && pendingAddons.length > 0) {
+                message = `Sources présentes, mais aucun addon configuré : ${pendingAddons.join(', ')}.`;
+                action = '<div style="margin-top:1rem;"><button class="btn btn-primary" onclick="openAddonsDrawer()">Configurer les addons</button></div>';
+            } else {
+                message = 'Aucune source configurée pour ce dossier.';
+            }
+        }
+        grid.innerHTML = `<div class="browse-empty-state">${escapeMediaHtml(message)}${action}</div>`;
+    } else {
+        visible.forEach(item => {
+            const type = browseItemType(item);
+            const card = document.createElement('article');
+            card.className = 'browse-poster-card';
+            card.innerHTML = `
+                <div class="browse-poster-wrap">
+                    <span class="browse-poster-type">${type === 'movie' ? 'FILM' : 'SÉRIE'}</span>
+                    ${item.rating ? `<span class="browse-poster-rating">${escapeMediaHtml(item.rating)}</span>` : ''}
+                    <img src="${escapeMediaHtml(item.poster || '')}" alt="${escapeMediaHtml(item.title)}" loading="lazy">
+                </div>
+                <div class="browse-poster-body">
+                    <h4>${escapeMediaHtml(item.title)}</h4>
+                    <div><span>${escapeMediaHtml(item.year || '')}</span><span class="discover-dot"></span><span>${type === 'movie' ? 'Film' : 'Série'}</span></div>
+                </div>
+            `;
+            card.querySelector('img').addEventListener('error', event => { event.target.style.display = 'none'; });
+            card.addEventListener('click', () => openBrowseItem(item));
+            grid.appendChild(card);
+        });
+    }
+
+    const hasPendingSources = browseSourceStates.some(state => !state.done);
+    button.style.display = (browseVisible < browseFilteredItems.length || hasPendingSources) ? 'inline-flex' : 'none';
+}
+
+async function loadMoreBrowseItems() {
+    if (browseVisible < browseFilteredItems.length) {
+        browseVisible += 12;
+        renderBrowsePosters();
+        return;
+    }
+
+    if (browseSourceStates.some(state => !state.done)) {
+        await loadBrowseItems(false);
+        browseVisible += 12;
+        renderBrowsePosters();
+    }
+}
+
+async function openBrowseItem(item) {
+    const type = browseItemType(item);
+
+    if (item.tmdb_id && type) {
+        openMediaDetail({
+            id: item.tmdb_id,
+            type: type,
+            title: item.title,
+            year: item.year,
+            poster: item.poster,
+            backdrop: item.backdrop,
+            overview: item.overview,
+            rating: item.rating
+        });
+        return;
+    }
+
+    try {
+        const response = await fetch("{{ path('media_resolve_item') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tmdb_id: item.tmdb_id || 0,
+                imdb_id: item.imdb_id || (String(item.id || '').startsWith('tt') ? item.id : ''),
+                type: type || item.type,
+                title: item.title,
+                year: item.year
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false || !data.details) {
+            throw new Error(data.message || 'Could not resolve this item.');
+        }
+        openMediaDetail(data.details);
+    } catch (error) {
+        window.notify('error', error.message);
+    }
+}
+
+function setNuvioImportStatus(message, type) {
+    const status = document.getElementById('nuvioImportStatus');
+    status.style.display = 'block';
+    if (type === 'error') {
+        status.style.background = 'rgba(220,53,69,.1)';
+        status.style.color = 'var(--danger)';
+        status.style.border = '1px solid rgba(220,53,69,.35)';
+    } else if (type === 'success') {
+        status.style.background = 'rgba(40,167,69,.1)';
+        status.style.color = 'var(--success)';
+        status.style.border = '1px solid rgba(40,167,69,.35)';
+    } else {
+        status.style.background = 'rgba(255,255,255,.05)';
+        status.style.color = 'var(--text-secondary)';
+        status.style.border = '1px solid var(--border)';
+    }
+    status.textContent = message;
+}
+
+async function importNuvioCollections() {
+    const fileInput = document.getElementById('nuvioCollectionsFile');
+    const textarea = document.getElementById('nuvioCollectionsJson');
+    const button = document.getElementById('nuvioImportButton');
+    let json = textarea.value.trim();
+
+    if (fileInput.files && fileInput.files[0]) {
+        json = await fileInput.files[0].text();
+    }
+
+    if (!json) {
+        setNuvioImportStatus('Sélectionne un fichier ou colle le JSON Nuvio.', 'error');
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = 'Importing...';
+    setNuvioImportStatus('Import en cours...', 'info');
+
+    try {
+        const response = await fetch("{{ path('media_collections_import') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ json: json })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Import failed.');
+        }
+
+        const report = data.report || {};
+        const pendingNames = Object.keys(report.unmatched_addons || {}).map(addonLabel);
+        let message = `Import OK · ${report.collections || 0} collections · ${report.folders || 0} dossiers · ${report.matched || 0}/${report.sources || 0} sources actives`;
+        if (report.pending) message += ` · ${report.pending} en attente${pendingNames.length ? ' (' + pendingNames.join(', ') + ')' : ''}`;
+        if (report.skipped) message += ` · ${report.skipped} ignorées`;
+        setNuvioImportStatus(message, report.pending ? 'error' : 'success');
+        setTimeout(() => window.location.reload(), report.pending ? 2600 : 1000);
+    } catch (error) {
+        setNuvioImportStatus(error.message, 'error');
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Import collections';
+    }
+}
+
+async function clearNuvioCollections() {
+    if (!confirm('Supprimer les collections Nuvio importées ?')) return;
+    try {
+        const response = await fetch("{{ path('media_collections_clear') }}", { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || data.success === false) throw new Error(data.message || 'Could not clear collections.');
+        setNuvioImportStatus('Collections supprimées. Rechargement...', 'success');
+        setTimeout(() => window.location.reload(), 800);
+    } catch (error) {
+        setNuvioImportStatus(error.message, 'error');
+    }
+}
+
+renderMediaCards();
+renderAddonsList();
+renderDiscoverStatus();
+setDiscoveryMode(nuvioCollections.length > 0 ? 'browse' : 'search');
+
+const browsePreviewParams = new URLSearchParams(location.search);
+if (browsePreviewParams.has('folder') && nuvioCollections.length > 0) {
+    const previewCollectionIndex = parseInt(browsePreviewParams.get('collection') || '0', 10) || 0;
+    const previewFolderIndex = parseInt(browsePreviewParams.get('folder') || '0', 10) || 0;
+    const previewCollection = nuvioCollections[previewCollectionIndex] || nuvioCollections[0];
+    const previewFolder = previewCollection ? (previewCollection.folders || [])[previewFolderIndex] : null;
+    if (previewFolder) {
+        browseCollectionIndex = nuvioCollections.indexOf(previewCollection);
+        setDiscoveryMode('browse');
+        setTimeout(() => openBrowseFolder(previewFolder), 100);
+    }
+}
+
+if (new URLSearchParams(location.search).get('addons') === '1') {
+    openAddonsDrawer();
+}
+</script>
+{% endblock %}

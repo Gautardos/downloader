@@ -3,8 +3,27 @@
 {% block title %}Debrid Downloader{% endblock %}
 
 {% block body %}
-<div class="container">
-    <h1>📥 Downloads</h1>
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Debrid Downloads',
+        subtitle: 'Manage your packs and files debrided through Alldebrid.',
+        icon: 'download'
+    } %}
+        {% block actions %}
+            <button class="btn btn-secondary" onclick="purgeHistory()" style="display: flex; align-items: center; gap: 0.5rem; background: var(--danger);">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                Purge AllDebrid History
+            </button>
+            <button class="btn btn-primary" onclick="openUploadModal()" style="display: flex; align-items: center; gap: 0.5rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add New Magnet / Link
+            </button>
+        {% endblock %}
+    {% endembed %}
+
+    <div class="view-switcher">
+        <a href="{{ path('torrent') }}" class="btn btn-secondary">Recent links</a>
+        <a href="{{ path('torrent', {view: 'packs'}) }}" class="btn btn-primary">Packs (advanced)</a>
+    </div>
 
     <!-- Global Controls -->
     <datalist id="recent-paths-list">
@@ -12,15 +31,6 @@
             <option value="{{ path }}">
         {% endfor %}
     </datalist>
-
-    <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-bottom: 2rem;">
-        <button class="btn btn-secondary" onclick="purgeHistory()" style="display: flex; align-items: center; gap: 0.5rem; background: var(--danger);">
-            <span>🧹</span> Purge AllDebrid History
-        </button>
-        <button class="btn btn-primary" onclick="openUploadModal()" style="display: flex; align-items: center; gap: 0.5rem;">
-            <span>☁️</span>Add New Magnet / Link
-        </button>
-    </div>
 
     {% if packs is empty %}
         <p style="text-align: center; color: var(--text-secondary); margin: 3rem 0;">
@@ -37,7 +47,9 @@
                     <div class="pack-header" onclick="togglePack('pack-{{ loop.index }}')">
                         <div class="pack-info">
                             <h2>
-                                <span class="pack-icon">📁</span>
+                                <span class="pack-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                                </span>
                                 {{ pack.name }}
                             </h2>
                             <div class="pack-meta">
@@ -290,7 +302,6 @@
             </div>
         </div>
     </div>
-</div>
 
 <script>
 
@@ -1495,6 +1506,13 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <style>
+.view-switcher {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
 .packs-grid {
     display: flex;
     flex-direction: column;
@@ -1769,7 +1787,11 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 
 .pack-icon {
-    font-size: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    color: var(--accent);
+    vertical-align: -0.2em;
+    margin-right: 0.2rem;
 }
 
 .pack-meta {

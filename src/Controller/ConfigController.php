@@ -35,6 +35,10 @@ class ConfigController extends AbstractController
 
             $storage->set('config', [
                 'api_key' => $apiKey,
+                'tmdb_api_key' => $request->request->has('tmdb_api_key')
+                    ? $request->request->get('tmdb_api_key')
+                    : ($currentConfig['tmdb_api_key'] ?? ''),
+                'tmdb_language' => $request->request->get('tmdb_language', $currentConfig['tmdb_language'] ?? 'fr-FR'),
                 'ai_provider' => $aiProvider,
                 'openrouter_api_key' => $request->request->get('openrouter_api_key', ''),
                 'ai_model_default' => trim((string) $request->request->get('ai_model_default', '')),
@@ -384,6 +388,7 @@ class ConfigController extends AbstractController
     {
         $projectDir = $kernel->getProjectDir();
         $configFile = $storage->getStorageDir() . '/config.json';
+        $mediaAddonsFile = $storage->getStorageDir() . '/media_addons.json';
         $credentialsFile = $projectDir . '/var/home/.local/credentials.json';
 
         $zipPath = sys_get_temp_dir() . '/alldebrid_config_backup_' . time() . '.zip';
@@ -396,6 +401,11 @@ class ConfigController extends AbstractController
         $added = false;
         if (file_exists($configFile)) {
             $zip->addFile($configFile, 'config.json');
+            $added = true;
+        }
+
+        if (file_exists($mediaAddonsFile)) {
+            $zip->addFile($mediaAddonsFile, 'media_addons.json');
             $added = true;
         }
 
@@ -450,6 +460,18 @@ class ConfigController extends AbstractController
                 if ($content !== false) {
                     file_put_contents($configDir . '/config.json', $content);
                     $extracted[] = 'config.json';
+                }
+            }
+
+            // Extract media_addons.json
+            if ($zip->locateName('media_addons.json') !== false) {
+                if (!is_dir($configDir)) {
+                    mkdir($configDir, 0777, true);
+                }
+                $content = $zip->getFromName('media_addons.json');
+                if ($content !== false) {
+                    file_put_contents($configDir . '/media_addons.json', $content);
+                    $extracted[] = 'media_addons.json';
                 }
             }
 

@@ -3,14 +3,16 @@
 {% block title %}Download History - Alldebrid Downloader{% endblock %}
 
 {% block body %}
-<div class="card shadow-lg" style="margin-bottom: 2rem; border-radius: 16px; overflow: hidden;">
-    <div class="history-header" id="history-header">
-        <h1 style="margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
-            <span>📜</span> Download History
-        </h1>
-        <div class="badge badge-success">{{ totalItems }} total</div>
-    </div>
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Download History',
+    subtitle: 'A complete log of your recent debrid downloads.',
+    icon: 'history',
+    badge: totalItems ~ ' total',
+    badge_class: 'header-badge--neutral',
+    badge_dot: false
+} %}{% endembed %}
 
+<div class="card shadow-lg" style="margin-bottom: 2rem; border-radius: 16px; overflow: hidden;">
     <div style="overflow-x: auto;">
         <table class="history-table">
             <thead>
@@ -75,6 +77,11 @@
                                 <span class="badge" style="background: var(--text-secondary); color: white;">CANCELED</span>
                             {% elseif (item.status ?? 'success') == 'failed_requeued' %}
                                 <span class="badge" style="background: #8b5cf6; color: white;">FAILED / REQUEUED</span>
+                                {% if item.error_message is defined and item.error_message %}
+                                    <div style="font-size: 0.7rem; color: #c4b5fd; margin-top: 0.4rem; font-weight: 500; line-height: 1.2; max-width: 200px; word-break: break-word;">
+                                        {{ item.error_message }}
+                                    </div>
+                                {% endif %}
                             {% else %}
                                 <span class="badge" style="background: var(--success); color: white;">SUCCESS</span>
                             {% endif %}
@@ -298,15 +305,6 @@ window.onclick = function(event) {
 </script>
 
 <style>
-.history-header {
-    padding: 1.5rem;
-    background: rgba(255,255,255,0.02);
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
 .history-table {
     width: 100%;
     border-collapse: collapse;
@@ -404,12 +402,6 @@ window.onclick = function(event) {
 }
 
 @media (max-width: 768px) {
-    .history-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1rem;
-    }
-
     .modal-overlay {
         padding: 1rem;
     }

@@ -3,13 +3,13 @@
 {% block title %}Log Files - Downloader{% endblock %}
 
 {% block body %}
-<div class="card shadow-lg" style="margin-bottom: 2rem;">
-    <div style="padding: 1.5rem; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <h1 style="margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
-            <span>📋</span> Download Logs
-        </h1>
-    </div>
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Download Logs',
+    subtitle: 'Browse and download the worker log files.',
+    icon: 'logs'
+} %}{% endembed %}
 
+<div class="card shadow-lg" style="margin-bottom: 2rem;">
     <div style="overflow-x: auto;">
         <table style="width: 100%; border-collapse: collapse;">
             <thead>

@@ -1,20 +1,19 @@
 {% extends 'base.html.twig' %}
 
 {% block body %}
-<div style="margin-bottom: 2rem;">
-    <a href="{{ path('dashboard') }}" class="btn" style="background-color: var(--bg-card); color: var(--text-primary); margin-bottom: 1rem;">
-        &larr; Back to Dashboard
-    </a>
-    <div style="display: flex; justify-content: space-between; align-items: start;">
-        <div>
-            <h1>{{ magnet.filename }}</h1>
-            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
-                Total Size: {{ (magnet.size / 1024 / 1024 / 1024)|number_format(2) }} GB
-                &bull; Status: <span class="badge {{ magnet.status == 'Ready' ? 'badge-success' : 'badge-warning' }}">{{ magnet.status }}</span>
-            </p>
-        </div>
-    </div>
-</div>
+<a href="{{ path('dashboard') }}" class="btn" style="background-color: var(--bg-card); color: var(--text-primary); margin-bottom: 1rem;">
+    &larr; Back to Dashboard
+</a>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: magnet.filename,
+    subtitle: 'Total size: ' ~ (magnet.size / 1024 / 1024 / 1024)|number_format(2) ~ ' GB',
+    icon: 'package'
+} %}
+    {% block actions %}
+        <span class="badge {{ magnet.status == 'Ready' ? 'badge-success' : 'badge-warning' }}">{{ magnet.status }}</span>
+    {% endblock %}
+{% endembed %}
 
 <div class="grid">
     {% for file in files %}

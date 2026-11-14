@@ -43,15 +43,15 @@ class GrokService
         if (empty($instructions)) {
             $instructions = "1. Use the CONTEXT to identify the Category (Movie, Series, Music, Ebook), Title, and metadata (Season, Year, Artist, Album).\n";
             $instructions .= "2. Standardize filenames based on category:\n";
-            $instructions .= "   - Series: \"Showname.SxxExx.OptionalTitle.ext\".\n";
-            $instructions .= "   - Anime: \"Showname.SxxExx.OptionalTitle.ext\".\n";
+            $instructions .= "   - Series: \"Series Name (Year) - SxxExx - Episode Title.ext\".\n";
+            $instructions .= "   - Anime: \"Series Name (Year) - SxxExx - Episode Title.ext\".\n";
             $instructions .= "   - Movies: \"Movie Name (Year).ext\".\n";
             $instructions .= "   - Music: \"XX - Song Name.ext\" (XX = track number, identify from filename).\n";
             $instructions .= "   - Ebooks: \"Clean Book Title.ext\".\n";
             $instructions .= "3. Identify episode/track numbers from individual filenames (e.g., \"01.mkv\" is Episode 1).\n";
             $instructions .= "4. Rules for \"path\":\n";
-            $instructions .= "   - Series: \"Video/TV Shows/Series Name/Season XX/\" (e.g. \"Video/TV Shows/The Sopranos/Season 02/\").\n";
-            $instructions .= "   - Anime: \"Video/Anime/Series Name/Season XX/\" (e.g. \"Video/Anime/Naruto/Season 01/\").\n";
+            $instructions .= "   - Series: \"Video/TV Shows/Series Name (Year)/Season XX/\" (e.g. \"Video/TV Shows/The Sopranos (1999)/Season 02/\").\n";
+            $instructions .= "   - Anime: \"Video/Anime/Series Name (Year)/Season XX/\" (e.g. \"Video/Anime/Naruto (2002)/Season 01/\").\n";
             $instructions .= "   - Movies: \"Video/Movies/Movie Name (Year)/\" (e.g. \"Video/Movies/Inception (2010)/\").\n";
             $instructions .= "   - Music: \"Music/Artist Name/Album Name/\" (e.g. \"Music/Pink Floyd/The Wall/\").\n";
             $instructions .= "   - Ebooks: \"Ebooks/Series Name/\" or \"Ebooks/Author Name/\" (e.g. \"Ebooks/Harry Potter/\"). use a T in front of the volume number when required. Only keep the name of the book (and the series if there is one) in the filename.\n";

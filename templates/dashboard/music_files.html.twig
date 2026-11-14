@@ -3,27 +3,26 @@
 {% block title %}Music Explorer - Downloader{% endblock %}
 
 {% block body %}
-<div class="container" style="margin-top: 2rem; margin-bottom: 3rem;">
-<div class="header" id="music-header">
-    <div style="width: 100%;">
-        <h1 style="display: flex; align-items: center; gap: 0.75rem; margin: 0;">
-            <span style="font-size: 2rem;">📂</span>
-            Music Downloads
-        </h1>
-        <p class="text-secondary" style="margin: 0.5rem 0 0 0;">Explorer les fichiers dans <code>{{ root }}</code> ({{ files|length }} fichier{% if files|length > 1 %}s{% endif %})</p>
-    </div>
-    <div id="move-container">
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Music Downloads',
+    subtitle: 'Explorer les fichiers dans ' ~ root ~ ' (' ~ files|length ~ ' fichier' ~ (files|length > 1 ? 's' : '') ~ ')',
+    icon: 'folder'
+} %}
+    {% block actions %}
         <button id="btn-update-genres" class="btn btn-secondary" onclick="runBatch('genres')" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
-            <span id="genre-icon">🏷️</span> Update Genres
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V4h9z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+            Update Genres
         </button>
         <button id="btn-lyrics" class="btn btn-secondary" onclick="runBatch('lyrics')">
-            <span id="lyrics-icon">🎤</span> Add Lyrics
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/><path d="M8 21h8"/></svg>
+            Add Lyrics
         </button>
         <button id="btn-move" class="btn btn-primary" onclick="runBatch('move')" {% if files is empty %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
-            <span id="move-icon">🚚</span> Move to library
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6"/><path d="m9 13 3 3 3-3"/></svg>
+            Move to library
         </button>
-    </div>
-</div>
+    {% endblock %}
+{% endembed %}
 
 <div id="music-player" class="card music-player" style="display:none;">
     <div class="music-player-inner">
@@ -102,7 +101,6 @@
             {% endfor %}
         </tbody>
     </table>
-</div>
 </div>
 
 <!-- Details Modal -->
@@ -197,36 +195,7 @@
         color: var(--accent);
     }
 
-    #music-header {
-        margin-bottom: 2rem;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1rem;
-    }
-
-    #move-container {
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-        width: 100%;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-    }
-
     @media (max-width: 768px) {
-        #music-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 1.5rem;
-        }
-
-        #move-container {
-            width: 100%;
-            justify-content: flex-end;
-            flex-wrap: wrap;
-        }
-
         .hide-mobile {
             display: none !important;
         }

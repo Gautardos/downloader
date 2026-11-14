@@ -4,10 +4,13 @@ namespace App\Controller;
 
 use App\Service\AiService;
 use App\Service\AlldebridService;
+use App\Service\DebridHistoryService;
 use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
 use App\Service\QueueManager;
+use App\Service\SpotifyService;
+use App\Service\SpotifyUserService;
 use App\Service\TorrentDbService;
 use App\Service\MediaTypeHelper;
 use GuzzleHttp\Client;
@@ -22,7 +25,7 @@ use Symfony\Component\Routing\Annotation\Route;
 class DashboardController extends AbstractController
 {
     #[Route('/torrent', name: 'torrent')]
-    public function torrent(AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage, MediaTypeHelper $mediaTypeHelper, AiService $ai): Response
+    public function torrent(Request $request, AlldebridService $alldebrid, DownloadManager $downloadManager, JsonStorage $storage, MediaTypeHelper $mediaTypeHelper, AiService $ai): Response
     {
         if (!$storage->hasAlldebrid() || !$storage->hasDefaultTorrentPath()) {
             return $this->render('dashboard/locked.html.twig', [
@@ -46,8 +49,18 @@ class DashboardController extends AbstractController
             ]);
         }
 
-        $packs = $alldebrid->getRecentLinksGrouped();
         $recentPaths = $storage->get('recent_paths', []);
+        $config = $storage->get('config', []);
+
+        if ($request->query->get('view') !== 'packs') {
+            return $this->render('dashboard/debrid.html.twig', [
+                'recent_paths' => $recentPaths,
+                'config' => $config,
+                'is_torrent_page' => true,
+            ]);
+        }
+
+        $packs = $alldebrid->getRecentLinksGrouped();
 
         // Mark downloaded files and calculate progress
         foreach ($packs as &$pack) {
@@ -65,9 +78,22 @@ class DashboardController extends AbstractController
         return $this->render('dashboard/index.html.twig', [
             'packs' => $packs,
             'recent_paths' => $recentPaths,
-            'config' => $storage->get('config', []),
+            'config' => $config,
             'is_torrent_page' => true,
             'is_ai_configured' => $ai->hasAi('renaming')
+        ]);
+    }
+
+    #[Route('/debrid/recent', name: 'debrid_recent', methods: ['GET'])]
+    public function debridRecent(Request $request, DebridHistoryService $history): Response
+    {
+        $offset = max(0, (int) $request->query->get('offset', 0));
+        $limit = (int) $request->query->get('limit', 5);
+        $refresh = $request->query->getBoolean('refresh');
+
+        return $this->json([
+            'success' => true,
+            ...$history->page($offset, $limit, $refresh),
         ]);
     }
 
@@ -426,7 +452,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music-add', name: 'music_add', methods: ['POST'])]
-    public function musicAdd(Request $request, QueueManager $queueManager, JsonStorage $storage, \App\Service\SpotifyService $spotify): Response
+    public function musicAdd(Request $request, QueueManager $queueManager, JsonStorage $storage, SpotifyService $spotify, SpotifyUserService $spotifyUser): Response
     {
         if (!$storage->hasSpotify()) {
             return $this->json([
@@ -457,13 +483,30 @@ class DashboardController extends AbstractController
         }
 
         foreach ($urlList as $url) {
-            $metadata = $spotify->getMetadata($url);
+            $metadata = null;
+            $metadataLogs = [];
+            $parsed = $spotify->parseUrl($url);
+
+            if (($parsed['type'] ?? null) === 'playlist') {
+                $metadata = $spotifyUser->getPlaylistMetadata($parsed['id']);
+                if ($metadata) {
+                    $metadataLogs[] = 'Playlist metadata fetched with Zotify user token.';
+                } elseif ($spotifyUser->getLastError()) {
+                    $metadataLogs[] = 'User-token playlist metadata failed: ' . $spotifyUser->getLastError();
+                }
+            }
+
+            if (!$metadata) {
+                $metadata = $spotify->getMetadata($url);
+                $metadataLogs = array_merge($metadataLogs, $spotify->getLogs());
+            }
+
             $downloadId = bin2hex(random_bytes(8));
 
             // Log metadata extraction attempt
             $historyLogFile = $logsDir . '/history_' . $downloadId . '.log';
             $logContent = "--- Spotify Metadata Extraction ---\n";
-            $logContent .= implode("\n", $spotify->getLogs()) . "\n";
+            $logContent .= implode("\n", $metadataLogs) . "\n";
             $logContent .= str_repeat("-", 40) . "\n\n";
             file_put_contents($historyLogFile, $logContent, FILE_APPEND);
 
@@ -574,9 +617,12 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/purge-history', name: 'purge_history', methods: ['POST'])]
-    public function purgeHistory(AlldebridService $debrid): Response
+    public function purgeHistory(AlldebridService $debrid, DebridHistoryService $history): Response
     {
         $result = $debrid->purgeHistory();
+        if ($result['success'] ?? false) {
+            $history->invalidate();
+        }
         return $this->json($result);
     }
 

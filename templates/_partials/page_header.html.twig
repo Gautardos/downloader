@@ -1,0 +1,26 @@
+<header class="page-header">
+    <div class="page-heading">
+        <div class="page-icon{{ icon_class is defined and icon_class ? ' ' ~ icon_class : '' }}">
+            {% if icon is not defined or icon == 'logo' %}
+                <img src="/logo.svg" alt="" width="38" height="38">
+            {% else %}
+                {% include '_partials/icons/' ~ icon ~ '.svg' ignore missing %}
+            {% endif %}
+        </div>
+        <div class="page-heading-copy">
+            <h1>{{ title }}</h1>
+            {% if subtitle is defined and subtitle %}
+                <p class="page-subtitle">{{ subtitle }}</p>
+            {% endif %}
+        </div>
+    </div>
+    <div class="page-header-actions">
+        {% block actions %}{% endblock %}
+        {% if badge is defined and badge %}
+            <span class="header-badge{{ badge_class is defined and badge_class ? ' ' ~ badge_class : '' }}">
+                {% if badge_dot is not defined or badge_dot %}<span class="pulse-dot"></span>{% endif %}
+                {{ badge }}
+            </span>
+        {% endif %}
+    </div>
+</header>

@@ -1,0 +1,2289 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debrid Downloader — Maquette</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-elevated: #243247;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: rgba(255, 255, 255, 0.08);
+            --border-strong: rgba(255, 255, 255, 0.14);
+            --glass: rgba(30, 41, 59, 0.72);
+            --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            overflow-x: hidden;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text-primary);
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background:
+                radial-gradient(900px 520px at 12% -8%, rgba(56, 189, 248, 0.13), transparent 62%),
+                radial-gradient(760px 460px at 96% 4%, rgba(34, 197, 94, 0.09), transparent 62%),
+                var(--bg-primary);
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        svg {
+            display: block;
+            flex: 0 0 auto;
+        }
+
+        .container {
+            width: min(1180px, calc(100% - 2rem));
+            margin: 0 auto;
+            padding: 2rem 0 4rem;
+        }
+
+        /* ─── Navigation ─────────────────────────────────────────────── */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(14px);
+        }
+
+        nav .nav-inner {
+            width: min(1180px, calc(100% - 2rem));
+            height: 64px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 750;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--success));
+            color: #07111f;
+            box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .nav-links a {
+            padding: 0.55rem 0.8rem;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            font-weight: 550;
+            transition: 0.18s ease;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-links a.active {
+            color: var(--text-primary);
+            background: rgba(56, 189, 248, 0.12);
+            box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.22);
+        }
+
+        .nav-menu {
+            display: none;
+            width: 38px;
+            height: 38px;
+            place-items: center;
+            border: 1px solid var(--border-strong);
+            border-radius: 10px;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        /* ─── Header ─────────────────────────────────────────────────── */
+        .page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1.5rem;
+            margin: 3rem 0 1.75rem;
+        }
+
+        .page-heading {
+            display: flex;
+            align-items: center;
+            gap: 1.1rem;
+        }
+
+        .page-icon {
+            width: 62px;
+            height: 62px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            border-radius: 18px;
+            color: #fff;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(34, 197, 94, 0.85));
+            box-shadow: 0 16px 40px rgba(56, 189, 248, 0.25);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(1.7rem, 4vw, 2.35rem);
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+        }
+
+        .page-subtitle {
+            margin: 0.55rem 0 0;
+            max-width: 620px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+
+        .header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 0.8rem;
+            border: 1px solid rgba(34, 197, 94, 0.24);
+            border-radius: 999px;
+            color: #86efac;
+            background: rgba(34, 197, 94, 0.08);
+            font-size: 0.75rem;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.13);
+        }
+
+        .icon-button {
+            width: 38px;
+            height: 38px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--border-strong);
+            border-radius: 11px;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.045);
+            transition: 0.18s ease;
+        }
+
+        .icon-button:hover {
+            border-color: rgba(56, 189, 248, 0.38);
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent);
+        }
+
+        .icon-button.is-loading svg {
+            animation: spin 0.8s linear infinite;
+        }
+
+        .icon-button.danger:hover {
+            border-color: rgba(239, 68, 68, 0.45);
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+        }
+
+        /* ─── Tabs ───────────────────────────────────────────────────── */
+        .tabs {
+            display: inline-flex;
+            gap: 0.3rem;
+            padding: 4px;
+            margin-bottom: 1.35rem;
+            border: 1px solid var(--border);
+            border-radius: 13px;
+            background: rgba(15, 23, 42, 0.55);
+        }
+
+        .tabs button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.58rem 0.9rem;
+            border: 0;
+            border-radius: 9px;
+            color: var(--text-secondary);
+            background: transparent;
+            font-size: 0.82rem;
+            font-weight: 700;
+            transition: 0.18s ease;
+        }
+
+        .tabs button:hover {
+            color: var(--text-primary);
+        }
+
+        .tabs button.active {
+            color: var(--text-primary);
+            background: rgba(56, 189, 248, 0.15);
+            box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.25);
+        }
+
+        .tab-badge {
+            padding: 0.12rem 0.38rem;
+            border-radius: 999px;
+            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.12);
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        /* ─── Cards ──────────────────────────────────────────────────── */
+        .card {
+            position: relative;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: var(--glass);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(12px);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1.25rem;
+            padding: 1.35rem 1.4rem 1.1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+        }
+
+        .eyebrow {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            margin-bottom: 0.45rem;
+            color: var(--accent);
+            font-size: 0.67rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .card-header h2 {
+            margin: 0;
+            font-size: 1.12rem;
+            letter-spacing: -0.025em;
+        }
+
+        .card-header p {
+            margin: 0.42rem 0 0;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            line-height: 1.5;
+        }
+
+        .count-pill {
+            padding: 0.42rem 0.68rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.035);
+            font-size: 0.71rem;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+
+        /* ─── Layout ─────────────────────────────────────────────────── */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.85fr);
+            gap: 1.25rem;
+            align-items: start;
+        }
+
+        .side-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            min-width: 0;
+        }
+
+        /* ─── Local database ─────────────────────────────────────────── */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            padding: 0.9rem 1.1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+            background: rgba(15, 23, 42, 0.2);
+        }
+
+        .category-select {
+            height: 40px;
+            max-width: 190px;
+            padding: 0 2rem 0 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            outline: none;
+            color: var(--text-primary);
+            background-color: var(--bg-primary);
+            font-size: 0.8rem;
+            transition: 0.18s ease;
+        }
+
+        .category-select:focus {
+            border-color: rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+
+        .search-field {
+            position: relative;
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .search-field > svg {
+            position: absolute;
+            top: 50%;
+            left: 0.85rem;
+            color: var(--text-muted);
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+
+        .search-field input {
+            width: 100%;
+            height: 40px;
+            padding: 0 0.9rem 0 2.4rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            outline: none;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            font-size: 0.84rem;
+            transition: 0.18s ease;
+        }
+
+        .search-field input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-field input:focus {
+            border-color: rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+
+        .result-list {
+            padding: 0.55rem;
+            max-height: 610px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+        }
+
+        .result-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .result-list::-webkit-scrollbar-thumb {
+            border: 2px solid transparent;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.28);
+            background-clip: padding-box;
+        }
+
+        .result-row {
+            padding: 0.9rem 0.85rem;
+            border: 1px solid transparent;
+            border-radius: 13px;
+            transition: 0.18s ease;
+        }
+
+        .result-row + .result-row {
+            margin-top: 0.2rem;
+        }
+
+        .result-row:hover {
+            border-color: rgba(255, 255, 255, 0.065);
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .result-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .result-main {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .result-title {
+            margin: 0;
+            font-size: 0.9rem;
+            font-weight: 650;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+
+        .result-meta {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-top: 0.38rem;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+        }
+
+        .meta-dot {
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .size-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.18rem 0.42rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.04);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.68rem;
+            white-space: nowrap;
+        }
+
+        .hash {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            color: var(--text-muted);
+        }
+
+        .result-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex: 0 0 auto;
+        }
+
+        .mini-button {
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.38rem;
+            padding: 0 0.62rem;
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.035);
+            font-size: 0.7rem;
+            font-weight: 700;
+            white-space: nowrap;
+            transition: 0.18s ease;
+        }
+
+        .mini-button:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .mini-button.accent {
+            border-color: rgba(56, 189, 248, 0.3);
+            color: var(--accent);
+            background: rgba(56, 189, 248, 0.08);
+        }
+
+        .mini-button.accent:hover {
+            border-color: var(--accent);
+            color: #07111f;
+            background: var(--accent);
+        }
+
+        .mini-button.icon-only {
+            width: 32px;
+            padding: 0;
+        }
+
+        .description-panel {
+            display: none;
+            margin-top: 0.65rem;
+            padding: 0.75rem 0.85rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            background: rgba(15, 23, 42, 0.45);
+            font-size: 0.76rem;
+            line-height: 1.55;
+        }
+
+        .description-panel.visible {
+            display: block;
+        }
+
+        .empty-state {
+            display: none;
+            padding: 3rem 1.5rem;
+            text-align: center;
+        }
+
+        .empty-state.visible {
+            display: block;
+        }
+
+        .empty-icon {
+            width: 48px;
+            height: 48px;
+            display: grid;
+            place-items: center;
+            margin: 0 auto 0.85rem;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .empty-state h3 {
+            margin: 0 0 0.35rem;
+            font-size: 0.95rem;
+        }
+
+        .empty-state p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.85rem 1.1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+            background: rgba(15, 23, 42, 0.26);
+            font-size: 0.71rem;
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .secure-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        /* ─── Add magnet ─────────────────────────────────────────────── */
+        .add-card {
+            padding: 1.25rem;
+        }
+
+        .add-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .add-header h2 {
+            margin: 0;
+            font-size: 1.02rem;
+        }
+
+        .add-header p {
+            margin: 0.3rem 0 0;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            line-height: 1.5;
+        }
+
+        .magnet-textarea {
+            width: 100%;
+            min-height: 92px;
+            padding: 0.8rem 0.9rem;
+            resize: vertical;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            outline: none;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.76rem;
+            line-height: 1.55;
+            transition: 0.18s ease;
+        }
+
+        .magnet-textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .magnet-textarea:focus {
+            border-color: rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+
+        .drop-zone {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.55rem;
+            margin-top: 0.6rem;
+            padding: 0.7rem;
+            border: 1px dashed rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.02);
+            font-size: 0.72rem;
+            text-align: center;
+            transition: 0.18s ease;
+            cursor: pointer;
+        }
+
+        .drop-zone:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            color: var(--text-secondary);
+            background: rgba(56, 189, 248, 0.045);
+        }
+
+        .add-actions {
+            display: flex;
+            gap: 0.55rem;
+            margin-top: 0.75rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.48rem;
+            height: 40px;
+            padding: 0 0.95rem;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            white-space: nowrap;
+            transition: 0.18s ease;
+        }
+
+        .btn-primary {
+            flex: 1 1 auto;
+            color: #07111f;
+            background: linear-gradient(135deg, var(--accent), #60a5fa);
+            box-shadow: 0 10px 26px rgba(56, 189, 248, 0.18);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--accent-hover), #3b82f6);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            cursor: wait;
+            opacity: 0.75;
+            transform: none;
+        }
+
+        .btn-secondary {
+            flex: 0 0 auto;
+            border-color: var(--border-strong);
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        .hint {
+            margin: 0.6rem 0 0;
+            color: var(--text-muted);
+            font-size: 0.68rem;
+            line-height: 1.5;
+        }
+
+        /* ─── Recent links ───────────────────────────────────────────── */
+        .recent-list {
+            padding: 0.5rem;
+            max-height: 430px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+        }
+
+        .recent-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .recent-list::-webkit-scrollbar-thumb {
+            border: 2px solid transparent;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.28);
+            background-clip: padding-box;
+        }
+
+        .recent-row {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.68rem 0.6rem;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            transition: 0.18s ease;
+        }
+
+        .recent-row + .recent-row {
+            margin-top: 0.15rem;
+        }
+
+        .recent-row:hover {
+            border-color: rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .file-icon {
+            width: 36px;
+            height: 36px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            color: var(--accent);
+            background: rgba(56, 189, 248, 0.07);
+        }
+
+        .file-icon.audio {
+            color: #c4b5fd;
+            background: rgba(168, 85, 247, 0.08);
+        }
+
+        .file-icon.archive {
+            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.08);
+        }
+
+        .recent-meta {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .recent-name {
+            margin: 0;
+            overflow: hidden;
+            color: var(--text-primary);
+            font-size: 0.78rem;
+            font-weight: 650;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .recent-sub {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.22rem;
+            color: var(--text-secondary);
+            font-size: 0.66rem;
+        }
+
+        .host-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.12rem 0.35rem;
+            border-radius: 5px;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.055);
+            font-size: 0.6rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .recent-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            flex: 0 0 auto;
+        }
+
+        .recent-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            padding: 0.8rem 1.1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(15, 23, 42, 0.26);
+        }
+
+        .load-more {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.42rem;
+            height: 34px;
+            padding: 0 0.72rem;
+            border: 1px solid rgba(56, 189, 248, 0.28);
+            border-radius: 8px;
+            color: var(--accent);
+            background: rgba(56, 189, 248, 0.07);
+            font-size: 0.71rem;
+            font-weight: 750;
+            transition: 0.18s ease;
+        }
+
+        .load-more:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: #07111f;
+            background: var(--accent);
+        }
+
+        .load-more:disabled {
+            cursor: default;
+            border-color: var(--border);
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .recent-count {
+            color: var(--text-muted);
+            font-size: 0.68rem;
+            white-space: nowrap;
+        }
+
+        .skeleton-row {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.7rem 0.6rem;
+        }
+
+        .skeleton {
+            position: relative;
+            overflow: hidden;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.055);
+        }
+
+        .skeleton::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+            animation: shimmer 1.25s infinite;
+        }
+
+        .skeleton-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 9px;
+        }
+
+        .skeleton-line {
+            height: 9px;
+        }
+
+        .skeleton-line.short {
+            width: 45%;
+        }
+
+        @keyframes shimmer {
+            to { transform: translateX(100%); }
+        }
+
+        /* ─── Packs ──────────────────────────────────────────────────── */
+        .advanced-note {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.85rem;
+            margin-bottom: 1.25rem;
+            padding: 1rem 1.1rem;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 14px;
+            background: rgba(245, 158, 11, 0.055);
+        }
+
+        .advanced-note .note-icon {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            border-radius: 9px;
+            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.12);
+        }
+
+        .advanced-note h3 {
+            margin: 0 0 0.25rem;
+            font-size: 0.86rem;
+        }
+
+        .advanced-note p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.79rem;
+            line-height: 1.55;
+        }
+
+        .pack-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .pack-card {
+            overflow: hidden;
+        }
+
+        .pack-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.1rem 1.3rem;
+        }
+
+        .pack-info h3 {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            margin: 0 0 0.32rem;
+            font-size: 0.98rem;
+        }
+
+        .pack-meta {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.42rem;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+        }
+
+        .pack-progress {
+            width: 150px;
+            height: 4px;
+            margin-top: 0.55rem;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .pack-progress span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: var(--accent);
+        }
+
+        .pack-files {
+            border-top: 1px solid rgba(255, 255, 255, 0.055);
+        }
+
+        .pack-file {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1.3rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.035);
+            font-size: 0.78rem;
+        }
+
+        .pack-file:first-child {
+            border-top: 0;
+        }
+
+        .pack-file .recent-meta {
+            flex: 1 1 auto;
+        }
+
+        .pack-file-name {
+            overflow: hidden;
+            color: var(--text-primary);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .pack-file-path {
+            margin-top: 0.15rem;
+            color: var(--text-muted);
+            font-size: 0.65rem;
+        }
+
+        .downloaded-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.28rem;
+            padding: 0.16rem 0.4rem;
+            border-radius: 999px;
+            color: #86efac;
+            background: rgba(34, 197, 94, 0.1);
+            font-size: 0.58rem;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        /* ─── Modal ──────────────────────────────────────────────────── */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 90;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: rgba(2, 6, 23, 0.78);
+            backdrop-filter: blur(8px);
+        }
+
+        .modal-backdrop.visible {
+            display: flex;
+        }
+
+        .modal {
+            width: min(560px, 100%);
+            overflow: hidden;
+            border: 1px solid var(--border-strong);
+            border-radius: 18px;
+            background: var(--bg-secondary);
+            box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+            animation: modal-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes modal-in {
+            from { opacity: 0; transform: translateY(12px) scale(0.985); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.25rem 1.35rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.05rem;
+        }
+
+        .modal-header p {
+            margin: 0.35rem 0 0;
+            max-width: 420px;
+            overflow: hidden;
+            color: var(--text-secondary);
+            font-size: 0.76rem;
+            line-height: 1.45;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .modal-close {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            color: var(--text-secondary);
+            background: transparent;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .modal-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+            padding: 1.25rem 1.35rem;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.38rem;
+        }
+
+        .field label {
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            font-weight: 650;
+        }
+
+        .field input {
+            height: 40px;
+            padding: 0 0.8rem;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            outline: none;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            font-size: 0.8rem;
+        }
+
+        .field input:focus {
+            border-color: rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.55rem;
+            padding: 1rem 1.35rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        /* ─── Toast ──────────────────────────────────────────────────── */
+        .toast-container {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 1.25rem;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            pointer-events: none;
+        }
+
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            min-width: 280px;
+            max-width: 420px;
+            padding: 0.85rem 1rem;
+            border: 1px solid var(--border-strong);
+            border-left: 3px solid var(--accent);
+            border-radius: 11px;
+            color: var(--text-primary);
+            background: rgba(30, 41, 59, 0.97);
+            box-shadow: 0 16px 42px rgba(0, 0, 0, 0.45);
+            font-size: 0.82rem;
+            animation: toast-in 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: auto;
+        }
+
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
+
+        .toast.leaving {
+            animation: toast-out 0.2s ease forwards;
+        }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(12px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes toast-out {
+            to { opacity: 0; transform: translateY(8px) scale(0.98); }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ─── Responsive ─────────────────────────────────────────────── */
+        @media (max-width: 1020px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .side-stack {
+                display: grid;
+                grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+                align-items: start;
+            }
+        }
+
+        @media (max-width: 860px) {
+            .nav-links {
+                display: none;
+            }
+
+            .nav-menu {
+                display: grid;
+            }
+
+            .page-header {
+                align-items: flex-start;
+                flex-direction: column;
+                margin-top: 2rem;
+            }
+
+            .side-stack {
+                grid-template-columns: 1fr;
+            }
+
+            .toolbar {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .category-select {
+                max-width: none;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                width: min(100% - 1.2rem, 1180px);
+                padding-top: 1.25rem;
+            }
+
+            nav .nav-inner {
+                width: calc(100% - 1.2rem);
+            }
+
+            .page-heading {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 0.85rem;
+            }
+
+            .page-icon {
+                width: 52px;
+                height: 52px;
+                border-radius: 15px;
+            }
+
+            .header-badge {
+                display: none;
+            }
+
+            .tabs {
+                display: flex;
+                width: 100%;
+            }
+
+            .tabs button {
+                flex: 1 1 auto;
+                justify-content: center;
+            }
+
+            .result-top {
+                flex-direction: column;
+            }
+
+            .result-actions {
+                width: 100%;
+            }
+
+            .result-actions .mini-button.accent {
+                flex: 1 1 auto;
+            }
+
+            .recent-row {
+                align-items: flex-start;
+                flex-wrap: wrap;
+            }
+
+            .recent-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+
+            .recent-footer {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .load-more {
+                width: 100%;
+            }
+
+            .recent-count {
+                text-align: center;
+            }
+
+            .add-actions,
+            .modal-footer {
+                flex-direction: column;
+            }
+
+            .add-actions .btn,
+            .modal-footer .btn {
+                width: 100%;
+            }
+
+            .pack-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .card-footer {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.35rem;
+            }
+
+            .toast-container {
+                right: 0.7rem;
+                bottom: 0.7rem;
+                left: 0.7rem;
+            }
+
+            .toast {
+                min-width: 0;
+                max-width: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a class="brand" href="#">
+                <span class="brand-mark">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 3v12.5a3.5 3.5 0 1 1-3.5-3.5H12"/>
+                        <path d="M12 3l7 4v9"/>
+                    </svg>
+                </span>
+                <span>Downloader</span>
+            </a>
+
+            <div class="nav-links">
+                <a href="#" class="active">Debrid</a>
+                <a href="#">Media</a>
+                <a href="#">Music</a>
+                <a href="#">Music Downloads</a>
+                <a href="#">Queue</a>
+                <a href="#">History</a>
+                <a href="#">Settings</a>
+            </div>
+
+            <button class="nav-menu" type="button" aria-label="Ouvrir le menu">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <main class="container">
+        <header class="page-header">
+            <div class="page-heading">
+                <div class="page-icon">
+                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 3v12"/>
+                        <path d="m7 10 5 5 5-5"/>
+                        <path d="M5 21h14"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>Debrid Downloads</h1>
+                    <p class="page-subtitle">Recherchez dans la base locale, ajoutez un magnet ou retrouvez les derniers liens débridés sans charger tout l’historique.</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <span class="header-badge"><span class="pulse-dot"></span> Cache local actif</span>
+                <button class="icon-button" id="refresh-recent" type="button" title="Rafraîchir les liens récents" aria-label="Rafraîchir les liens récents">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+                        <path d="M21 3v6h-6"/>
+                    </svg>
+                </button>
+                <button class="icon-button danger" id="purge-history" type="button" title="Purger l’historique Alldebrid" aria-label="Purger l’historique Alldebrid">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="tabs" role="tablist" aria-label="Vues Debrid">
+            <button class="active" id="tab-recent" type="button" role="tab" aria-selected="true" aria-controls="panel-recent" data-tab="recent">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                Liens récents
+            </button>
+            <button id="tab-packs" type="button" role="tab" aria-selected="false" aria-controls="panel-packs" data-tab="packs">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                Packs
+                <span class="tab-badge">avancé</span>
+            </button>
+        </div>
+
+        <section id="panel-recent" role="tabpanel" aria-labelledby="tab-recent">
+            <div class="dashboard-grid">
+                <section class="card" aria-labelledby="search-title">
+                    <div class="card-header">
+                        <div>
+                            <div class="eyebrow">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                Base SQLite locale
+                            </div>
+                            <h2 id="search-title">Rechercher un torrent</h2>
+                            <p>La recherche interroge uniquement la base locale, sans appel à Alldebrid.</p>
+                        </div>
+                        <span class="count-pill" id="result-count">6 résultats</span>
+                    </div>
+
+                    <div class="toolbar">
+                        <select class="category-select" id="category-select" aria-label="Catégorie">
+                            <option value="all">Toutes les catégories</option>
+                            <option value="video">Vidéo</option>
+                            <option value="audio">Audio</option>
+                            <option value="ebook">Ebook</option>
+                            <option value="archive">Archive</option>
+                        </select>
+                        <div class="search-field">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+                            </svg>
+                            <input type="text" id="db-search" placeholder="Titre, série, film…" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div class="result-list" id="result-list">
+                        <article class="result-row" data-name="Dune Part Two 2024 2160p WEB-DL HDR x265" data-category="video">
+                            <div class="result-top">
+                                <div class="result-main">
+                                    <h3 class="result-title">Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.HDR.x265-FLUX</h3>
+                                    <div class="result-meta">
+                                        <span class="size-tag">24.8 Go</span>
+                                        <span class="meta-dot"></span>
+                                        <span class="hash">hash: 8f3a…c21d</span>
+                                        <span class="meta-dot"></span>
+                                        <span>Film · 4K</span>
+                                    </div>
+                                </div>
+                                <div class="result-actions">
+                                    <button class="mini-button accent use-magnet" type="button" data-magnet="magnet:?xt=urn:btih:8f3a1c9e2b7d4f6a8c0e1d2b3a4c5d6e7f809a1b">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        Utiliser
+                                    </button>
+                                    <button class="mini-button icon-only preview-result" type="button" title="Aperçu du torrent" aria-label="Aperçu du torrent">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    <button class="mini-button icon-only toggle-description" type="button" title="Voir la description" aria-label="Voir la description">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="description-panel">Un classique de la science-fiction. Version 2160p HDR, audio Atmos, sous-titres français inclus.</div>
+                        </article>
+
+                        <article class="result-row" data-name="The Last of Us S02 COMPLETE 1080p" data-category="video">
+                            <div class="result-top">
+                                <div class="result-main">
+                                    <h3 class="result-title">The.Last.of.Us.S02.COMPLETE.1080p.WEB-DL.DDP5.1.H.264</h3>
+                                    <div class="result-meta">
+                                        <span class="size-tag">31.2 Go</span>
+                                        <span class="meta-dot"></span>
+                                        <span class="hash">hash: a71c…e93b</span>
+                                        <span class="meta-dot"></span>
+                                        <span>Série · 1080p</span>
+                                    </div>
+                                </div>
+                                <div class="result-actions">
+                                    <button class="mini-button accent use-magnet" type="button" data-magnet="magnet:?xt=urn:btih:a71c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        Utiliser
+                                    </button>
+                                    <button class="mini-button icon-only preview-result" type="button" title="Aperçu du torrent" aria-label="Aperçu du torrent">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    <button class="mini-button icon-only toggle-description" type="button" title="Voir la description" aria-label="Voir la description">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="description-panel">Saison complète, 7 épisodes, version WEB-DL 1080p avec piste audio VF et VOSTFR.</div>
+                        </article>
+
+                        <article class="result-row" data-name="Kendrick Lamar GNX FLAC 2024" data-category="audio">
+                            <div class="result-top">
+                                <div class="result-main">
+                                    <h3 class="result-title">Kendrick.Lamar.GNX.2024.FLAC.24bit.44.1kHz</h3>
+                                    <div class="result-meta">
+                                        <span class="size-tag">612 Mo</span>
+                                        <span class="meta-dot"></span>
+                                        <span class="hash">hash: c14d…7b2a</span>
+                                        <span class="meta-dot"></span>
+                                        <span>Album · FLAC</span>
+                                    </div>
+                                </div>
+                                <div class="result-actions">
+                                    <button class="mini-button accent use-magnet" type="button" data-magnet="magnet:?xt=urn:btih:c14d2e3f405162738495a6b7c8d9e0f1a2b3c4d5">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        Utiliser
+                                    </button>
+                                    <button class="mini-button icon-only preview-result" type="button" title="Aperçu du torrent" aria-label="Aperçu du torrent">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    <button class="mini-button icon-only toggle-description" type="button" title="Voir la description" aria-label="Voir la description">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="description-panel">Album complet en FLAC 24 bits, tags et pochette inclus.</div>
+                        </article>
+
+                        <article class="result-row" data-name="Severance S02 2160p ATVP" data-category="video">
+                            <div class="result-top">
+                                <div class="result-main">
+                                    <h3 class="result-title">Severance.S02.2160p.ATVP.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265</h3>
+                                    <div class="result-meta">
+                                        <span class="size-tag">54.1 Go</span>
+                                        <span class="meta-dot"></span>
+                                        <span class="hash">hash: 5e9f…b310</span>
+                                        <span class="meta-dot"></span>
+                                        <span>Série · 4K Dolby Vision</span>
+                                    </div>
+                                </div>
+                                <div class="result-actions">
+                                    <button class="mini-button accent use-magnet" type="button" data-magnet="magnet:?xt=urn:btih:5e9f0a1b2c3d4e5f60718293a4b5c6d7e8f90123">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        Utiliser
+                                    </button>
+                                    <button class="mini-button icon-only preview-result" type="button" title="Aperçu du torrent" aria-label="Aperçu du torrent">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    <button class="mini-button icon-only toggle-description" type="button" title="Voir la description" aria-label="Voir la description">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="description-panel">Saison 2 complète en 2160p Dolby Vision, audio Atmos, VOSTFR.</div>
+                        </article>
+
+                        <article class="result-row" data-name="The Batman 2022 1080p BluRay" data-category="video">
+                            <div class="result-top">
+                                <div class="result-main">
+                                    <h3 class="result-title">The.Batman.2022.1080p.BluRay.x264.DTS-HD.MA.5.1</h3>
+                                    <div class="result-meta">
+                                        <span class="size-tag">18.7 Go</span>
+                                        <span class="meta-dot"></span>
+                                        <span class="hash">hash: 2b8c…4d1e</span>
+                                        <span class="meta-dot"></span>
+                                        <span>Film · BluRay</span>
+                                    </div>
+                                </div>
+                                <div class="result-actions">
+                                    <button class="mini-button accent use-magnet" type="button" data-magnet="magnet:?xt=urn:btih:2b8c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        Utiliser
+                                    </button>
+                                    <button class="mini-button icon-only preview-result" type="button" title="Aperçu du torrent" aria-label="Aperçu du torrent">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    <button class="mini-button icon-only toggle-description" type="button" title="Voir la description" aria-label="Voir la description">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="description-panel">Version BluRay 1080p, audio DTS-HD MA 5.1, sous-titres français.</div>
+                        </article>
+
+                        <article class="result-row" data-name="Python Crash Course 3rd Edition EPUB" data-category="ebook">
+                            <div class="result-top">
+                                <div class="result-main">
+                                    <h3 class="result-title">Python.Crash.Course.3rd.Edition.EPUB.Retail</h3>
+                                    <div class="result-meta">
+                                        <span class="size-tag">18.4 Mo</span>
+                                        <span class="meta-dot"></span>
+                                        <span class="hash">hash: 9d0e…1f2a</span>
+                                        <span class="meta-dot"></span>
+                                        <span>Ebook · EPUB</span>
+                                    </div>
+                                </div>
+                                <div class="result-actions">
+                                    <button class="mini-button accent use-magnet" type="button" data-magnet="magnet:?xt=urn:btih:9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7081920">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        Utiliser
+                                    </button>
+                                    <button class="mini-button icon-only preview-result" type="button" title="Aperçu du torrent" aria-label="Aperçu du torrent">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    <button class="mini-button icon-only toggle-description" type="button" title="Voir la description" aria-label="Voir la description">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="description-panel">Édition retail au format EPUB, sans DRM, avec exercices et corrigés.</div>
+                        </article>
+                    </div>
+
+                    <div class="empty-state" id="search-empty">
+                        <div class="empty-icon">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                        </div>
+                        <h3>Aucun résultat</h3>
+                        <p>Essayez un autre titre ou changez de catégorie.</p>
+                    </div>
+
+                    <div class="card-footer">
+                        <span class="footer-left"><span class="secure-dot"></span> Base SQLite · 1 048 827 entrées</span>
+                        <span>Résultats limités à 50</span>
+                    </div>
+                </section>
+
+                <div class="side-stack">
+                    <section class="card add-card" aria-labelledby="add-title">
+                        <div class="add-header">
+                            <div>
+                                <h2 id="add-title">Ajouter manuellement</h2>
+                                <p>Collez un magnet ou un lien hôte, un par ligne.</p>
+                            </div>
+                            <span class="count-pill">Direct</span>
+                        </div>
+                        <textarea class="magnet-textarea" id="magnet-input" placeholder="magnet:?xt=urn:btih:…&#10;https://1fichier.com/?…"></textarea>
+                        <div class="drop-zone" id="drop-zone">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+                            Déposer un fichier .torrent ou cliquer ici
+                        </div>
+                        <div class="add-actions">
+                            <button class="btn btn-primary" id="debrid-button" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                                Débrider
+                            </button>
+                            <button class="btn btn-secondary" id="preview-button" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                Aperçu
+                            </button>
+                        </div>
+                        <p class="hint">Le bouton Débrider simule l’envoi à Alldebrid et ajoute le lien en tête des liens récents.</p>
+                    </section>
+
+                    <section class="card" aria-labelledby="recent-title">
+                        <div class="card-header">
+                            <div>
+                                <div class="eyebrow">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                                    Historique mis en cache
+                                </div>
+                                <h2 id="recent-title">Derniers liens débridés</h2>
+                                <p>5 liens affichés d’abord, puis 10 supplémentaires à la demande.</p>
+                            </div>
+                            <span class="count-pill" id="recent-count-pill">5 / 42</span>
+                        </div>
+
+                        <div class="recent-list" id="recent-list">
+                            <div class="skeleton-row">
+                                <div class="skeleton skeleton-icon"></div>
+                                <div style="flex:1;display:flex;flex-direction:column;gap:0.4rem;">
+                                    <div class="skeleton skeleton-line" style="width:78%;"></div>
+                                    <div class="skeleton skeleton-line short"></div>
+                                </div>
+                            </div>
+                            <div class="skeleton-row">
+                                <div class="skeleton skeleton-icon"></div>
+                                <div style="flex:1;display:flex;flex-direction:column;gap:0.4rem;">
+                                    <div class="skeleton skeleton-line" style="width:64%;"></div>
+                                    <div class="skeleton skeleton-line short"></div>
+                                </div>
+                            </div>
+                            <div class="skeleton-row">
+                                <div class="skeleton skeleton-icon"></div>
+                                <div style="flex:1;display:flex;flex-direction:column;gap:0.4rem;">
+                                    <div class="skeleton skeleton-line" style="width:72%;"></div>
+                                    <div class="skeleton skeleton-line short"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="recent-footer">
+                            <button class="load-more" id="load-more" type="button">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                Charger 10 de plus
+                            </button>
+                            <span class="recent-count" id="recent-count">5 liens affichés sur 42</span>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </section>
+
+        <section id="panel-packs" role="tabpanel" aria-labelledby="tab-packs" hidden>
+            <aside class="advanced-note">
+                <span class="note-icon">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                </span>
+                <div>
+                    <h3>Vue avancée chargée à la demande</h3>
+                    <p>Cette vue reconstitue les packs à partir de l’historique complet et des fichiers des magnets. Elle est donc plus lente : elle n’est chargée que lorsque vous ouvrez cet onglet.</p>
+                </div>
+            </aside>
+
+            <div class="pack-grid">
+                <article class="card pack-card">
+                    <div class="pack-header">
+                        <div class="pack-info">
+                            <h3>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--accent)"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                                The.Last.of.Us.S02.COMPLETE.1080p
+                            </h3>
+                            <div class="pack-meta">
+                                <span>7 fichiers</span>
+                                <span class="meta-dot"></span>
+                                <span>31.2 Go</span>
+                                <span class="meta-dot"></span>
+                                <span style="color:var(--success)">100 %</span>
+                            </div>
+                            <div class="pack-progress"><span style="width:100%;background:var(--success);"></span></div>
+                        </div>
+                        <div class="result-actions">
+                            <button class="mini-button" type="button">Renommage IA</button>
+                            <button class="mini-button accent download-pack" type="button" data-pack="The Last of Us S02">Tout télécharger</button>
+                        </div>
+                    </div>
+                    <div class="pack-files">
+                        <div class="pack-file">
+                            <div class="file-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 8 6 4-6 4V8z"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg></div>
+                            <div class="recent-meta">
+                                <div class="pack-file-name">The.Last.of.Us.S02E01.1080p.WEB-DL.mkv</div>
+                                <div class="pack-file-path">Season 02</div>
+                            </div>
+                            <span class="downloaded-badge">Téléchargé</span>
+                            <span class="size-tag">4.6 Go</span>
+                        </div>
+                        <div class="pack-file">
+                            <div class="file-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 8 6 4-6 4V8z"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg></div>
+                            <div class="recent-meta">
+                                <div class="pack-file-name">The.Last.of.Us.S02E02.1080p.WEB-DL.mkv</div>
+                                <div class="pack-file-path">Season 02</div>
+                            </div>
+                            <span class="downloaded-badge">Téléchargé</span>
+                            <span class="size-tag">4.2 Go</span>
+                        </div>
+                        <div class="pack-file">
+                            <div class="file-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 8 6 4-6 4V8z"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg></div>
+                            <div class="recent-meta">
+                                <div class="pack-file-name">The.Last.of.Us.S02E03.1080p.WEB-DL.mkv</div>
+                                <div class="pack-file-path">Season 02</div>
+                            </div>
+                            <button class="mini-button accent" type="button">Télécharger</button>
+                            <span class="size-tag">4.4 Go</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="card pack-card">
+                    <div class="pack-header">
+                        <div class="pack-info">
+                            <h3>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--accent)"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                                Dune.Part.Two.2024.2160p
+                            </h3>
+                            <div class="pack-meta">
+                                <span>1 fichier</span>
+                                <span class="meta-dot"></span>
+                                <span>24.8 Go</span>
+                                <span class="meta-dot"></span>
+                                <span style="color:var(--accent)">0 %</span>
+                            </div>
+                            <div class="pack-progress"><span style="width:0%;"></span></div>
+                        </div>
+                        <div class="result-actions">
+                            <button class="mini-button" type="button">Renommage IA</button>
+                            <button class="mini-button accent download-pack" type="button" data-pack="Dune Part Two">Tout télécharger</button>
+                        </div>
+                    </div>
+                    <div class="pack-files">
+                        <div class="pack-file">
+                            <div class="file-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 8 6 4-6 4V8z"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg></div>
+                            <div class="recent-meta">
+                                <div class="pack-file-name">Dune.Part.Two.2024.2160p.WEB-DL.x265-FLUX.mkv</div>
+                                <div class="pack-file-path">Dune Part Two</div>
+                            </div>
+                            <button class="mini-button accent" type="button">Télécharger</button>
+                            <span class="size-tag">24.8 Go</span>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal-backdrop" id="download-modal" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+        <div class="modal">
+            <div class="modal-header">
+                <div>
+                    <h2 id="download-modal-title">Télécharger le lien</h2>
+                    <p id="download-modal-file">movie.mkv</p>
+                </div>
+                <button class="modal-close" id="close-modal" type="button" aria-label="Fermer">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="field">
+                    <label for="download-path">Dossier de destination</label>
+                    <input id="download-path" type="text" value="/downloads/Films">
+                </div>
+                <div class="field">
+                    <label for="download-rename">Renommer le fichier (optionnel)</label>
+                    <input id="download-rename" type="text" placeholder="Nom conservé si vide">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-modal" type="button">Annuler</button>
+                <button class="btn btn-primary" id="confirm-download" type="button">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                    Ajouter à la file
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+    <script>
+        const toastContainer = document.getElementById('toast-container');
+        const recentList = document.getElementById('recent-list');
+        const recentCountPill = document.getElementById('recent-count-pill');
+        const recentCount = document.getElementById('recent-count');
+        const loadMoreButton = document.getElementById('load-more');
+        const refreshButton = document.getElementById('refresh-recent');
+        const purgeButton = document.getElementById('purge-history');
+        const searchInput = document.getElementById('db-search');
+        const categorySelect = document.getElementById('category-select');
+        const resultRows = Array.from(document.querySelectorAll('.result-row'));
+        const resultCount = document.getElementById('result-count');
+        const searchEmpty = document.getElementById('search-empty');
+        const magnetInput = document.getElementById('magnet-input');
+        const debridButton = document.getElementById('debrid-button');
+        const previewButton = document.getElementById('preview-button');
+        const dropZone = document.getElementById('drop-zone');
+        const downloadModal = document.getElementById('download-modal');
+        const downloadModalFile = document.getElementById('download-modal-file');
+        const downloadPath = document.getElementById('download-path');
+        const downloadRename = document.getElementById('download-rename');
+        const confirmDownload = document.getElementById('confirm-download');
+        const closeModal = document.getElementById('close-modal');
+        const cancelModal = document.getElementById('cancel-modal');
+
+        let recentTotal = 42;
+        let visibleRecent = 5;
+        let currentDownload = null;
+        let recentData = [];
+
+        const titles = [
+            'Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.HDR.x265-FLUX.mkv',
+            'The.Last.of.Us.S02E04.1080p.WEB-DL.DDP5.1.H.264.mkv',
+            'Severance.S02E03.2160p.ATVP.WEB-DL.DV.HDR.H.265.mkv',
+            'Kendrick.Lamar.GNX.2024.FLAC.24bit.44.1kHz.zip',
+            'The.Batman.2022.1080p.BluRay.x264.DTS-HD.MA.5.1.mkv',
+            'Fallout.S01E08.2160p.PMTP.WEB-DL.DDP5.1.Atmos.HDR.mkv',
+            'Anatomie.d.une.chute.2023.1080p.BluRay.x264.mkv',
+            'Shogun.S01E10.1080p.DSNP.WEB-DL.DDP5.1.H.264.mkv',
+            'Oppenheimer.2023.2160p.UHD.BluRay.REMUX.HDR.mkv',
+            'The.Office.US.S09.COMPLETE.1080p.BluRay.x264.zip',
+            'Python.Crash.Course.3rd.Edition.EPUB.epub',
+            'Arcane.S02E07.2160p.NF.WEB-DL.DDP5.1.Atmos.HDR.mkv',
+            'Blade.Runner.2049.2017.1080p.BluRay.x264.mkv',
+            'Chernobyl.S01E05.1080p.BluRay.x264.mkv',
+            'Interstellar.2014.2160p.UHD.BluRay.REMUX.HDR.mkv',
+            'The.White.Lotus.S02E04.1080p.HMAX.WEB-DL.mkv',
+            'Succession.S04.COMPLETE.1080p.WEB-DL.zip',
+            'Sinners.2025.2160p.WEB-DL.DDP5.1.Atmos.mkv',
+            'F1.The.Movie.2025.1080p.WEB-DL.mkv',
+            'The.Bear.S03E06.1080p.FX.WEB-DL.mkv',
+            'Foundation.S03E02.2160p.ATVP.WEB-DL.mkv',
+            'Andor.S02E09.1080p.DSNP.WEB-DL.mkv',
+            'The.Penguin.S01E05.2160p.HMAX.WEB-DL.mkv',
+            'Alien.Romulus.2024.1080p.BluRay.x264.mkv',
+            'Gladiator.II.2024.2160p.WEB-DL.mkv',
+            'A.Complete.Unknown.2024.1080p.WEB-DL.mkv',
+            'Conclave.2024.1080p.BluRay.x264.mkv',
+            'Nosferatu.2024.2160p.WEB-DL.mkv',
+            'The.Substance.2024.1080p.WEB-DL.mkv',
+            'Sing.Sing.2023.1080p.BluRay.x264.mkv'
+        ];
+
+        const hosts = ['1fichier', 'Uptobox', 'Rapidgator', 'Mega', 'Turbobit', 'Nitroflare'];
+        const sizes = [
+            26628793600, 4823449600, 12884901888, 641728512,
+            20078960640, 3102953472, 3221225472, 5368709120,
+            34359738368, 12884901888, 19293798, 8053063680,
+            2362232012, 3758096384, 25769803776, 2147483648,
+            19327352832, 15032385536, 2684354560, 2147483648,
+            6442450944, 5368709120, 9139916800, 2147483648,
+            24739010560, 1610612736, 2362232012, 18253611008,
+            19327352832, 2362232012
+        ];
+
+        function formatSize(bytes) {
+            if (!bytes) return '0 B';
+            const units = ['o', 'Ko', 'Mo', 'Go', 'To'];
+            let value = bytes;
+            let index = 0;
+            while (value >= 1024 && index < units.length - 1) {
+                value /= 1024;
+                index += 1;
+            }
+            return `${value.toFixed(value >= 10 ? 1 : 2).replace('.', ',')} ${units[index]}`;
+        }
+
+        function relativeDate(date) {
+            const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+            if (seconds < 60) return `il y a ${seconds} s`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `il y a ${minutes} min`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `il y a ${hours} h`;
+            const days = Math.floor(hours / 24);
+            return `il y a ${days} j`;
+        }
+
+        function fileKind(filename) {
+            const extension = (filename.split('.').pop() || '').toLowerCase();
+            if (['mp3', 'flac', 'm4a', 'wav', 'ogg', 'opus'].includes(extension)) return 'audio';
+            if (['zip', 'rar', '7z', 'tar', 'gz'].includes(extension)) return 'archive';
+            return 'video';
+        }
+
+        function iconFor(kind) {
+            if (kind === 'audio') {
+                return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+            }
+            if (kind === 'archive') {
+                return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>';
+            }
+            return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 8 6 4-6 4V8z"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>';
+        }
+
+        function buildRecentData() {
+            recentData = Array.from({ length: recentTotal }, (_, index) => {
+                const title = index < titles.length ? titles[index] : `Bonus.S01E${String(index - titles.length + 1).padStart(2, '0')}.1080p.mkv`;
+                return {
+                    id: index,
+                    filename: title,
+                    size: sizes[index % sizes.length],
+                    host: hosts[index % hosts.length],
+                    date: new Date(Date.now() - (index * 13 + 2) * 60 * 1000),
+                    link: `https://alldebrid.example/dl/${index}-${Math.random().toString(36).slice(2, 10)}`
+                };
+            });
+        }
+
+        function renderRecentRow(item) {
+            const kind = fileKind(item.filename);
+            const row = document.createElement('article');
+            row.className = 'recent-row';
+            row.innerHTML = `
+                <div class="file-icon ${kind === 'audio' ? 'audio' : kind === 'archive' ? 'archive' : ''}">
+                    ${iconFor(kind)}
+                </div>
+                <div class="recent-meta">
+                    <h3 class="recent-name" title="${item.filename}">${item.filename}</h3>
+                    <div class="recent-sub">
+                        <span class="host-badge">${item.host}</span>
+                        <span class="meta-dot"></span>
+                        <span>${formatSize(item.size)}</span>
+                        <span class="meta-dot"></span>
+                        <span>${relativeDate(item.date)}</span>
+                    </div>
+                </div>
+                <div class="recent-actions">
+                    <button class="mini-button accent download-recent" type="button" data-id="${item.id}">Télécharger</button>
+                    <button class="mini-button icon-only copy-recent" type="button" title="Copier le lien" aria-label="Copier le lien" data-link="${item.link}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                </div>
+            `;
+            return row;
+        }
+
+        function renderRecent(append = false) {
+            if (!append) recentList.innerHTML = '';
+            const start = append ? recentList.children.length : 0;
+            recentData.slice(start, visibleRecent).forEach((item) => {
+                recentList.appendChild(renderRecentRow(item));
+            });
+
+            recentCountPill.textContent = `${visibleRecent} / ${recentTotal}`;
+            recentCount.textContent = `${visibleRecent} liens affichés sur ${recentTotal}`;
+            const exhausted = visibleRecent >= recentTotal;
+            loadMoreButton.disabled = exhausted;
+            loadMoreButton.innerHTML = exhausted
+                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Tout est chargé'
+                : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg> Charger 10 de plus';
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    ${type === 'success'
+                        ? '<path d="M20 6 9 17l-5-5"/>'
+                        : '<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/>'}
+                </svg>
+                <span>${message}</span>
+            `;
+            toastContainer.appendChild(toast);
+            window.setTimeout(() => {
+                toast.classList.add('leaving');
+                window.setTimeout(() => toast.remove(), 220);
+            }, 3200);
+        }
+
+        function openDownloadModal(item) {
+            currentDownload = item;
+            downloadModalFile.textContent = item.filename;
+            downloadRename.value = '';
+            downloadModal.classList.add('visible');
+            downloadPath.focus();
+        }
+
+        function closeDownloadModal() {
+            downloadModal.classList.remove('visible');
+            currentDownload = null;
+        }
+
+        function applySearch() {
+            const query = searchInput.value.trim().toLowerCase();
+            const category = categorySelect.value;
+            let visible = 0;
+
+            resultRows.forEach((row) => {
+                const matchesName = !query || (row.dataset.name || '').toLowerCase().includes(query);
+                const matchesCategory = category === 'all' || row.dataset.category === category;
+                const show = matchesName && matchesCategory;
+                row.style.display = show ? '' : 'none';
+                if (show) visible += 1;
+            });
+
+            resultCount.textContent = `${visible} résultat${visible > 1 ? 's' : ''}`;
+            searchEmpty.classList.toggle('visible', visible === 0);
+        }
+
+        searchInput.addEventListener('input', applySearch);
+        categorySelect.addEventListener('change', applySearch);
+
+        resultRows.forEach((row) => {
+            row.querySelector('.use-magnet').addEventListener('click', () => {
+                magnetInput.value = row.querySelector('.use-magnet').dataset.magnet;
+                magnetInput.focus();
+                magnetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                showToast('Magnet copié dans le champ d’ajout.', 'success');
+            });
+
+            row.querySelector('.preview-result').addEventListener('click', () => {
+                showToast('Aperçu Alldebrid simulé pour ce torrent.', 'success');
+            });
+
+            row.querySelector('.toggle-description').addEventListener('click', () => {
+                const panel = row.querySelector('.description-panel');
+                panel.classList.toggle('visible');
+            });
+        });
+
+        loadMoreButton.addEventListener('click', () => {
+            visibleRecent = Math.min(recentTotal, visibleRecent + 10);
+            renderRecent(true);
+        });
+
+        recentList.addEventListener('click', (event) => {
+            const downloadButton = event.target.closest('.download-recent');
+            if (downloadButton) {
+                const item = recentData.find((entry) => String(entry.id) === downloadButton.dataset.id);
+                if (item) openDownloadModal(item);
+                return;
+            }
+
+            const copyButton = event.target.closest('.copy-recent');
+            if (copyButton) {
+                const link = copyButton.dataset.link;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(link).catch(() => {});
+                }
+                showToast('Lien copié dans le presse-papiers.', 'success');
+            }
+        });
+
+        debridButton.addEventListener('click', () => {
+            const value = magnetInput.value.trim();
+            if (!value) {
+                showToast('Collez un magnet ou un lien avant de débrider.', 'error');
+                magnetInput.focus();
+                return;
+            }
+
+            const originalHtml = debridButton.innerHTML;
+            debridButton.disabled = true;
+            debridButton.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="animation:spin 0.8s linear infinite"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                Débridage…
+            `;
+
+            window.setTimeout(() => {
+                debridButton.disabled = false;
+                debridButton.innerHTML = originalHtml;
+
+                const fileName = value.match(/[?&]dn=([^&]+)/)
+                    ? decodeURIComponent(value.match(/[?&]dn=([^&]+)/)[1]).replace(/\+/g, ' ')
+                    : 'Nouveau.Lien.Manuel.mkv';
+
+                recentData.unshift({
+                    id: `manual-${Date.now()}`,
+                    filename: fileName,
+                    size: 2147483648,
+                    host: 'Alldebrid',
+                    date: new Date(),
+                    link: `https://alldebrid.example/dl/manual-${Date.now()}`
+                });
+
+                recentTotal += 1;
+                if (visibleRecent < 5) visibleRecent += 1;
+                renderRecent(false);
+                magnetInput.value = '';
+                showToast('Lien débridé et ajouté en tête des liens récents.', 'success');
+            }, 950);
+        });
+
+        previewButton.addEventListener('click', () => {
+            if (!magnetInput.value.trim()) {
+                showToast('Collez un lien pour afficher un aperçu.', 'error');
+                magnetInput.focus();
+                return;
+            }
+            showToast('Aperçu simulé : 1 fichier détecté, 2,1 Go.', 'success');
+        });
+
+        dropZone.addEventListener('click', () => {
+            showToast('Sélecteur de fichier .torrent (maquette).', 'success');
+        });
+
+        confirmDownload.addEventListener('click', () => {
+            if (!currentDownload) return;
+            showToast(`« ${downloadRename.value.trim() || currentDownload.filename} » ajouté à la file.`, 'success');
+            closeDownloadModal();
+        });
+
+        closeModal.addEventListener('click', closeDownloadModal);
+        cancelModal.addEventListener('click', closeDownloadModal);
+        downloadModal.addEventListener('click', (event) => {
+            if (event.target === downloadModal) closeDownloadModal();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeDownloadModal();
+        });
+
+        refreshButton.addEventListener('click', () => {
+            if (refreshButton.classList.contains('is-loading')) return;
+            refreshButton.classList.add('is-loading');
+            refreshButton.disabled = true;
+            window.setTimeout(() => {
+                refreshButton.classList.remove('is-loading');
+                refreshButton.disabled = false;
+                showToast('Cache des liens récents actualisé.', 'success');
+            }, 900);
+        });
+
+        purgeButton.addEventListener('click', () => {
+            if (!window.confirm('Purger l’historique Alldebrid ? Cette action est simulée dans la maquette.')) return;
+            recentData = [];
+            recentTotal = 0;
+            visibleRecent = 0;
+            recentList.innerHTML = '<div class="empty-state visible"><div class="empty-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg></div><h3>Historique vide</h3><p>Les prochains liens débridés apparaîtront ici.</p></div>';
+            recentCountPill.textContent = '0 / 0';
+            recentCount.textContent = 'Aucun lien affiché';
+            loadMoreButton.disabled = true;
+            showToast('Historique purgé (simulation).', 'success');
+        });
+
+        document.querySelectorAll('.download-pack').forEach((button) => {
+            button.addEventListener('click', () => {
+                showToast(`Pack « ${button.dataset.pack} » ajouté à la file (simulation).`, 'success');
+            });
+        });
+
+        document.querySelectorAll('.tabs button').forEach((button) => {
+            button.addEventListener('click', () => {
+                const tab = button.dataset.tab;
+                document.querySelectorAll('.tabs button').forEach((item) => {
+                    const active = item === button;
+                    item.classList.toggle('active', active);
+                    item.setAttribute('aria-selected', active ? 'true' : 'false');
+                });
+                document.getElementById('panel-recent').hidden = tab !== 'recent';
+                document.getElementById('panel-packs').hidden = tab !== 'packs';
+            });
+        });
+
+        document.querySelector('.nav-menu')?.addEventListener('click', () => {
+            showToast('Menu mobile (maquette).', 'success');
+        });
+
+        buildRecentData();
+        renderRecent();
+        applySearch();
+    </script>
+</body>
+</html>
