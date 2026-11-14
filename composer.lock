@@ -4,16 +4,53 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4097303496ba8bd988025fb866a36849",
+    "content-hash": "7ebdf3df7866f40c86caf47ea2008141",
     "packages": [
         {
             "name": "gautardos/hash-db",
             "version": "dev-master",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Gautardos/hash-db.git",
+                "reference": "dd246435f2cb3109eb90b09c0b4b4251cb35bca3"
+            },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Gautardos/hash-db/archive/refs/heads/master.zip"
+                "url": "https://api.github.com/repos/Gautardos/hash-db/zipball/dd246435f2cb3109eb90b09c0b4b4251cb35bca3",
+                "reference": "dd246435f2cb3109eb90b09c0b4b4251cb35bca3",
+                "shasum": ""
             },
-            "type": "library"
+            "default-branch": true,
+            "type": "library",
+            "autoload": {
+                "files": []
+            },
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Gautardos",
+                    "homepage": "https://github.com/Gautardos"
+                }
+            ],
+            "description": "Base de données de hash et métadonnées organisées en fichiers CSV par catégories (films, séries, musiques, jeux, logiciels, etc.)",
+            "homepage": "https://github.com/Gautardos/hash-db",
+            "keywords": [
+                "csv-database",
+                "games",
+                "hash-db",
+                "media-database",
+                "metadata",
+                "movies",
+                "music",
+                "roms"
+            ],
+            "support": {
+                "issues": "https://github.com/Gautardos/hash-db/issues",
+                "source": "https://github.com/Gautardos/hash-db/tree/master"
+            },
+            "time": "2026-09-06T15:25:20+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",
@@ -3393,8 +3430,10 @@
     "platform": {
         "php": ">=8.1",
         "ext-ctype": "*",
-        "ext-iconv": "*"
+        "ext-iconv": "*",
+        "ext-pdo_sqlite": "*",
+        "ext-simplexml": "*"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }

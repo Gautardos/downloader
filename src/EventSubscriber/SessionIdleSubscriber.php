@@ -34,6 +34,7 @@ class SessionIdleSubscriber implements EventSubscriberInterface
         'media_collections_folder_delete',
         'media_collections_clear',
         'media_resolve_item',
+        'automation_status',
         'check_files',
         'debug_storage',
         'debug_api',

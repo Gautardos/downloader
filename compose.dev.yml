@@ -19,7 +19,7 @@ services:
       - ../data/storage:/var/www/html/var/storage
       - ${DOWNLOADS_DIR:-../volumes/downloads}:/downloads
       - ${MUSIC_DIR:-../volumes/music}:/music
-      - ${NAS_DIR:-../volumes/nas}:/nas
+      - ${NAS_DIR:-../volumes/nas}:/nas:rslave
     logging:
       driver: "json-file"
       options:

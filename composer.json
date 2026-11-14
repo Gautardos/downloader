@@ -13,6 +13,8 @@
         "php": ">=8.1",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "ext-pdo_sqlite": "*",
+        "ext-simplexml": "*",
         "gautardos/hash-db": "dev-master",
         "guzzlehttp/guzzle": "^7.5",
         "symfony/console": "6.3.*",
@@ -61,7 +63,8 @@
         ],
         "post-update-cmd": [
             "@auto-scripts"
-        ]
+        ],
+        "test:automation": "php tests/automation_smoke.php"
     },
     "conflict": {
         "symfony/symfony": "*"

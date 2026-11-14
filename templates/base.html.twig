@@ -682,6 +682,7 @@
                     <a href="{{ path('music_files') }}" class="{{ current_route == 'music_files' ? 'active' : '' }}">Music Downloads</a>
                     <a href="{{ path('torrent') }}" class="{{ current_route == 'torrent' ? 'active' : '' }}">Debrid</a>
                     <a href="{{ path('media_index') }}" class="{{ current_route == 'media_index' ? 'active' : '' }}">Discover</a>
+                    <a href="{{ path('automation') }}" class="{{ current_route in ['automation', 'automation_settings'] ? 'active' : '' }}">Automations</a>
                     <a href="{{ path('queue') }}" class="{{ current_route == 'queue' ? 'active' : '' }}">Queue</a>
                     <a href="{{ path('history') }}" class="{{ current_route == 'history' ? 'active' : '' }}">History</a>
                     <a href="{{ path('config') }}" class="{{ current_route == 'config' ? 'active' : '' }}">Settings</a>

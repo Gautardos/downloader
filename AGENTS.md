@@ -1007,3 +1007,117 @@ python3 -m py_compile cli/*.py
 | `cli/tag_rename_move.py` | Tags, genres, bibliothèque |
 | `templates/base.html.twig` | Layout, polling, tracker, notifications |
 | `Dockerfile` + `supervisord.conf` | Runtime complet de l'image |
+
+---
+
+## 19. Automations (Lot 0/1 — index NAS)
+
+Cette section décrit le socle de la synchronisation automatique de listes
+externes (Scrob / MDBList) vers le NAS. Les listes et le résolveur de releases
+ne sont pas encore branchés.
+
+### Stockage
+
+- `var/db/automation.db` : base SQLite dédiée, créée par
+  `App\Service\Automation\AutomationStore` (WAL, `busy_timeout`,
+  `PRAGMA user_version` et ajout de colonnes idempotent).
+- Tables actuelles : `settings`, `scan_runs`, `library_entries`.
+- `var/storage/automation_worker.lock` / `automation_scan.lock` : mutex.
+- `var/storage/automation_worker.log` : log du worker.
+- Les réglages sont stockés dans `settings` sous la clé
+  `automation_settings` (JSON), pas dans `config.json`.
+
+### Services et commandes
+
+| Élément | Rôle |
+| --- | --- |
+| `src/Service/Automation/AutomationStore.php` | Accès SQLite, settings, scans, index |
+| `src/Service/Automation/AutomationSettings.php` | Defaults et fusion des réglages |
+| `src/Service/Automation/LibraryNameParser.php` | Parsing films/séries/anime + NFO |
+| `src/Service/Automation/LibraryIndexService.php` | Scan incrémental des racines, lock, stats |
+| `src/Command/LibraryScanCommand.php` | `app:library-scan [--root=movies]` |
+| `src/Command/AutomationWorkerCommand.php` | `app:automation-worker [--once] [--force-scan]` |
+| `src/Controller/AutomationController.php` | Page, scan, status, settings |
+
+Supervisor lance `automation-worker` en plus du worker de téléchargement.
+Le worker vérifie le heartbeat et déclenche les scans planifiés.
+
+### Routes
+
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/automation` | `automation` | Page Automations |
+| POST | `/automation/scan` | `automation_scan` | Lance un scan en arrière-plan |
+| GET | `/automation/status` | `automation_status` | Statut JSON (worker, scan, stats) |
+| POST | `/automation/settings` | `automation_settings` | Sauvegarde racines et scanner |
+
+`automation_status` est dans `SessionIdleSubscriber::READ_ONLY_ROUTES` pour
+éviter le lock de session pendant le polling.
+
+### Racines et parsing
+
+- Défauts : `/nas/Video/Movies`, `/nas/Video/TV Shows`,
+  `/nas/Video/Anime` (Anime désactivé par défaut).
+- Films : titre + année, avec fallback NFO.
+- Séries/anime : dossier série + `Season XX` + `SxxExx`, fallback
+  numérotation d'épisode seule.
+- NFO : `movie.nfo`, `<fichier>.nfo`, `tvshow.nfo`, `season.nfo` ;
+  extraction de `tmdbid`, `imdbid`, `uniqueid`, titre, année, saison,
+  épisode.
+- Les entrées peu fiables (`confidence < 0.8`, épisode manquant) sont
+  comptées dans “Needs attention” et ne doivent pas servir à la déduplication
+  automatique tant qu'elles ne sont pas résolues.
+- Chaque scan possède un `scan_id`. Les fichiers vus sont marqués avec ce
+  `scan_id`, puis les entrées actives de la racine qui n'ont pas ce `scan_id`
+  passent en `missing`. Une racine absente ou sans candidat vidéo ne marque
+  rien `missing` : les entrées précédentes sont conservées et un warning est
+  persisté.
+- Les champs d'enrichissement (`tmdb_id`, `imdb_id`, `media_key`,
+  `resolved_at`, `resolution_source`) sont préservés lors des scans suivants
+  tant que le parser n'apporte pas de nouvel ID.
+- Le parser est versionné (`LibraryNameParser::VERSION`) et l'upsert distingue
+  `inserted`, `updated` et `unchanged` (taille/mtime/version identiques).
+
+### Réglages par défaut
+
+- Profil qualité : `2160p > 1080p > 720p`, codecs `x265/h264/AV1`, HDR
+  préféré, audio `VF/VOSTFR/MULTI`, minimum 5 seeders, max 25 Go.
+- Backfill : activé, spéciaux exclus, surveillance des futurs épisodes,
+  max 50 intents par run, pause à 20 téléchargements automatiques.
+- Scanner : extensions vidéo courantes, skip samples, lecture NFO,
+  intervalle 6 h.
+- Notifications : in-app uniquement pour la v1.
+- CSRF local sur les formulaires automation (`_token` / `X-Automation-Csrf`),
+  validation des racines sous `/nas`, `/mnt`, `/media` ou `/storage`.
+- Verrous : `automation_scan.lock` et `automation_worker.lock` distinguent
+  verrou détenu et erreur d'ouverture ; le heartbeat est maintenu pendant
+  les scans longs et les runs stale sont marqués en erreur au démarrage du
+  worker.
+
+### Tests
+
+- `tests/automation_smoke.php` : parser (années dans le titre, Unicode,
+  séries homonymes, multi-épisodes, NFO), presets `inserted/updated/unchanged`,
+  préservation des enrichissements, remplacement des listes de réglages.
+- Lancement : `composer test:automation` ou `php tests/automation_smoke.php`.
+- Les tests de stockage nécessitent `pdo_sqlite` ; utiliser l'image Docker si
+  le PHP local ne l'a pas.
+
+### Limites connues de ce lot
+
+- La résolution TMDB des entrées sans NFO et le matching avec les listes
+  seront ajoutés au lot suivant.
+- Les chemins sont des chemins internes au conteneur.
+- Le scan ne supprime jamais de fichier du NAS ; il marque seulement les
+  entrées absentes comme `missing`.
+- Une racine absente ou sans candidat vidéo ne marque rien `missing` ; elle
+  produit un warning et conserve l'index précédent.
+- Les fichiers multi-épisodes (`S01E01E02`) sont détectés et volontairement
+  marqués ambigus (confiance <= 0,6) : ils ne doivent pas servir à la
+  déduplication automatique tant que l'expansion multi-épisodes n'est pas
+  implémentée.
+- La numérotation absolue des animes (ex. épisode 27 dans une saison 1) n'est
+  pas encore mappée vers la saison/épisode TMDB ; les cas sans `SxxExx` sont
+  ambigus.
+- L'installation locale PHP doit disposer de `pdo_sqlite` et `simplexml` ;
+  l'image Docker officielle `php:8.3-apache` les inclut.

@@ -30,6 +30,14 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\Automation\AutomationStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Automation\LibraryIndexService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
     # Redis Session Configuration
     Redis:
         class: Redis
