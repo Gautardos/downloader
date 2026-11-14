@@ -17,7 +17,7 @@ class DownloadManager
         $this->client = new Client(); // Dummy client
     }
 
-    public function downloadFile(string $url, string $filename, string $destinationPath, string $downloadId, bool $overwrite = false, ?callable $heartbeatCallback = null): array
+    public function downloadFile(string $url, string $filename, string $destinationPath, string $downloadId, bool $overwrite = false, ?callable $heartbeatCallback = null, int $expectedSize = 0): array
     {
         // 1. Background survival
         ignore_user_abort(true);
@@ -65,9 +65,10 @@ class DownloadManager
                 'percentage' => 0,
                 'speed' => '0 KB/s',
                 'downloaded' => 0,
-                'total' => 0
+                'total' => max(0, $expectedSize)
             ]);
 
+            $knownTotal = max(0, $expectedSize);
             $contextOptions = [
                 'http' => [
                     'method' => 'GET',
@@ -80,7 +81,7 @@ class DownloadManager
 
             $ctx = stream_context_create($contextOptions);
             stream_context_set_params($ctx, [
-                'notification' => function ($code, $severity, $msg, $msg_code, $transferred, $max) use ($downloadId, $filename, &$lastTime, &$lastDownloaded, &$lastHeartbeatTime, $heartbeatCallback) {
+                'notification' => function ($code, $severity, $msg, $msg_code, $transferred, $max) use ($downloadId, $filename, &$lastTime, &$lastDownloaded, &$lastHeartbeatTime, &$knownTotal, $heartbeatCallback) {
                     if ($code === STREAM_NOTIFY_PROGRESS) {
                         $now = microtime(true);
 
@@ -93,7 +94,8 @@ class DownloadManager
                         if ($transferred > 0 && ($now - $lastTime >= 0.5 || $transferred === $max)) {
                             $speed = ($now > $lastTime) ? ($transferred - $lastDownloaded) / ($now - $lastTime) : 0;
                             $speedStr = $this->formatSpeed($speed);
-                            $pct = $max > 0 ? round(($transferred / $max) * 100) : 0;
+                            $total = $max > 0 ? $max : $knownTotal;
+                            $pct = $total > 0 ? round(($transferred / $total) * 100) : 0;
 
                             $this->updateProgress($downloadId, [
                                 'status' => 'downloading',
@@ -101,7 +103,7 @@ class DownloadManager
                                 'percentage' => $pct,
                                 'speed' => $speedStr,
                                 'downloaded' => $transferred,
-                                'total' => $max
+                                'total' => $total
                             ]);
 
                             $lastTime = $now;
@@ -115,6 +117,10 @@ class DownloadManager
             if (!$source) {
                 $error = error_get_last();
                 throw new \Exception("Could not open source URL: " . ($error['message'] ?? 'Unknown error'));
+            }
+            $headerTotal = $this->parseContentLength($http_response_header ?? []);
+            if ($headerTotal > 0) {
+                $knownTotal = $headerTotal;
             }
 
             $dest = @fopen($filePath, 'w');
@@ -177,6 +183,17 @@ class DownloadManager
         $file = $this->getStatusFile($downloadId);
         $data['last_update'] = time(); // Heartbeat for mutex
         file_put_contents($file, json_encode($data));
+    }
+
+    private function parseContentLength(array $headers): int
+    {
+        foreach ($headers as $header) {
+            if (preg_match('/^content-length:\s*(\d+)/i', trim((string) $header), $matches)) {
+                return (int) $matches[1];
+            }
+        }
+
+        return 0;
     }
 
     private function formatSpeed(float $bytesPerSec): string

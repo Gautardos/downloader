@@ -38,6 +38,31 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\Automation\LibraryMetadataResolver:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Automation\ListSyncService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Automation\ReleaseIntentService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Automation\ReleaseDryRunService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Automation\ReleaseStreamProviderInterface:
+        alias: App\Service\Automation\MediaStreamProviderAdapter
+
+    App\Service\Automation\ReleaseDownloaderInterface:
+        alias: App\Service\Automation\MediaDownloaderAdapter
+
+    App\Service\Automation\MovieIdentityResolverInterface:
+        alias: App\Service\Automation\TmdbMovieIdentityResolver
+
     # Redis Session Configuration
     Redis:
         class: Redis

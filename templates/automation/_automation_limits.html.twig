@@ -1,0 +1,49 @@
+<article class="card config-card is-collapsed" data-config-card="limits">
+    <div class="config-card-head">
+        <div>
+            <h2 class="config-card-title">Automation limits</h2>
+            <p class="config-card-subtitle">Control how many intents are processed and when the queue guard pauses automation.</p>
+        </div>
+        <button class="config-collapse-btn" type="button" data-config-collapse aria-expanded="false" aria-controls="config-limits-body" title="Expand configuration">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+    </div>
+    <div class="config-card-body" id="config-limits-body" data-config-body hidden>
+        <form method="post" action="{{ path('automation_downloads_settings') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="settings-max-intents">Max intents per run</label>
+                    <input id="settings-max-intents" type="number" min="1" max="200" name="max_intents_per_run" value="{{ backfill.max_intents_per_run|default(50) }}">
+                </div>
+                <div class="config-field">
+                    <label for="settings-queue-guard">Queue guard</label>
+                    <input id="settings-queue-guard" type="number" min="1" max="500" name="queue_guard" value="{{ backfill.queue_guard|default(20) }}">
+                </div>
+            </div>
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="settings-backoff">Retry backoff (minutes)</label>
+                    <input id="settings-backoff" type="number" min="1" max="1440" name="retry_backoff_minutes" value="{{ intent_settings.retry_backoff_minutes|default(60) }}">
+                </div>
+                <div class="config-field">
+                    <label for="settings-max-attempts">Max attempts</label>
+                    <input id="settings-max-attempts" type="number" min="1" max="20" name="max_attempts" value="{{ intent_settings.max_attempts|default(5) }}">
+                </div>
+            </div>
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="settings-stale">Stale resolving (minutes)</label>
+                    <input id="settings-stale" type="number" min="5" max="1440" name="stale_resolving_minutes" value="{{ intent_settings.stale_resolving_minutes|default(30) }}">
+                </div>
+                <div class="config-field">
+                    <label for="settings-interval">Minimum run interval (seconds)</label>
+                    <input id="settings-interval" type="number" min="15" max="3600" name="min_interval_seconds" value="{{ intent_settings.min_interval_seconds|default(60) }}">
+                </div>
+            </div>
+            <div class="config-actions">
+                <button class="btn btn-primary" type="submit">Save limits</button>
+            </div>
+        </form>
+    </div>
+</article>

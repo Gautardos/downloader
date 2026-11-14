@@ -1,0 +1,2015 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Media Library - Downloader{% endblock %}
+
+{% block body %}
+<style>
+    .library-filter-card {
+        margin-bottom: 1rem;
+        padding: 1rem;
+    }
+    .library-filter-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .library-filter-row + .library-filter-row {
+        margin-top: .8rem;
+        padding-top: .8rem;
+        border-top: 1px solid rgba(148, 163, 184, .1);
+    }
+    .library-filter-group,
+    .library-naming {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        flex-wrap: wrap;
+    }
+    .library-filter-label {
+        color: var(--text-secondary);
+        font-size: .66rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .library-filter-card .naming-summary { margin-bottom: 0; }
+    .library-filter-row .library-search { flex: 1 1 100%; }
+    .library-search .library-filter-label { margin-right: .1rem; }
+    .library-search input,
+    .library-search select,
+    .library-search .btn {
+        height: 42px;
+        margin: 0;
+        box-sizing: border-box;
+    }
+    .library-search input[type="text"] {
+        flex: 1;
+        width: auto;
+        min-width: 220px;
+    }
+    .library-search select { padding-right: 2rem; }
+    .library-search .btn { flex: 0 0 auto; }
+    .library-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+    .library-tabs {
+        display: flex;
+        gap: .3rem;
+        flex-wrap: wrap;
+        padding: .3rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 11px;
+        background: rgba(15, 23, 42, .42);
+    }
+    .library-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .48rem .7rem;
+        border-radius: 8px;
+        color: var(--text-secondary);
+        font-size: .76rem;
+        font-weight: 700;
+        text-decoration: none;
+    }
+    .library-tab:hover { color: var(--text-primary); background: rgba(255, 255, 255, .05); }
+    .library-tab.active { color: var(--text-primary); background: rgba(56, 189, 248, .12); }
+    .library-tab .count { color: var(--text-muted, #64748b); font-size: .68rem; }
+    .library-tab.active .count { color: var(--accent); }
+    .library-search {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
+    .library-search input,
+    .library-search select {
+        padding: .62rem .7rem;
+        border: 1px solid rgba(148, 163, 184, .28);
+        border-radius: 9px;
+        background: rgba(15, 23, 42, .72);
+        color: var(--text-primary);
+        font: inherit;
+        font-size: .8rem;
+    }
+    .library-table-wrap {
+        overflow-x: auto;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 12px;
+    }
+    .library-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .79rem;
+    }
+    .library-table th {
+        padding: .7rem .8rem;
+        color: var(--text-secondary);
+        font-size: .65rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-align: left;
+        text-transform: uppercase;
+        background: rgba(15, 23, 42, .42);
+        border-bottom: 1px solid rgba(148, 163, 184, .16);
+        white-space: nowrap;
+    }
+    .library-table td {
+        padding: .7rem .8rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .08);
+        vertical-align: top;
+    }
+    .library-table tr:last-child td { border-bottom: 0; }
+    .library-row-title { font-weight: 700; }
+    .library-row-sub {
+        margin-top: .2rem;
+        color: var(--text-secondary);
+        font-size: .7rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        word-break: break-all;
+    }
+    .library-identity {
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .library-identity-sub {
+        margin-top: .2rem;
+        color: var(--text-secondary);
+        font-size: .7rem;
+    }
+    .library-empty {
+        padding: 1.4rem;
+        border: 1px dashed rgba(148, 163, 184, .28);
+        border-radius: 12px;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        text-align: center;
+    }
+    .library-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: .9rem;
+        color: var(--text-secondary);
+        font-size: .78rem;
+        flex-wrap: wrap;
+    }
+    .library-pagination a {
+        color: var(--text-primary);
+        text-decoration: none;
+        padding: .35rem .55rem;
+        border: 1px solid rgba(148, 163, 184, .2);
+        border-radius: 7px;
+    }
+    .library-pagination a:hover { border-color: var(--accent); }
+    .library-dialog {
+        width: min(1000px, calc(100% - 2rem));
+        padding: 0;
+        border: 1px solid rgba(148, 163, 184, .28);
+        border-radius: 16px;
+        color: var(--text-primary);
+        background: var(--bg-secondary);
+        box-shadow: 0 30px 80px rgba(2, 6, 23, .6);
+    }
+    .library-dialog::backdrop { background: rgba(2, 6, 23, .72); backdrop-filter: blur(4px); }
+    .library-dialog-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.1rem 1.2rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .16);
+    }
+    .library-dialog-title { margin: 0; font-size: 1rem; }
+    .library-dialog-subtitle { margin: .3rem 0 0; color: var(--text-secondary); font-size: .78rem; }
+    .library-dialog-body { max-height: 65vh; overflow: auto; padding: 1rem 1.2rem; }
+    .library-dialog-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: .5rem;
+        padding: .85rem 1.2rem;
+        border-top: 1px solid rgba(148, 163, 184, .16);
+        flex-wrap: wrap;
+    }
+    .rename-summary {
+        display: flex;
+        gap: .5rem;
+        flex-wrap: wrap;
+        margin-bottom: .85rem;
+    }
+    .rename-list { display: grid; gap: .45rem; }
+    .rename-item {
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr);
+        gap: .7rem;
+        padding: .6rem .7rem;
+        border: 1px solid rgba(148, 163, 184, .14);
+        border-radius: 9px;
+        background: rgba(15, 23, 42, .35);
+        font-size: .76rem;
+    }
+    .rename-item.is-conflict { border-color: rgba(239, 68, 68, .36); }
+    .rename-item.is-skip { border-color: rgba(245, 158, 11, .28); }
+    .rename-item.is-ok { border-color: rgba(34, 197, 94, .28); }
+    .rename-paths { min-width: 0; }
+    .rename-path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .7rem;
+        word-break: break-all;
+    }
+    .rename-arrow { color: var(--text-secondary); }
+    .rename-reason { margin-top: .2rem; color: var(--text-secondary); font-size: .7rem; }
+    .naming-summary {
+        display: flex;
+        gap: .4rem;
+        flex-wrap: wrap;
+        margin-bottom: .85rem;
+    }
+    .match-current {
+        display: flex;
+        gap: .85rem;
+        padding: .8rem;
+        margin-bottom: .9rem;
+        border: 1px solid rgba(56, 189, 248, .28);
+        border-radius: 11px;
+        background: rgba(56, 189, 248, .07);
+    }
+    .match-current-poster {
+        width: 54px;
+        height: 78px;
+        flex: 0 0 auto;
+        border-radius: 8px;
+        object-fit: cover;
+        background: rgba(148, 163, 184, .15);
+    }
+    .match-current-main { min-width: 0; }
+    .match-current-title { font-weight: 800; font-size: .88rem; }
+    .match-current-meta { margin-top: .2rem; color: var(--text-secondary); font-size: .73rem; }
+    .match-current-overview {
+        margin-top: .4rem;
+        color: var(--text-secondary);
+        font-size: .74rem;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .match-candidate {
+        display: flex;
+        align-items: center;
+        gap: .7rem;
+        width: 100%;
+        padding: .6rem .7rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 9px;
+        background: rgba(15, 23, 42, .4);
+        color: var(--text-primary);
+        text-align: left;
+        cursor: pointer;
+        font: inherit;
+    }
+    .match-candidate + .match-candidate { margin-top: .45rem; }
+    .match-candidate:hover { border-color: rgba(56, 189, 248, .45); }
+    .match-candidate.is-selected { border-color: var(--accent); background: rgba(56, 189, 248, .12); }
+    .match-candidate-poster {
+        width: 36px;
+        height: 52px;
+        flex: 0 0 auto;
+        border-radius: 6px;
+        object-fit: cover;
+        background: rgba(148, 163, 184, .15);
+    }
+    .match-candidate-main { min-width: 0; }
+    .match-candidate-title { display: block; font-weight: 750; font-size: .82rem; }
+    .match-candidate-meta {
+        display: block;
+        margin-top: .2rem;
+        color: var(--text-secondary);
+        font-size: .71rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .folder-groups { display: grid; gap: .6rem; }
+    .folder-group {
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, .32);
+        overflow: hidden;
+    }
+    .folder-group-header {
+        display: flex;
+        align-items: center;
+        gap: .7rem;
+        padding: .7rem .85rem;
+    }
+    .folder-toggle {
+        width: 32px;
+        height: 32px;
+        flex: 0 0 auto;
+        border: 1px solid rgba(148, 163, 184, .2);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, .04);
+        color: var(--text-primary);
+        cursor: pointer;
+        font: inherit;
+    }
+    .folder-chevron {
+        display: inline-block;
+        transition: transform .18s ease;
+    }
+    .folder-group.is-open .folder-chevron { transform: rotate(90deg); }
+    .folder-group-main { flex: 1; min-width: 0; }
+    .folder-group-title { font-weight: 800; font-size: .9rem; }
+    .folder-group-path {
+        margin-top: .15rem;
+        color: var(--text-secondary);
+        font-size: .71rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        word-break: break-all;
+    }
+    .folder-group-meta {
+        display: flex;
+        align-items: center;
+        gap: .35rem;
+        flex-wrap: wrap;
+        margin-top: .4rem;
+    }
+    .folder-group-actions { display: flex; gap: .35rem; flex-wrap: wrap; }
+    .folder-group-body {
+        display: none;
+        padding: .7rem;
+        border-top: 1px solid rgba(148, 163, 184, .12);
+    }
+    .folder-group-body .library-table-wrap { border: 0; }
+    .folder-loading {
+        padding: .9rem;
+        color: var(--text-secondary);
+        font-size: .78rem;
+        text-align: center;
+    }
+    .discovery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 1rem;
+    }
+    .discovery-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, .16);
+        background: var(--panel-solid, #1e293b);
+        cursor: pointer;
+        transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .discovery-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(56, 189, 248, .35);
+        box-shadow: 0 18px 40px rgba(0, 0, 0, .35);
+    }
+    .discovery-poster-wrap {
+        position: relative;
+        aspect-ratio: 2 / 3;
+        overflow: hidden;
+        background: linear-gradient(135deg, rgba(56, 189, 248, .12), rgba(129, 140, 248, .12));
+    }
+    .discovery-poster { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .discovery-poster--empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.2rem;
+        font-weight: 900;
+        color: rgba(255, 255, 255, .45);
+    }
+    .discovery-poster-overlay {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to top, rgba(15, 23, 42, .95), transparent 48%);
+        pointer-events: none;
+    }
+    .discovery-type-badge {
+        position: absolute;
+        top: .55rem;
+        left: .55rem;
+        z-index: 2;
+        padding: .25rem .45rem;
+        border-radius: 6px;
+        color: #e2e8f0;
+        background: rgba(15, 23, 42, .82);
+        border: 1px solid rgba(255, 255, 255, .12);
+        backdrop-filter: blur(8px);
+        font-size: .6rem;
+        font-weight: 800;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    .discovery-rating {
+        position: absolute;
+        top: .55rem;
+        right: .55rem;
+        z-index: 2;
+        padding: .22rem .38rem;
+        border-radius: 6px;
+        color: #fbbf24;
+        background: rgba(15, 23, 42, .82);
+        border: 1px solid rgba(251, 191, 36, .18);
+        font-size: .66rem;
+        font-weight: 800;
+    }
+    .discovery-flag {
+        position: absolute;
+        left: .55rem;
+        bottom: .55rem;
+        z-index: 2;
+        padding: .22rem .4rem;
+        border-radius: 6px;
+        font-size: .6rem;
+        font-weight: 750;
+    }
+    .discovery-flag--danger {
+        color: #fca5a5;
+        background: rgba(239, 68, 68, .18);
+        border: 1px solid rgba(239, 68, 68, .3);
+    }
+    .discovery-card-body {
+        display: flex;
+        flex-direction: column;
+        gap: .32rem;
+        flex: 1;
+        padding: .8rem .85rem .9rem;
+    }
+    .discovery-card-title {
+        margin: 0;
+        font-size: .86rem;
+        font-weight: 750;
+        line-height: 1.25;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .discovery-card-title span { color: var(--text-secondary); font-weight: 600; }
+    .discovery-card-sub {
+        min-height: 1em;
+        color: var(--text-secondary);
+        font-size: .69rem;
+        word-break: break-all;
+    }
+    .discovery-card-stats {
+        display: flex;
+        align-items: center;
+        gap: .38rem;
+        color: var(--text-secondary);
+        font-size: .71rem;
+    }
+    .discover-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-secondary); }
+    .discovery-card-chips { display: flex; gap: .28rem; flex-wrap: wrap; }
+    .discovery-card-actions {
+        margin-top: auto;
+        padding-top: .45rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+    }
+    .discovery-view-link { color: var(--accent); font-size: .73rem; font-weight: 700; }
+    .discovery-card:hover .discovery-view-link { text-decoration: underline; }
+    .discovery-hero {
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        gap: 1rem;
+        min-height: 220px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+        border-radius: 14px;
+        overflow: hidden;
+        background-size: cover;
+        background-position: center;
+        background-color: rgba(15, 23, 42, .7);
+    }
+    .discovery-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(to top, rgba(30, 41, 59, 1) 3%, rgba(30, 41, 59, .72) 40%, rgba(15, 23, 42, .2) 100%),
+            linear-gradient(to right, rgba(15, 23, 42, .8), transparent 65%);
+    }
+    .discovery-hero-poster {
+        position: relative;
+        z-index: 1;
+        width: 110px;
+        flex: 0 0 auto;
+        aspect-ratio: 2 / 3;
+        object-fit: cover;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, .12);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, .5);
+    }
+    .discovery-hero-poster--empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, rgba(56, 189, 248, .25), rgba(129, 140, 248, .25));
+        font-size: 1.8rem;
+        font-weight: 900;
+        color: rgba(255, 255, 255, .6);
+    }
+    .discovery-hero-copy { position: relative; z-index: 1; min-width: 0; }
+    .discovery-hero-title { margin: 0; font-size: clamp(1.3rem, 3vw, 1.9rem); letter-spacing: -.035em; }
+    .discovery-hero-meta {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        flex-wrap: wrap;
+        margin-top: .35rem;
+        color: #cbd5e1;
+        font-size: .8rem;
+    }
+    .discovery-hero-overview {
+        margin: .55rem 0 0;
+        max-width: 760px;
+        color: #cbd5e1;
+        font-size: .82rem;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .discovery-hero-actions {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        flex-wrap: wrap;
+        margin-top: .65rem;
+    }
+    .folder-browser-layout {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 1rem;
+        align-items: start;
+    }
+    .folder-tree-panel {
+        max-height: 72vh;
+        overflow: auto;
+        padding-right: .9rem;
+        border-right: 1px solid rgba(148, 163, 184, .14);
+    }
+    .folder-tree-head {
+        margin-bottom: .55rem;
+        color: var(--text-secondary);
+        font-size: .67rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+    .folder-tree-list { list-style: none; margin: 0; padding: 0; }
+    .folder-tree-list .folder-tree-list {
+        margin-left: .45rem;
+        padding-left: .75rem;
+        border-left: 1px solid rgba(148, 163, 184, .12);
+    }
+    .folder-tree-row {
+        display: flex;
+        align-items: center;
+        gap: .22rem;
+        padding: .22rem .28rem;
+        border-radius: 6px;
+    }
+    .folder-tree-item.is-active > .folder-tree-row { background: rgba(56, 189, 248, .12); }
+    .folder-tree-toggle {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: .7rem;
+        transition: transform .15s ease;
+    }
+    .folder-tree-item.is-open > .folder-tree-row .folder-tree-toggle { transform: rotate(90deg); }
+    .folder-tree-spacer { width: 18px; height: 18px; flex: 0 0 auto; }
+    .folder-tree-label {
+        flex: 1;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: .76rem;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+    }
+    .folder-tree-label:hover { color: var(--text-primary); }
+    .folder-tree-item.is-active > .folder-tree-row .folder-tree-label {
+        color: var(--text-primary);
+        font-weight: 700;
+    }
+    .folder-tree-count { flex: 0 0 auto; color: var(--text-muted, #64748b); font-size: .64rem; }
+    .folder-tree-children { display: none; }
+    .folder-tree-item.is-open > .folder-tree-children { display: block; }
+    .folder-content-panel { min-width: 0; }
+    .folder-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: .3rem;
+        flex-wrap: wrap;
+        margin-bottom: .8rem;
+        font-size: .76rem;
+    }
+    .folder-breadcrumb button {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--accent);
+        font: inherit;
+        cursor: pointer;
+    }
+    .folder-breadcrumb button:hover { text-decoration: underline; }
+    .folder-breadcrumb .sep { color: var(--text-muted, #64748b); }
+    .folder-content-head { margin-bottom: .85rem; }
+    .folder-content-title { font-size: 1.05rem; font-weight: 800; letter-spacing: -.02em; }
+    .folder-content-meta { margin-top: .22rem; color: var(--text-secondary); font-size: .75rem; }
+    .folder-section-title {
+        margin: .15rem 0 .55rem;
+        color: var(--text-secondary);
+        font-size: .67rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+    .folder-subfolders {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: .65rem;
+        margin-bottom: 1.1rem;
+    }
+    .folder-subfolder {
+        display: flex;
+        align-items: center;
+        gap: .7rem;
+        min-height: 68px;
+        padding: .7rem .8rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, .35);
+        color: var(--text-primary);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        min-width: 0;
+    }
+    .folder-subfolder:hover { border-color: rgba(56, 189, 248, .4); background: rgba(15, 23, 42, .55); }
+    .folder-subfolder-icon {
+        width: 36px;
+        height: 36px;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        color: var(--accent);
+        background: rgba(56, 189, 248, .12);
+    }
+    .folder-subfolder-main {
+        display: flex;
+        flex-direction: column;
+        gap: .18rem;
+        flex: 1;
+        min-width: 0;
+    }
+    .folder-subfolder-title {
+        display: block;
+        font-size: .8rem;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .folder-subfolder-meta { display: block; color: var(--text-secondary); font-size: .7rem; }
+    .folder-files-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: .5rem;
+    }
+    .folder-files-title {
+        color: var(--text-secondary);
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+    }
+    .folder-loading {
+        padding: 1.5rem;
+        border: 1px dashed rgba(148, 163, 184, .24);
+        border-radius: 12px;
+        color: var(--text-secondary);
+        font-size: .78rem;
+        text-align: center;
+    }
+    @media (max-width: 760px) {
+        .folder-browser-layout { grid-template-columns: 1fr; }
+        .folder-tree-panel {
+            max-height: 300px;
+            padding-right: 0;
+            padding-bottom: .75rem;
+            border-right: 0;
+            border-bottom: 1px solid rgba(148, 163, 184, .14);
+        }
+        .rename-item { grid-template-columns: 1fr; }
+        .library-search { width: 100%; }
+        .library-search input { flex: 1; min-width: 160px; }
+    }
+    .library-scan-state[hidden] {
+        display: none;
+    }
+    .library-scan-state {
+        display: flex;
+        align-items: flex-start;
+        gap: .75rem;
+        padding: .85rem 1rem;
+        margin-bottom: 1rem;
+        border: 1px solid rgba(56, 189, 248, .24);
+        border-left: 4px solid var(--accent);
+        border-radius: 11px;
+        background: rgba(56, 189, 248, .07);
+        font-size: .8rem;
+    }
+    .library-scan-state.is-waiting {
+        border-color: rgba(245, 158, 11, .28);
+        border-left-color: var(--warning);
+        background: rgba(245, 158, 11, .08);
+    }
+    .library-scan-state.is-stale {
+        border-color: rgba(239, 68, 68, .3);
+        border-left-color: #ef4444;
+        background: rgba(239, 68, 68, .08);
+    }
+    .library-scan-spinner {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        margin-top: .16rem;
+        border-radius: 50%;
+        border: 2px solid rgba(56, 189, 248, .25);
+        border-top-color: var(--accent);
+        animation: library-scan-spin .8s linear infinite;
+    }
+    .library-scan-state.is-waiting .library-scan-spinner,
+    .library-scan-state.is-stale .library-scan-spinner {
+        border-top-color: var(--warning);
+    }
+    @keyframes library-scan-spin { to { transform: rotate(360deg); } }
+    .library-scan-meta { margin-top: .2rem; color: var(--text-secondary); font-size: .73rem; }
+</style>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Media Library',
+    subtitle: 'Browse matched and unmatched NAS entries, then rename matched files to the current Jellyfin-friendly convention.',
+    icon: 'automation'
+} %}
+    {% block actions %}
+        <button class="btn btn-secondary" type="button" onclick="startLibraryScan()">Scan now</button>
+        <button class="btn btn-secondary" type="button" onclick="startMetadataResolution()" {{ (resolve_requested or not tmdb_configured) ? 'disabled' : '' }} title="{{ tmdb_configured ? '' : 'Configure a TMDB API key in Discover first.' }}">Resolve metadata</button>
+        <button class="btn btn-primary" type="button" onclick="openRenamePreview()">Rename matched</button>
+    {% endblock %}
+{% endembed %}
+
+{% include 'automation/_nav.html.twig' %}
+
+<div class="library-scan-state {{ scan_running ? '' : 'is-waiting' }}" id="library-scan-state" data-requested="{{ scan_requested ? '1' : '0' }}" {% if not scan_running and not scan_requested and not scan_lock_error %}hidden{% endif %}>
+    <span class="library-scan-spinner" aria-hidden="true"></span>
+    <div>
+        <strong id="library-scan-title">{{ scan_running ? 'Library scan in progress' : 'Library scan queued' }}</strong>
+        <div class="library-scan-meta" id="library-scan-meta">
+            {% if scan_lock_error %}
+                {{ scan_lock_error }}
+            {% elseif running_scan and running_scan.files_seen > 0 %}
+                {{ running_scan.files_seen }} seen · {{ running_scan.files_indexed }} new · {{ running_scan.files_updated }} updated · {{ running_scan.files_missing }} missing
+            {% elseif scan_requested and scan_requested_at > 0 %}
+                Requested {{ scan_requested_at|date('Y-m-d H:i:s') }} · waiting for the automation worker
+            {% elseif last_scan %}
+                Last scan {{ last_scan.finished_at ?: last_scan.started_at }} · {{ last_scan.status }}
+            {% else %}
+                Waiting for the automation worker…
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="library-scan-state {{ resolve_requested ? '' : 'is-waiting' }}" id="library-resolution-state" {% if not resolve_requested %}hidden{% endif %}>
+    <span class="library-scan-spinner" aria-hidden="true"></span>
+    <div>
+        <strong id="library-resolution-title">{{ resolve_requested ? 'Metadata resolution in progress' : 'Metadata resolution queued' }}</strong>
+        <div class="library-scan-meta" id="library-resolution-meta">
+            {% if last_resolution %}
+                Last run {{ last_resolution.finished_at|default('—') }} · {{ last_resolution.groups_resolved|default(0) }} groups resolved · {{ last_resolution.entries_resolved|default(0) }} entries updated
+            {% else %}
+                Resolve series and movies to TMDB.
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% import 'automation/_library_table.html.twig' as libraryTable %}
+
+<section class="card library-filter-card">
+    <div class="library-filter-row">
+        <div class="library-filter-group">
+            <span class="library-filter-label">Status</span>
+            <div class="library-tabs">
+                {% set statuses = {
+                    all: {label: 'All', count: counts.all},
+                    matched: {label: 'Matched', count: counts.matched},
+                    unmatched: {label: 'Unmatched', count: counts.unmatched},
+                    ignored: {label: 'Ignored', count: counts.ignored},
+                    missing: {label: 'Missing', count: counts.missing}
+                } %}
+                {% for key, item in statuses %}
+                    <a class="library-tab {{ filters.status == key ? 'active' : '' }}"
+                       href="{{ path('automation_library', {status: key, type: filters.type, q: filters.q, view: view}) }}">
+                        {{ item.label }} <span class="count">{{ item.count }}</span>
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="library-filter-group">
+            <span class="library-filter-label">View</span>
+            <div class="library-tabs">
+                <a class="library-tab {{ view == 'flat' ? 'active' : '' }}"
+                   href="{{ path('automation_library', {status: filters.status, type: filters.type, q: filters.q, view: 'flat'}) }}">Flat</a>
+                <a class="library-tab {{ view == 'folder' ? 'active' : '' }}"
+                   href="{{ path('automation_library', {status: filters.status, type: filters.type, q: filters.q, view: 'folder'}) }}">Folders</a>
+                <a class="library-tab {{ view == 'discovery' ? 'active' : '' }}"
+                   href="{{ path('automation_library', {status: filters.status, type: filters.type, q: filters.q, view: 'discovery'}) }}">Discovery</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="library-filter-row">
+        <form class="library-search" method="get" action="{{ path('automation_library') }}">
+            <span class="library-filter-label">Search</span>
+            <input type="hidden" name="status" value="{{ filters.status }}">
+            <input type="hidden" name="view" value="{{ view }}">
+            <select name="type">
+                <option value="all" {{ filters.type == 'all' ? 'selected' : '' }}>All types</option>
+                <option value="movie" {{ filters.type == 'movie' ? 'selected' : '' }}>Movies</option>
+                <option value="series" {{ filters.type == 'series' ? 'selected' : '' }}>Series</option>
+                <option value="anime" {{ filters.type == 'anime' ? 'selected' : '' }}>Anime</option>
+            </select>
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="Title, path, TMDB ID...">
+            <button class="btn btn-secondary btn-sm" type="submit">Apply</button>
+        </form>
+
+    </div>
+
+    <div class="library-filter-row">
+        <div class="library-naming">
+            <span class="library-filter-label">Naming</span>
+            <div class="naming-summary">
+                <span class="badge badge-success">{{ naming_summary.conform }} conform</span>
+                <span class="badge badge-info">{{ naming_summary.rename }} to rename</span>
+                <span class="badge badge-danger">{{ naming_summary.conflict }} conflicts</span>
+                <span class="badge badge-neutral">{{ naming_summary.skip }} skipped</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+{% if view == 'folder' %}
+    <section class="card" style="margin-bottom:1rem;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+            <div>
+                <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Folder browser</h2>
+                <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">
+                    Browse the NAS by folder. Select a folder to see its subfolders and files.
+                </p>
+            </div>
+            <span class="badge badge-info">{{ counts.matched }} matched</span>
+        </div>
+
+        {% if folder_tree is empty %}
+            <div class="library-empty">No folder matches these filters.</div>
+        {% else %}
+            <div class="folder-browser-layout">
+                <aside class="folder-tree-panel">
+                    <div class="folder-tree-head">Folders</div>
+                    {% import 'automation/_folder_tree.html.twig' as folderTree %}
+                    {{ folderTree.tree(folder_tree, selected_root_key, selected_folder_path) }}
+                </aside>
+                <div class="folder-content-panel">
+                    <div id="folder-breadcrumb" class="folder-breadcrumb"></div>
+                    <div id="folder-content"
+                         data-root-key="{{ selected_root_key }}"
+                         data-folder-path="{{ selected_folder_path }}">
+                        <div class="folder-loading">Loading folder…</div>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </section>
+{% elseif view == 'discovery' %}
+    <section class="card" style="margin-bottom:1rem;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+            <div>
+                <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Discovery</h2>
+                <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">
+                    {{ element_total }} element{{ element_total == 1 ? '' : 's' }} · page {{ element_page }} / {{ element_pages }}
+                </p>
+            </div>
+            <span class="badge badge-info">{{ counts.matched }} matched</span>
+        </div>
+
+        <div class="library-tabs" style="margin-bottom:1rem;">
+            {% for key, label in {all: 'All types', movie: 'Movies', series: 'Series', anime: 'Anime'} %}
+                <a class="library-tab {{ filters.type == key ? 'active' : '' }}"
+                   href="{{ path('automation_library', {status: filters.status, type: key, q: filters.q, view: 'discovery'}) }}">{{ label }}</a>
+            {% endfor %}
+        </div>
+
+        {% if discovery_elements is empty %}
+            <div class="library-empty">No element matches these filters.</div>
+        {% else %}
+            <div class="discovery-grid">
+                {% for element in discovery_elements %}
+                    <article class="discovery-card" data-discovery-card
+                                 data-discovery-open
+                                 data-discovery-group="{{ element.match_group|json_encode|e('html_attr') }}"
+                                 data-discovery-tmdb-id="{{ element.tmdb_id ?: '' }}"
+                                 data-discovery-title="{{ element.title|e('html_attr') }}"
+                                 data-discovery-type="{{ element.match_type }}">
+                                <div class="discovery-poster-wrap">
+                                    {% if element.poster %}
+                                        <img class="discovery-poster" src="{{ element.poster }}" alt="" loading="lazy">
+                                    {% else %}
+                                        <div class="discovery-poster discovery-poster--empty">{{ element.title|slice(0, 1)|upper }}</div>
+                                    {% endif %}
+                                    <span class="discovery-type-badge">{{ element.media_type|capitalize }}</span>
+                                    {% if element.rating %}<span class="discovery-rating">{{ element.rating }}</span>{% endif %}
+                                    {% if element.missing %}<span class="discovery-flag discovery-flag--danger">{{ element.missing }} missing</span>{% endif %}
+                                    <div class="discovery-poster-overlay"></div>
+                                </div>
+                                <div class="discovery-card-body">
+                                    <h3 class="discovery-card-title">{{ element.title }}{% if element.year %} <span>({{ element.year }})</span>{% endif %}</h3>
+                                    <div class="discovery-card-sub">
+                                        {% if element.media_type != 'movie' and element.show_folder %}
+                                            {{ element.show_folder }}
+                                        {% elseif element.tmdb_id %}
+                                            TMDB {{ element.tmdb_id }}
+                                        {% elseif element.folder_path %}
+                                            {{ element.folder_path }}
+                                        {% else %}
+                                            &nbsp;
+                                        {% endif %}
+                                    </div>
+                                    <div class="discovery-card-stats">
+                                        <span>{{ element.files }} file{{ element.files == 1 ? '' : 's' }}</span>
+                                        {% if element.seasons %}<span class="discover-dot"></span><span>{{ element.seasons }} season{{ element.seasons == 1 ? '' : 's' }}</span>{% endif %}
+                                    </div>
+                                    <div class="discovery-card-chips">
+                                        {% if element.naming.conform %}<span class="badge badge-success">{{ element.naming.conform }} conform</span>{% endif %}
+                                        {% if element.naming.rename %}<span class="badge badge-info">{{ element.naming.rename }} to rename</span>{% endif %}
+                                        {% if element.naming.conflict %}<span class="badge badge-danger">{{ element.naming.conflict }} conflicts</span>{% endif %}
+                                    </div>
+                                    <div class="discovery-card-actions">
+                                        <span class="discovery-view-link">View details</span>
+                                        <button class="btn btn-secondary btn-sm" type="button"
+                                                data-match-action="open"
+                                                data-match-group="{{ element.match_group|json_encode|e('html_attr') }}"
+                                                data-match-type="{{ element.match_type }}"
+                                                data-match-id="{{ element.tmdb_id ?: '' }}"
+                                                data-match-title="{{ element.title|e('html_attr') }}">{{ element.tmdb_id ? 'Fix' : 'Match' }}</button>
+                                    </div>
+                                </div>
+                            </article>
+                {% endfor %}
+            </div>
+
+            {% if element_pages > 1 %}
+                <div class="library-pagination">
+                    <span>Showing {{ element_offset + 1 }}–{{ element_offset + discovery_elements|length }} of {{ element_total }}</span>
+                    <div style="display:flex;gap:.4rem;">
+                        {% if element_page > 1 %}
+                            <a href="{{ path('automation_library', {status: filters.status, type: filters.type, q: filters.q, view: 'discovery', page: element_page - 1}) }}">Previous</a>
+                        {% endif %}
+                        {% if element_page < element_pages %}
+                            <a href="{{ path('automation_library', {status: filters.status, type: filters.type, q: filters.q, view: 'discovery', page: element_page + 1}) }}">Next</a>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+        {% endif %}
+    </section>
+
+    <dialog class="library-dialog" id="discovery-dialog">
+        <div class="library-dialog-header">
+            <div>
+                <h2 class="library-dialog-title" id="discovery-dialog-title">Element</h2>
+                <p class="library-dialog-subtitle" id="discovery-dialog-subtitle"></p>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" id="discovery-dialog-close">Close</button>
+        </div>
+        <div class="library-dialog-body">
+            <div id="discovery-details" class="discovery-details"></div>
+            <div id="discovery-files" class="discovery-files"></div>
+        </div>
+        <div class="library-dialog-actions">
+            <button class="btn btn-secondary" type="button" id="discovery-dialog-cancel">Close</button>
+        </div>
+    </dialog>
+{% else %}
+    <section class="card" style="margin-bottom:1rem;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+            <div>
+                <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Indexed entries</h2>
+                <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">
+                    {{ total }} entr{{ total == 1 ? 'y' : 'ies' }} · page {{ page }} / {{ pages }}
+                </p>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+                <span class="badge badge-info">{{ counts.matched }} matched</span>
+                {% if filters.status == 'missing' and counts.missing > 0 %}
+                    <button class="btn btn-danger btn-sm" type="button" onclick="purgeMissingEntries()">Purge missing</button>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if entries is empty %}
+            <div class="library-empty">No entry matches these filters.</div>
+        {% else %}
+            {{ libraryTable.table(entries, naming_map) }}
+
+            {% if pages > 1 %}
+                <div class="library-pagination">
+                    <span>Showing {{ offset + 1 }}–{{ offset + entries|length }} of {{ total }}</span>
+                    <div style="display:flex;gap:.4rem;">
+                        {% if page > 1 %}
+                            <a href="{{ path('automation_library', {status: filters.status, type: filters.type, q: filters.q, view: 'flat', page: page - 1}) }}">Previous</a>
+                        {% endif %}
+                        {% if page < pages %}
+                            <a href="{{ path('automation_library', {status: filters.status, type: filters.type, q: filters.q, view: 'flat', page: page + 1}) }}">Next</a>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+        {% endif %}
+    </section>
+{% endif %}
+
+{% include 'automation/_attention.html.twig' %}
+
+{% if recent_rename_runs is not empty %}
+<section class="card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Recent rename runs</h2>
+            <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">Last 5 bulk rename operations.</p>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="{{ path('automation_activity') }}">Full activity</a>
+    </div>
+    <div class="library-table-wrap">
+        <table class="library-table">
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Status</th>
+                    <th>Seen</th>
+                    <th>Renamed</th>
+                    <th>Skipped</th>
+                    <th>Failed</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in recent_rename_runs %}
+                    <tr>
+                        <td>{{ run.started_at }}</td>
+                        <td>
+                            {% set statusClass = run.status == 'success' ? 'badge-success' : (run.status == 'warning' ? 'badge-warning' : (run.status == 'error' ? 'badge-danger' : 'badge-info')) %}
+                            <span class="badge {{ statusClass }}">{{ run.status }}</span>
+                        </td>
+                        <td>{{ run.entries_seen }}</td>
+                        <td>{{ run.entries_renamed }}</td>
+                        <td>{{ run.entries_skipped }}</td>
+                        <td>{{ run.entries_failed }}</td>
+                        <td>{{ run.duration is not null ? run.duration ~ 's' : '—' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<dialog class="library-dialog" id="rename-dialog">
+    <div class="library-dialog-header">
+        <div>
+            <h2 class="library-dialog-title">Rename matched files</h2>
+            <p class="library-dialog-subtitle">Preview only. Nothing is moved until you apply.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="button" id="rename-dialog-close">Close</button>
+    </div>
+    <div class="library-dialog-body">
+        <div class="library-empty" id="rename-loading">Building rename plan…</div>
+        <div id="rename-summary" class="rename-summary" style="display:none;"></div>
+        <div id="rename-list" class="rename-list"></div>
+    </div>
+    <div class="library-dialog-actions">
+        <button class="btn btn-secondary" type="button" id="rename-cancel">Cancel</button>
+        <button class="btn btn-primary" type="button" id="rename-apply" disabled>Apply renames</button>
+    </div>
+</dialog>
+
+<dialog class="library-dialog" id="match-dialog">
+    <div class="library-dialog-header">
+        <div>
+            <h2 class="library-dialog-title" id="match-dialog-title">Fix TMDB match</h2>
+            <p class="library-dialog-subtitle" id="match-dialog-subtitle"></p>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="button" id="match-dialog-close">Close</button>
+    </div>
+    <div class="library-dialog-body">
+        <div id="match-current" class="match-current" style="display:none;"></div>
+        <div class="library-search" style="margin-bottom:.8rem;">
+            <input type="text" id="match-query" placeholder="Search TMDB..." style="flex:1;min-width:200px;">
+            <button class="btn btn-secondary btn-sm" type="button" id="match-search-btn">Search</button>
+        </div>
+        <div class="library-empty" id="match-state">Searching TMDB…</div>
+        <div id="match-results" class="rename-list"></div>
+    </div>
+    <div class="library-dialog-actions">
+        <button class="btn btn-secondary" type="button" id="match-cancel">Cancel</button>
+        <button class="btn btn-primary" type="button" id="match-apply" disabled>Apply match</button>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block javascripts %}
+<script>
+    const libraryPreviewRoute = "{{ path('automation_library_rename_preview') }}";
+    const libraryApplyRoute = "{{ path('automation_library_rename_apply') }}";
+    const libraryMatchSearchRoute = "{{ path('automation_library_match_search') }}";
+    const libraryMatchDetailsRoute = "{{ path('automation_library_match_details') }}";
+    const libraryFolderEntriesRoute = "{{ path('automation_library_folder_entries') }}";
+    const libraryFolderContentsRoute = "{{ path('automation_library_folder_contents') }}";
+    const libraryElementRoute = "{{ path('automation_library_element') }}";
+    const libraryRemoveRoute = "{{ path('automation_library_remove') }}";
+    const libraryPurgeMissingRoute = "{{ path('automation_library_purge_missing') }}";
+    const automationScanRoute = "{{ path('automation_scan') }}";
+    const automationResolveRoute = "{{ path('automation_resolve') }}";
+    const automationStatusRoute = "{{ path('automation_status') }}";
+    const libraryCsrfToken = "{{ csrf_token|e('js') }}";
+    let metadataResolutionRequested = false;
+    const initialResolutionRequested = {{ resolve_requested ? 'true' : 'false' }};
+    const initialScanRunning = {{ scan_running ? 'true' : 'false' }};
+    const initialScanRequested = {{ scan_requested ? 'true' : 'false' }};
+    const initialScanRequestedAt = {{ scan_requested_at|default(0) }} * 1000;
+    const initialScanId = {{ last_scan.id|default(0) }};
+    let libraryScanRequestedAt = initialScanRequestedAt > 0 ? initialScanRequestedAt : (initialScanRequested ? Date.now() : 0);
+    let observedScanRunning = initialScanRunning;
+    const libraryFilters = {{ filters|json_encode|raw }};
+    let libraryPreviewCounts = {ok: 0, conform: 0, skip: 0, conflict: 0};
+    let matchGroup = null;
+    let matchType = 'series';
+    let matchSelected = null;
+
+    function escapeLibraryHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        }[char]));
+    }
+
+    function setLibraryScanState(title, meta, state = '') {
+        const panel = document.getElementById('library-scan-state');
+        if (!panel) return;
+        panel.hidden = false;
+        panel.classList.remove('is-waiting', 'is-stale');
+        if (state) panel.classList.add('is-' + state);
+        const titleElement = document.getElementById('library-scan-title');
+        const metaElement = document.getElementById('library-scan-meta');
+        if (titleElement) titleElement.textContent = title;
+        if (metaElement) metaElement.textContent = meta;
+    }
+
+    function setLibraryResolutionState(title, meta, state = '') {
+        const panel = document.getElementById('library-resolution-state');
+        if (!panel) return;
+        panel.hidden = false;
+        panel.classList.remove('is-waiting', 'is-stale');
+        if (state) panel.classList.add('is-' + state);
+        const titleElement = document.getElementById('library-resolution-title');
+        const metaElement = document.getElementById('library-resolution-meta');
+        if (titleElement) titleElement.textContent = title;
+        if (metaElement) metaElement.textContent = meta;
+    }
+
+    function formatLibraryScanWait(seconds) {
+        if (seconds < 60) return seconds + 's';
+        const minutes = Math.floor(seconds / 60);
+        const remainder = seconds % 60;
+        return minutes + 'm' + (remainder ? ' ' + remainder + 's' : '');
+    }
+
+    async function pollLibraryScanStatus() {
+        try {
+            const response = await fetch(automationStatusRoute);
+            const data = await response.json();
+            if (data.scan_lock_error) {
+                setLibraryScanState('Scanner lock error', data.scan_lock_error, 'stale');
+                return;
+            }
+            if (data.scan_running) {
+                observedScanRunning = true;
+                const run = data.running_scan || {};
+                setLibraryScanState(
+                    'Library scan in progress',
+                    (Number(run.files_seen || 0)) + ' seen · ' + Number(run.files_indexed || 0) + ' new · ' + Number(run.files_updated || 0) + ' updated · ' + Number(run.files_missing || 0) + ' missing'
+                );
+                setTimeout(pollLibraryScanStatus, 1500);
+                return;
+            }
+
+            const lastScanId = data.last_scan ? Number(data.last_scan.id || 0) : 0;
+            if (observedScanRunning || lastScanId > initialScanId) {
+                window.location.reload();
+                return;
+            }
+
+            const scanRequestedAtMs = Number(data.scan_requested_at || 0) * 1000;
+            const lastScanAtMs = data.last_scan ? Date.parse(String(data.last_scan.finished_at || data.last_scan.started_at || '').replace(' ', 'T')) : 0;
+            const scanActive = !!data.scan_requested && (!scanRequestedAtMs || lastScanAtMs < scanRequestedAtMs);
+            const requestedRecently = libraryScanRequestedAt > 0 && (Date.now() - libraryScanRequestedAt) < 5000;
+
+            if (!scanActive && !requestedRecently) {
+                const panel = document.getElementById('library-scan-state');
+                if (panel) panel.hidden = true;
+                return;
+            }
+
+            if (scanActive || requestedRecently) {
+                const startedAt = libraryScanRequestedAt || scanRequestedAtMs || Date.now();
+                const waited = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+                if (data.worker_online === false) {
+                    setLibraryScanState('Scan queued — worker offline', 'The automation worker is not sending heartbeats. Start it, then the scan will run.', 'stale');
+                    setTimeout(pollLibraryScanStatus, 5000);
+                    return;
+                }
+                if (waited >= 15) {
+                    setLibraryScanState(
+                        'Scan not started',
+                        'Requested ' + formatLibraryScanWait(waited) + ' ago. The automation worker may be offline — check Activity, then retry.',
+                        'stale'
+                    );
+                    return;
+                }
+                setLibraryScanState('Library scan queued', 'Waiting for the automation worker…' + (waited > 0 ? ' (' + formatLibraryScanWait(waited) + ')' : ''), 'waiting');
+                setTimeout(pollLibraryScanStatus, 1500);
+            }
+        } catch (error) {
+            setTimeout(pollLibraryScanStatus, 5000);
+        }
+    }
+
+    async function startLibraryScan() {
+        try {
+            const response = await fetch(automationScanRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: libraryCsrfToken })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not start the scan.');
+            }
+            if (window.notify) window.notify('success', data.message || 'Library scan requested.');
+            libraryScanRequestedAt = Date.now();
+            setTimeout(pollLibraryScanStatus, 1200);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function startMetadataResolution() {
+        const buttons = document.querySelectorAll('button[onclick*="startMetadataResolution"]');
+        buttons.forEach(button => { button.disabled = true; });
+        try {
+            const response = await fetch(automationResolveRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: libraryCsrfToken })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not start metadata resolution.');
+            }
+            if (window.notify) window.notify('success', data.message || 'Metadata resolution requested.');
+            metadataResolutionRequested = true;
+            setLibraryResolutionState('Metadata resolution queued', 'Waiting for the automation worker…', 'waiting');
+            setTimeout(pollResolutionStatus, 1200);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            buttons.forEach(button => { button.disabled = false; });
+        }
+    }
+
+    async function pollResolutionStatus() {
+        try {
+            const response = await fetch(automationStatusRoute);
+            const data = await response.json();
+            const resolveRequestedAtMs = Number(data.resolve_requested_at || 0) * 1000;
+            const lastResolution = data.last_resolution || null;
+            const lastResolutionAtMs = lastResolution && lastResolution.finished_at
+                ? Date.parse(String(lastResolution.finished_at).replace(' ', 'T'))
+                : 0;
+            const resolveActive = !!data.resolve_requested && (!resolveRequestedAtMs || lastResolutionAtMs < resolveRequestedAtMs);
+
+            if (!resolveActive) {
+                if (metadataResolutionRequested || initialResolutionRequested) {
+                    window.location.reload();
+                } else {
+                    const panel = document.getElementById('library-resolution-state');
+                    if (panel) panel.hidden = true;
+                }
+                return;
+            }
+
+            if (data.worker_online === false) {
+                setLibraryResolutionState('Metadata resolution queued — worker offline', 'The automation worker is not sending heartbeats. Start it, then resolution will run.', 'stale');
+            } else {
+                setLibraryResolutionState('Metadata resolution in progress', 'Waiting for the automation worker to finish the TMDB lookups…');
+            }
+            setTimeout(pollResolutionStatus, 1500);
+        } catch (error) {
+            setTimeout(pollResolutionStatus, 5000);
+        }
+    }
+
+    async function openRenamePreview() {
+        const dialog = document.getElementById('rename-dialog');
+        const loading = document.getElementById('rename-loading');
+        const summary = document.getElementById('rename-summary');
+        const list = document.getElementById('rename-list');
+        const apply = document.getElementById('rename-apply');
+
+        if (loading) { loading.style.display = 'block'; loading.textContent = 'Building rename plan…'; }
+        if (summary) { summary.style.display = 'none'; summary.innerHTML = ''; }
+        if (list) list.innerHTML = '';
+        if (apply) apply.disabled = true;
+        if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+
+        try {
+            const response = await fetch(libraryPreviewRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: libraryCsrfToken, filters: libraryFilters, limit: 500 })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not build rename plan.');
+            }
+            libraryPreviewCounts = data.counts || {ok: 0, conform: 0, skip: 0, conflict: 0};
+            if (loading) loading.style.display = 'none';
+            if (summary) {
+                summary.style.display = 'flex';
+                summary.innerHTML =
+                    '<span class="badge badge-success">' + libraryPreviewCounts.ok + ' ready</span>' +
+                    '<span class="badge badge-success">' + (libraryPreviewCounts.conform || 0) + ' conform</span>' +
+                    '<span class="badge badge-warning">' + libraryPreviewCounts.skip + ' skipped</span>' +
+                    '<span class="badge badge-danger">' + libraryPreviewCounts.conflict + ' conflicts</span>' +
+                    '<span class="badge badge-neutral">' + (data.entries_seen || 0) + ' seen</span>';
+            }
+            if (apply) {
+                apply.disabled = !libraryPreviewCounts.ok;
+                apply.textContent = 'Apply ' + libraryPreviewCounts.ok + ' rename' + (libraryPreviewCounts.ok === 1 ? '' : 's');
+            }
+            if (list) {
+                if (!data.items || data.items.length === 0) {
+                    list.innerHTML = '<div class="library-empty">No matched entry to rename.</div>';
+                } else {
+                    list.innerHTML = data.items.map(item => {
+                        const cls = item.status === 'ok' ? 'is-ok' : (item.status === 'conflict' ? 'is-conflict' : (item.status === 'conform' ? 'is-ok' : 'is-skip'));
+                        const label = item.status === 'ok' ? 'Ready' : (item.status === 'conflict' ? 'Conflict' : (item.status === 'conform' ? 'Conform' : 'Skip'));
+                        const badge = item.status === 'ok' ? 'badge-success' : (item.status === 'conflict' ? 'badge-danger' : (item.status === 'conform' ? 'badge-success' : 'badge-warning'));
+                        const target = item.new_path ? '<div class="rename-path"><span class="rename-arrow">→</span> ' + escapeLibraryHtml(item.new_path) + '</div>' : '';
+                        const reason = item.reason ? '<div class="rename-reason">' + escapeLibraryHtml(item.reason) + '</div>' : '';
+                        const sidecars = item.sidecars ? '<div class="rename-reason">' + item.sidecars + ' sidecar file(s)</div>' : '';
+                        return '<div class="rename-item ' + cls + '">' +
+                            '<div><span class="badge ' + badge + '">' + label + '</span></div>' +
+                            '<div class="rename-paths">' +
+                                '<div class="rename-path">' + escapeLibraryHtml(item.old_path) + '</div>' +
+                                target + reason + sidecars +
+                            '</div>' +
+                        '</div>';
+                    }).join('');
+                }
+            }
+        } catch (error) {
+            if (loading) loading.textContent = error.message;
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function applyRenames() {
+        if (!libraryPreviewCounts.ok) return;
+        if (!window.confirm('Rename ' + libraryPreviewCounts.ok + ' matched file(s)?')) return;
+        const apply = document.getElementById('rename-apply');
+        if (apply) apply.disabled = true;
+
+        try {
+            const response = await fetch(libraryApplyRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: libraryCsrfToken, filters: libraryFilters, limit: 500 })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Rename failed.');
+            }
+            if (window.notify) {
+                const stats = data.stats || {};
+                window.notify('success', (stats.entries_renamed || 0) + ' file(s) renamed.');
+            }
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (apply) apply.disabled = false;
+        }
+    }
+
+    async function matchRequest(url, payload) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csrf: libraryCsrfToken, ...payload })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'TMDB request failed.');
+        }
+        return data;
+    }
+
+    function openMatchDialog(button) {
+        matchGroup = JSON.parse(button.getAttribute('data-match-group'));
+        matchType = button.getAttribute('data-match-type') || 'series';
+        matchSelected = null;
+        const currentId = Number(button.getAttribute('data-match-id') || 0);
+        const title = button.getAttribute('data-match-title') || matchGroup.title || '';
+
+        const dialog = document.getElementById('match-dialog');
+        const dialogTitle = document.getElementById('match-dialog-title');
+        const subtitle = document.getElementById('match-dialog-subtitle');
+        const current = document.getElementById('match-current');
+        const query = document.getElementById('match-query');
+        const state = document.getElementById('match-state');
+        const results = document.getElementById('match-results');
+        const apply = document.getElementById('match-apply');
+
+        if (dialogTitle) dialogTitle.textContent = 'Fix TMDB match — ' + title;
+        if (subtitle) subtitle.textContent = matchType === 'series'
+            ? 'This updates all episodes in this show folder.'
+            : 'This updates this movie.';
+        if (current) {
+            current.style.display = 'none';
+            current.innerHTML = '';
+        }
+        if (query) query.value = title;
+        if (state) {
+            state.style.display = 'block';
+            state.textContent = 'Searching TMDB…';
+        }
+        if (results) results.innerHTML = '';
+        if (apply) apply.disabled = true;
+        if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+
+        if (currentId > 0) {
+            matchRequest(libraryMatchDetailsRoute, { type: matchType, tmdb_id: currentId })
+                .then(data => renderCurrentMatch(data.details || {}))
+                .catch(() => {});
+        }
+
+        searchMatch(title);
+    }
+
+    function renderCurrentMatch(details) {
+        const current = document.getElementById('match-current');
+        if (!current) return;
+        const poster = details.poster
+            ? '<img class="match-current-poster" src="' + escapeLibraryHtml(details.poster) + '" alt="">'
+            : '<span class="match-current-poster"></span>';
+        const meta = [details.original_title, details.year ? '(' + details.year + ')' : null, details.imdb_id]
+            .filter(Boolean)
+            .map(escapeLibraryHtml)
+            .join(' · ');
+        current.innerHTML = poster +
+            '<div class="match-current-main">' +
+                '<div class="match-current-title">Current: ' + escapeLibraryHtml(details.title || 'Unknown') + '</div>' +
+                '<div class="match-current-meta">' + meta + '</div>' +
+                '<div class="match-current-overview">' + escapeLibraryHtml(details.overview || '') + '</div>' +
+            '</div>';
+        current.style.display = 'flex';
+    }
+
+    async function searchMatch(query) {
+        const state = document.getElementById('match-state');
+        const results = document.getElementById('match-results');
+        if (state) {
+            state.style.display = 'block';
+            state.textContent = 'Searching TMDB…';
+        }
+        if (results) results.innerHTML = '';
+        try {
+            const data = await matchRequest(libraryMatchSearchRoute, {
+                group: matchGroup,
+                query: query || ''
+            });
+            renderMatchCandidates(data.candidates || []);
+        } catch (error) {
+            if (state) state.textContent = error.message;
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    function renderMatchCandidates(candidates) {
+        const state = document.getElementById('match-state');
+        const results = document.getElementById('match-results');
+        if (!results) return;
+        results.innerHTML = '';
+        if (!candidates.length) {
+            if (state) {
+                state.style.display = 'block';
+                state.textContent = 'No TMDB candidate found. Try another search.';
+            }
+            return;
+        }
+        if (state) state.style.display = 'none';
+        candidates.forEach((candidate, index) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'match-candidate';
+            const poster = candidate.poster
+                ? '<img class="match-candidate-poster" src="' + escapeLibraryHtml(candidate.poster) + '" alt="">'
+                : '<span class="match-candidate-poster"></span>';
+            const meta = [candidate.original_title, candidate.year ? '(' + candidate.year + ')' : null, candidate.rating ? candidate.rating + '/10' : null]
+                .filter(Boolean)
+                .map(escapeLibraryHtml)
+                .join(' · ');
+            button.innerHTML = poster +
+                '<span class="match-candidate-main">' +
+                    '<span class="match-candidate-title">' + escapeLibraryHtml(candidate.title) + '</span>' +
+                    '<span class="match-candidate-meta">' + meta + '</span>' +
+                '</span>';
+            button.addEventListener('click', () => {
+                results.querySelectorAll('.match-candidate').forEach(item => item.classList.remove('is-selected'));
+                button.classList.add('is-selected');
+                matchSelected = candidate;
+                const apply = document.getElementById('match-apply');
+                if (apply) apply.disabled = false;
+            });
+            results.appendChild(button);
+        });
+    }
+
+    async function applyMatch() {
+        if (!matchGroup || !matchSelected) return;
+        const apply = document.getElementById('match-apply');
+        if (apply) apply.disabled = true;
+        try {
+            await matchRequest(attentionResolveRoute, {
+                group: matchGroup,
+                tmdb_id: matchSelected.id,
+                type: matchSelected.type
+            });
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (apply) apply.disabled = false;
+            const state = document.getElementById('match-state');
+            if (state) {
+                state.style.display = 'block';
+                state.textContent = error.message;
+            }
+        }
+    }
+
+    function pad2(value) {
+        return String(value).padStart(2, '0');
+    }
+
+    function renderFolderEntries(body, entries) {
+        if (!entries.length) {
+            body.innerHTML = '<div class="library-empty">No files in this folder.</div>';
+            return;
+        }
+
+        const rows = entries.map(entry => {
+            const matchGroupJson = escapeLibraryHtml(JSON.stringify(entry.match_group || {}));
+            const hasMatch = entry.tmdb_id || entry.imdb_id;
+            const matchLabel = hasMatch ? 'Fix' : 'Match';
+            const matchBadge = entry.tmdb_id ? 'TMDB ' + entry.tmdb_id : (entry.imdb_id ? 'IMDb ' + entry.imdb_id : 'Unmatched');
+            const matchBadgeClass = hasMatch ? 'badge-success' : 'badge-warning';
+            const naming = entry.naming || { label: 'Skipped', badge: 'badge-neutral', reason: '' };
+            const confidence = Math.round((entry.confidence || 0) * 100);
+            let identity = escapeLibraryHtml(entry.title || '') + (entry.year ? ' (' + entry.year + ')' : '');
+            if (entry.season !== null && entry.episode !== null) {
+                identity += ' · S' + pad2(entry.season) + 'E' + pad2(entry.episode);
+            }
+            let statusHtml = '<span class="badge badge-success">Active</span>';
+            if (entry.status === 'missing') {
+                statusHtml = '<span class="badge badge-danger">Missing</span> <button class="btn btn-ghost btn-sm" type="button" data-remove-entry="' + entry.id + '">Remove</button>';
+            } else if (entry.ignored) {
+                statusHtml = '<span class="badge badge-neutral">Ignored</span>';
+            }
+
+            return '<tr>' +
+                '<td><div class="library-row-title">' + escapeLibraryHtml(entry.filename) + '</div><div class="library-row-sub">' + escapeLibraryHtml(entry.relative_path) + '</div></td>' +
+                '<td>' + escapeLibraryHtml(entry.media_type) + '</td>' +
+                '<td><div class="library-identity">' + identity + '</div></td>' +
+                '<td><div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">' +
+                    '<span class="badge ' + matchBadgeClass + '">' + escapeLibraryHtml(matchBadge) + '</span>' +
+                    '<button class="btn btn-ghost btn-sm" type="button" data-match-action="open" data-match-group="' + matchGroupJson + '" data-match-type="' + escapeLibraryHtml(entry.match_type || 'series') + '" data-match-id="' + (entry.match_id || '') + '" data-match-title="' + escapeLibraryHtml(entry.match_title || '') + '">' + matchLabel + '</button>' +
+                '</div></td>' +
+                '<td><span class="badge ' + escapeLibraryHtml(naming.badge) + '" title="' + escapeLibraryHtml(naming.reason || '') + '">' + escapeLibraryHtml(naming.label) + '</span></td>' +
+                '<td><span class="badge ' + (confidence >= 80 ? 'badge-success' : 'badge-warning') + '">' + confidence + '%</span></td>' +
+                '<td><div style="display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;">' + statusHtml + '</div></td>' +
+            '</tr>';
+        }).join('');
+
+        body.innerHTML = '<div class="library-table-wrap"><table class="library-table"><thead><tr>' +
+            '<th>File</th><th>Type</th><th>Identity</th><th>Match</th><th>Naming</th><th>Confidence</th><th>Status</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    async function toggleFolderGroup(button) {
+        const group = button.closest('[data-folder-group]');
+        if (!group) return;
+        const body = group.querySelector('.folder-group-body');
+        const open = group.classList.toggle('is-open');
+        if (body) body.style.display = open ? 'block' : 'none';
+        if (!open || !body || body.dataset.loaded === '1' || body.dataset.loaded === 'loading') return;
+
+        body.dataset.loaded = 'loading';
+        body.innerHTML = '<div class="folder-loading">Loading files…</div>';
+        try {
+            const data = await matchRequest(libraryFolderEntriesRoute, {
+                root_key: button.getAttribute('data-root-key') || '',
+                folder_path: button.getAttribute('data-folder-path') || ''
+            });
+            renderFolderEntries(body, data.entries || []);
+            body.dataset.loaded = '1';
+        } catch (error) {
+            body.innerHTML = '<div class="folder-loading">' + escapeLibraryHtml(error.message) + '</div>';
+            body.dataset.loaded = '0';
+        }
+    }
+
+    async function removeMissingEntry(id) {
+        if (!window.confirm('Remove this missing entry from the index?')) return;
+        try {
+            await matchRequest(libraryRemoveRoute, { id });
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function purgeMissingEntries() {
+        if (!window.confirm('Remove all missing entries from the index?')) return;
+        try {
+            const data = await matchRequest(libraryPurgeMissingRoute, {});
+            if (window.notify) window.notify('success', (data.deleted || 0) + ' missing entr' + ((data.deleted || 0) === 1 ? 'y' : 'ies') + ' removed.');
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    function renderDiscoveryDetails(data, button) {
+        const container = document.getElementById('discovery-details');
+        if (!container) return;
+        const details = data.details || null;
+        const group = data.group || JSON.parse(button.getAttribute('data-discovery-group') || '{}');
+        const title = details && details.title ? details.title : (group.title || 'Unknown');
+        const originalTitle = details && details.original_title ? details.original_title : '';
+        const year = details && details.year ? details.year : (group.year || '');
+        const imdbId = details && details.imdb_id ? details.imdb_id : '';
+        const tmdbId = details && details.id ? details.id : (group.tmdb_id || button.getAttribute('data-discovery-tmdb-id') || '');
+        const overview = details && details.overview ? details.overview : 'No TMDB metadata available for this element.';
+        const poster = details && details.poster
+            ? '<img class="discovery-hero-poster" src="' + escapeLibraryHtml(details.poster) + '" alt="">'
+            : '<div class="discovery-hero-poster discovery-hero-poster--empty">' + escapeLibraryHtml(String(title).charAt(0).toUpperCase()) + '</div>';
+        const backdrop = details && details.backdrop
+            ? ' style="background-image:url(\'' + escapeLibraryHtml(details.backdrop) + '\')"'
+            : '';
+        const genres = details && Array.isArray(details.genres) && details.genres.length
+            ? details.genres.map(escapeLibraryHtml).join(' · ')
+            : '';
+        const matchGroup = JSON.stringify(group);
+        const files = (data.files || []).length;
+        const meta = [originalTitle, year ? '(' + year + ')' : null, genres, details && details.rating ? details.rating + '/10' : null, imdbId]
+            .filter(Boolean)
+            .map(escapeLibraryHtml)
+            .join(' · ');
+
+        container.innerHTML = '<div class="discovery-hero"' + backdrop + '>' +
+            poster +
+            '<div class="discovery-hero-copy">' +
+                '<h3 class="discovery-hero-title">' + escapeLibraryHtml(title) + '</h3>' +
+                '<div class="discovery-hero-meta">' + meta + '</div>' +
+                '<p class="discovery-hero-overview">' + escapeLibraryHtml(overview) + '</p>' +
+                '<div class="discovery-hero-actions">' +
+                    '<span class="badge badge-neutral">' + files + ' file' + (files === 1 ? '' : 's') + '</span>' +
+                    (tmdbId ? '<span class="badge badge-success">TMDB ' + escapeLibraryHtml(tmdbId) + '</span>' : '<span class="badge badge-warning">Unmatched</span>') +
+                    '<button class="btn btn-secondary btn-sm" type="button" data-match-action="open" data-match-group="' + escapeLibraryHtml(matchGroup) + '" data-match-type="' + escapeLibraryHtml(button.getAttribute('data-discovery-type') || 'series') + '" data-match-id="' + escapeLibraryHtml(tmdbId || '') + '" data-match-title="' + escapeLibraryHtml(title) + '">' + (tmdbId ? 'Fix match' : 'Match') + '</button>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+        container.style.display = 'block';
+    }
+
+    async function openDiscoveryElement(button) {
+        const group = JSON.parse(button.getAttribute('data-discovery-group') || '{}');
+        const tmdbId = button.getAttribute('data-discovery-tmdb-id') || '';
+        const title = button.getAttribute('data-discovery-title') || group.title || '';
+        const dialog = document.getElementById('discovery-dialog');
+        const details = document.getElementById('discovery-details');
+        const files = document.getElementById('discovery-files');
+        const dialogTitle = document.getElementById('discovery-dialog-title');
+        const subtitle = document.getElementById('discovery-dialog-subtitle');
+
+        if (dialogTitle) dialogTitle.textContent = title;
+        if (subtitle) subtitle.textContent = group.media_type === 'movie' ? 'Movie' : 'Series';
+        if (details) {
+            details.style.display = 'none';
+            details.innerHTML = '';
+        }
+        if (files) files.innerHTML = '<div class="library-empty">Loading files…</div>';
+        if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+
+        try {
+            const data = await matchRequest(libraryElementRoute, {
+                group,
+                tmdb_id: tmdbId
+            });
+            renderDiscoveryDetails(data, button);
+            renderFolderEntries(files, data.files || []);
+        } catch (error) {
+            if (files) files.innerHTML = '<div class="library-empty">' + escapeLibraryHtml(error.message) + '</div>';
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    function renderFolderBreadcrumb(items) {
+        const container = document.getElementById('folder-breadcrumb');
+        if (!container) return;
+        container.innerHTML = '';
+        items.forEach((item, index) => {
+            if (index > 0) {
+                const separator = document.createElement('span');
+                separator.className = 'sep';
+                separator.textContent = '/';
+                container.appendChild(separator);
+            }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = item.label;
+            button.setAttribute('data-folder-select', '');
+            button.setAttribute('data-root-key', item.root_key || '');
+            button.setAttribute('data-folder-path', item.path || '');
+            container.appendChild(button);
+        });
+    }
+
+    function renderFolderContents(data) {
+        const content = document.getElementById('folder-content');
+        if (!content) return;
+        content.innerHTML = '';
+        const subfolders = data.subfolders || [];
+        const files = data.files || [];
+        const rootKey = data.root_key || '';
+        const breadcrumb = data.breadcrumb || [];
+        const currentLabel = breadcrumb.length ? breadcrumb[breadcrumb.length - 1].label : '';
+
+        const header = document.createElement('div');
+        header.className = 'folder-content-head';
+        header.innerHTML =
+            '<div class="folder-content-title">' + escapeLibraryHtml(currentLabel) + '</div>' +
+            '<div class="folder-content-meta">' + subfolders.length + ' folder' + (subfolders.length === 1 ? '' : 's') +
+            ' · ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '</div>';
+        content.appendChild(header);
+
+        if (!subfolders.length && !files.length) {
+            const empty = document.createElement('div');
+            empty.className = 'library-empty';
+            empty.textContent = 'This folder is empty.';
+            content.appendChild(empty);
+            return;
+        }
+
+        if (subfolders.length) {
+            const sectionTitle = document.createElement('div');
+            sectionTitle.className = 'folder-section-title';
+            sectionTitle.textContent = 'Folders';
+            content.appendChild(sectionTitle);
+
+            const grid = document.createElement('div');
+            grid.className = 'folder-subfolders';
+            subfolders.forEach(folder => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'folder-subfolder';
+                button.setAttribute('data-folder-select', '');
+                button.setAttribute('data-root-key', rootKey);
+                button.setAttribute('data-folder-path', folder.path || '');
+                const meta = [folder.files + ' file' + (folder.files === 1 ? '' : 's')];
+                if (folder.missing) meta.push(folder.missing + ' missing');
+                button.innerHTML =
+                    '<span class="folder-subfolder-icon">' +
+                        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>' +
+                    '</span>' +
+                    '<span class="folder-subfolder-main">' +
+                        '<span class="folder-subfolder-title">' + escapeLibraryHtml(folder.label) + '</span>' +
+                        '<span class="folder-subfolder-meta">' + escapeLibraryHtml(meta.join(' · ')) + '</span>' +
+                    '</span>';
+                grid.appendChild(button);
+            });
+            content.appendChild(grid);
+        }
+
+        if (files.length) {
+            const head = document.createElement('div');
+            head.className = 'folder-files-head';
+            head.innerHTML = '<span class="folder-files-title">Files</span><span class="muted-sm">' + files.length + ' file' + (files.length === 1 ? '' : 's') + '</span>';
+            content.appendChild(head);
+            const table = document.createElement('div');
+            renderFolderEntries(table, files);
+            content.appendChild(table);
+        }
+    }
+
+    async function loadFolderContents(rootKey, folderPath) {
+        const content = document.getElementById('folder-content');
+        const breadcrumb = document.getElementById('folder-breadcrumb');
+        if (!content) return;
+        content.innerHTML = '<div class="folder-loading">Loading folder…</div>';
+        if (breadcrumb) breadcrumb.innerHTML = '';
+        try {
+            const data = await matchRequest(libraryFolderContentsRoute, {
+                root_key: rootKey,
+                folder_path: folderPath,
+                filters: libraryFilters
+            });
+            renderFolderBreadcrumb(data.breadcrumb || []);
+            renderFolderContents(data);
+        } catch (error) {
+            content.innerHTML = '<div class="folder-loading">' + escapeLibraryHtml(error.message) + '</div>';
+        }
+    }
+
+    function selectFolder(rootKey, folderPath, element) {
+        document.querySelectorAll('.folder-tree-item.is-active').forEach(item => item.classList.remove('is-active'));
+        const treeItem = element ? element.closest('.folder-tree-item') : null;
+        if (treeItem) {
+            treeItem.classList.add('is-active');
+            if (treeItem.querySelector('.folder-tree-children')) {
+                treeItem.classList.add('is-open');
+            }
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        params.set('view', 'folder');
+        params.set('root', rootKey);
+        params.set('folder', folderPath);
+        params.delete('page');
+        window.history.replaceState(null, '', window.location.pathname + '?' + params.toString());
+
+        loadFolderContents(rootKey, folderPath);
+    }
+
+    document.addEventListener('click', function (event) {
+        const treeToggle = event.target.closest('[data-tree-toggle]');
+        if (treeToggle) {
+            const treeItem = treeToggle.closest('.folder-tree-item');
+            if (treeItem) treeItem.classList.toggle('is-open');
+            return;
+        }
+
+        const folderSelect = event.target.closest('[data-folder-select]');
+        if (folderSelect) {
+            selectFolder(
+                folderSelect.getAttribute('data-root-key') || '',
+                folderSelect.getAttribute('data-folder-path') || '',
+                folderSelect
+            );
+            return;
+        }
+
+        const folderToggle = event.target.closest('[data-folder-toggle]');
+        if (folderToggle) {
+            toggleFolderGroup(folderToggle);
+            return;
+        }
+
+        const removeButton = event.target.closest('[data-remove-entry]');
+        if (removeButton) {
+            removeMissingEntry(removeButton.getAttribute('data-remove-entry'));
+            return;
+        }
+
+        const matchButton = event.target.closest('[data-match-action="open"]');
+        if (matchButton) {
+            openMatchDialog(matchButton);
+            return;
+        }
+
+        const discoveryButton = event.target.closest('[data-discovery-open]');
+        if (discoveryButton) {
+            openDiscoveryElement(discoveryButton);
+        }
+    });
+
+    const discoveryDialog = document.getElementById('discovery-dialog');
+    if (discoveryDialog) {
+        const close = () => discoveryDialog.close();
+        document.getElementById('discovery-dialog-close')?.addEventListener('click', close);
+        document.getElementById('discovery-dialog-cancel')?.addEventListener('click', close);
+        discoveryDialog.addEventListener('click', event => {
+            if (event.target === discoveryDialog) discoveryDialog.close();
+        });
+    }
+
+    const matchDialog = document.getElementById('match-dialog');
+    if (matchDialog) {
+        const close = () => matchDialog.close();
+        document.getElementById('match-dialog-close')?.addEventListener('click', close);
+        document.getElementById('match-cancel')?.addEventListener('click', close);
+        document.getElementById('match-apply')?.addEventListener('click', applyMatch);
+        document.getElementById('match-search-btn')?.addEventListener('click', () => {
+            const input = document.getElementById('match-query');
+            searchMatch(input ? input.value : '');
+        });
+        document.getElementById('match-query')?.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                searchMatch(event.target.value);
+            }
+        });
+        matchDialog.addEventListener('click', event => {
+            if (event.target === matchDialog) matchDialog.close();
+        });
+    }
+
+    const renameDialog = document.getElementById('rename-dialog');
+    if (renameDialog) {
+        const close = () => renameDialog.close();
+        document.getElementById('rename-dialog-close')?.addEventListener('click', close);
+        document.getElementById('rename-cancel')?.addEventListener('click', close);
+        document.getElementById('rename-apply')?.addEventListener('click', applyRenames);
+        renameDialog.addEventListener('click', event => {
+            if (event.target === renameDialog) renameDialog.close();
+        });
+    }
+
+    const initialFolderContent = document.getElementById('folder-content');
+    if (initialFolderContent) {
+        const rootKey = initialFolderContent.getAttribute('data-root-key') || '';
+        const folderPath = initialFolderContent.getAttribute('data-folder-path') || '';
+        if (rootKey !== '') {
+            loadFolderContents(rootKey, folderPath);
+        }
+    }
+
+    if (initialScanRunning || initialScanRequested) {
+        setTimeout(pollLibraryScanStatus, 1200);
+    }
+    if (initialResolutionRequested) {
+        setTimeout(pollResolutionStatus, 1200);
+    }
+
+{% include 'automation/_attention_script.html.twig' %}
+</script>
+{% endblock %}

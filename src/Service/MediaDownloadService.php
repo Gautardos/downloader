@@ -19,7 +19,7 @@ class MediaDownloadService
         $this->client = new Client();
     }
 
-    public function addStream(array $payload): array
+    public function addStream(array $payload, ?callable $heartbeat = null): array
     {
         $infoHash = strtolower(trim((string) ($payload['info_hash'] ?? '')));
         $streamUrl = trim((string) ($payload['url'] ?? ''));
@@ -42,6 +42,7 @@ class MediaDownloadService
         }
 
         $fileIdx = isset($payload['file_idx']) && is_numeric($payload['file_idx']) ? (int) $payload['file_idx'] : null;
+        $cached = !empty($payload['cached']);
         $preferredFilename = trim((string) ($payload['filename'] ?? ''));
         if ($preferredFilename === '') {
             $preferredFilename = trim((string) ($payload['title'] ?? ''));
@@ -58,9 +59,14 @@ class MediaDownloadService
             return ['success' => false, 'message' => 'Alldebrid did not return a magnet ID.'];
         }
 
-        $magnetData = $this->waitForMagnet((int) $magnetId);
+        $magnetData = $this->waitForMagnet((int) $magnetId, $heartbeat, $cached ? 15 : 60);
         if (!$magnetData) {
-            return ['success' => false, 'message' => 'Alldebrid did not return torrent files in time.'];
+            return [
+                'success' => false,
+                'message' => $cached
+                    ? 'Alldebrid did not return torrent files in time.'
+                    : 'Alldebrid is still caching this uncached torrent; retry later.',
+            ];
         }
 
         $statusCode = (int) ($magnetData['statusCode'] ?? 0);
@@ -99,8 +105,12 @@ class MediaDownloadService
             'download_id' => $downloadId,
             'overwrite' => false,
             'date_added' => date('Y-m-d H:i:s'),
+            'size' => $unlocked['filesize'] ?? ($selected['size'] ?? null),
             'media_title' => $payload['media_title'] ?? null,
             'media_addon' => $payload['addon'] ?? null,
+            'automation_intent_id' => $payload['automation_intent_id'] ?? null,
+            'automation_media_key' => $payload['automation_media_key'] ?? null,
+            'automation' => $payload['automation'] ?? null,
         ], 'video');
 
         return [
@@ -141,8 +151,12 @@ class MediaDownloadService
             'download_id' => $downloadId,
             'overwrite' => false,
             'date_added' => date('Y-m-d H:i:s'),
+            'size' => $payload['size'] ?? null,
             'media_title' => $payload['media_title'] ?? null,
             'media_addon' => $payload['addon'] ?? null,
+            'automation_intent_id' => $payload['automation_intent_id'] ?? null,
+            'automation_media_key' => $payload['automation_media_key'] ?? null,
+            'automation' => $payload['automation'] ?? null,
         ], 'video');
 
         return [
@@ -258,9 +272,12 @@ class MediaDownloadService
         return $magnet;
     }
 
-    private function waitForMagnet(int $magnetId): ?array
+    private function waitForMagnet(int $magnetId, ?callable $heartbeat = null, int $maxAttempts = 15): ?array
     {
-        for ($attempt = 0; $attempt < 15; $attempt++) {
+        for ($attempt = 0; $attempt < max(1, $maxAttempts); $attempt++) {
+            if ($heartbeat) {
+                $heartbeat();
+            }
             $result = $this->debrid->saveMagnet($magnetId);
             if (!empty($result['success'])) {
                 $magnets = $result['data']['magnets'] ?? null;

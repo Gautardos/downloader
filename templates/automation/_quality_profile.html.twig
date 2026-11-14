@@ -1,0 +1,100 @@
+<article class="card config-card is-collapsed" data-config-card="quality">
+    <div class="config-card-head">
+        <div>
+            <h2 class="config-card-title">Quality profile</h2>
+            <p class="config-card-subtitle">
+                Shared by movies and series episodes. {{ profile.resolution_order|join(' > ') }} · codecs {{ profile.codecs|join(', ') }} ·
+                HDR {{ profile.hdr }} · audio {{ profile.audio_langs|join('/') }} · min {{ profile.min_seeders }} seeders ·
+                max movie {{ profile.max_movie_size_gb }} Go · max episode {{ profile.max_episode_size_gb }} Go
+            </p>
+        </div>
+        <button class="config-collapse-btn" type="button" data-config-collapse aria-expanded="false" aria-controls="config-quality-body" title="Expand configuration">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+    </div>
+    <div class="config-card-body" id="config-quality-body" data-config-body hidden>
+        <form method="post" action="{{ path('automation_downloads_quality') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="profile-max-resolution">Max resolution</label>
+                    <select id="profile-max-resolution" name="max_resolution">
+                        {% for value in ['2160p', '1080p', '720p', '480p'] %}
+                            <option value="{{ value }}" {{ profile.max_resolution == value ? 'selected' : '' }}>{{ value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="config-field">
+                    <label for="profile-min-resolution">Min resolution</label>
+                    <select id="profile-min-resolution" name="min_resolution">
+                        {% for value in ['480p', '720p', '1080p', '2160p'] %}
+                            <option value="{{ value }}" {{ profile.min_resolution == value ? 'selected' : '' }}>{{ value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="config-field">
+                <label for="profile-resolution-order">Resolution order</label>
+                <input id="profile-resolution-order" type="text" name="resolution_order" value="{{ profile.resolution_order|join(',') }}">
+            </div>
+            <div class="config-checks">
+                {% for codec in ['x265', 'h264', 'av1', 'xvid', 'divx'] %}
+                    <label class="config-check">
+                        <input type="checkbox" name="codecs[]" value="{{ codec }}" {{ codec in profile.codecs ? 'checked' : '' }}>
+                        {{ codec }}
+                    </label>
+                {% endfor %}
+            </div>
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="profile-hdr">HDR</label>
+                    <select id="profile-hdr" name="hdr">
+                        {% for value in ['prefer', 'require', 'ignore'] %}
+                            <option value="{{ value }}" {{ profile.hdr == value ? 'selected' : '' }}>{{ value|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="config-field">
+                    <label for="profile-min-seeders">Minimum seeders</label>
+                    <input id="profile-min-seeders" type="number" min="0" name="min_seeders" value="{{ profile.min_seeders }}">
+                </div>
+            </div>
+            <div class="config-field">
+                <label for="profile-audio">Audio languages</label>
+                <input id="profile-audio" type="text" name="audio_langs" value="{{ profile.audio_langs|join(',') }}">
+            </div>
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="profile-movie-size">Maximum movie size (Go)</label>
+                    <input id="profile-movie-size" type="number" min="0" step="0.5" name="max_movie_size_gb" value="{{ profile.max_movie_size_gb }}">
+                </div>
+                <div class="config-field">
+                    <label for="profile-episode-size">Maximum series episode size (Go)</label>
+                    <input id="profile-episode-size" type="number" min="0" step="0.5" name="max_episode_size_gb" value="{{ profile.max_episode_size_gb }}">
+                </div>
+            </div>
+            <div class="config-field">
+                <label for="profile-exclude">Excluded tags</label>
+                <input id="profile-exclude" type="text" name="exclude" value="{{ profile.exclude|join(',') }}">
+                <div class="config-hint">Adding <span class="mono">HDR</span> here rejects every HDR/DV release. The HDR setting above only controls preference when HDR is allowed.</div>
+            </div>
+            <label class="config-check" style="margin-top:.8rem;">
+                <input type="checkbox" name="addon_priority" value="1" {{ profile.addon_priority ? 'checked' : '' }}>
+                Use addon priority in scoring
+            </label>
+            <div class="config-actions">
+                <button class="btn btn-primary" type="submit">Save quality profile</button>
+            </div>
+        </form>
+
+        <h3 class="config-card-title" style="margin-top:1.2rem;font-size:.9rem;">Score preview</h3>
+        <div class="config-preview">
+            {% for preview in profile_previews %}
+                <div class="config-preview-row">
+                    <div class="config-preview-text">{{ preview.explanation }}{% if preview.failures|length > 0 %}<br><span class="config-hint">{{ preview.failures|join(', ') }}</span>{% endif %}</div>
+                    <span class="badge {{ preview.accepted ? 'badge-success' : 'badge-warning' }}">{{ preview.accepted ? 'Accepted' : 'Filtered' }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</article>

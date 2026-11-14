@@ -2,6 +2,7 @@
 
 namespace App\Command;
 
+use App\Service\Automation\ReleaseIntentService;
 use App\Service\DownloadManager;
 use App\Service\QueueManager;
 use App\Service\JsonStorage;
@@ -22,13 +23,19 @@ class DownloadWorkerCommand extends Command
 
     private QueueManager $queueManager;
     private DownloadManager $downloadManager;
+    private ReleaseIntentService $releaseIntents;
     private string $projectDir;
 
-    public function __construct(QueueManager $queueManager, DownloadManager $downloadManager, string $projectDir)
-    {
+    public function __construct(
+        QueueManager $queueManager,
+        DownloadManager $downloadManager,
+        ReleaseIntentService $releaseIntents,
+        string $projectDir
+    ) {
         parent::__construct();
         $this->queueManager = $queueManager;
         $this->downloadManager = $downloadManager;
+        $this->releaseIntents = $releaseIntents;
         $this->projectDir = $projectDir;
     }
 
@@ -74,6 +81,7 @@ class DownloadWorkerCommand extends Command
             $filename = $item['filename'] ?? 'unknown';
             $log("Processing [$type]: " . $filename);
             $this->queueManager->setActiveTask($item);
+            $this->releaseIntents->onDownloadStarted($item);
 
             // Add start notification
             $this->addServerNotification($storage, 'info', "Starting $type download", 'Started', $filename, $type);
@@ -103,7 +111,8 @@ class DownloadWorkerCommand extends Command
                         $path = $item['path'],
                         $downloadId = $item['download_id'],
                         $overwrite = $item['overwrite'] ?? false,
-                        $heartbeatCallback = fn() => $storage->set('worker_heartbeat', time()) // Heartbeat callback
+                        $heartbeatCallback = fn() => $storage->set('worker_heartbeat', time()), // Heartbeat callback
+                        $expectedSize = (int) ($item['size'] ?? 0)
                     );
 
                     if (!$result['success']) {
@@ -112,6 +121,7 @@ class DownloadWorkerCommand extends Command
 
                     // Add video to history with stats
                     $this->queueManager->recordHistory($item, 'success', 1, $result);
+                    $this->releaseIntents->onDownloadFinished($item, 'success');
 
                     $log("Finished [$type]: " . ($item['filename'] ?? 'unknown'));
                     $this->addServerNotification($storage, 'success', "Successfully downloaded $type", 'Finished', ($item['filename'] ?? 'unknown'), $type);
@@ -124,6 +134,7 @@ class DownloadWorkerCommand extends Command
                 $details = $type === 'music' ? ['missing_tracks' => $item['expected_tracks'] ?? []] : ['type' => $type];
                 $details['message'] = $e->getMessage();
                 $this->queueManager->recordHistory($item, 'error', 0, $details);
+                $this->releaseIntents->onDownloadFinished($item, 'error', $e->getMessage());
                 $this->addServerNotification($storage, 'error', "Failed $type download", 'Failed', ($item['filename'] ?? 'unknown'), $type);
             }
 
@@ -510,6 +521,7 @@ class DownloadWorkerCommand extends Command
             $this->queueManager->recordHistory($active, 'error', 0, [
                 'message' => 'Interrupted repeatedly during worker restarts.'
             ]);
+            $this->releaseIntents->onDownloadFinished($active, 'error', 'Download interrupted repeatedly during worker restarts.');
             $this->addServerNotification(
                 $storage,
                 'error',

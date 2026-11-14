@@ -39,7 +39,7 @@ class TmdbService
         return (string) ($config['tmdb_language'] ?? 'fr-FR');
     }
 
-    public function search(string $query, string $type = 'all', ?bool $includeAdult = null): array
+    public function search(string $query, string $type = 'all', ?bool $includeAdult = null, ?string $language = null): array
     {
         $query = trim($query);
         if ($query === '' || !$this->isConfigured()) {
@@ -48,7 +48,7 @@ class TmdbService
 
         $config = $this->storage->get('config', []);
         $includeAdult = $includeAdult ?? !empty($config['allow_xxx_search']);
-        $language = $this->getLanguage();
+        $language = $language ?? $this->getLanguage();
 
         $endpoint = match ($type) {
             'movie' => 'search/movie',
@@ -114,7 +114,7 @@ class TmdbService
         return $results;
     }
 
-    public function details(string $type, int $id): ?array
+    public function details(string $type, int $id, ?string $language = null): ?array
     {
         if (!$this->isConfigured() || !in_array($type, ['movie', 'series'], true)) {
             return null;
@@ -122,7 +122,7 @@ class TmdbService
 
         $endpoint = $type === 'movie' ? 'movie/' . $id : 'tv/' . $id;
         $data = $this->request($endpoint, [
-            'language' => $this->getLanguage(),
+            'language' => $language ?? $this->getLanguage(),
             'append_to_response' => 'external_ids',
         ]);
 
@@ -249,6 +249,7 @@ class TmdbService
             'id' => (int) $item['id'],
             'type' => $type,
             'title' => $item['title'] ?? $item['name'] ?? 'Unknown',
+            'original_title' => $item['original_title'] ?? $item['original_name'] ?? null,
             'year' => substr((string) ($item['release_date'] ?? $item['first_air_date'] ?? ''), 0, 4),
             'overview' => $item['overview'] ?? '',
             'poster' => $this->image($item['poster_path'] ?? null, 'w342'),

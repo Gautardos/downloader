@@ -48,6 +48,16 @@
             transition: padding 0.2s;
         }
 
+        .page-content {
+            padding-bottom: 8rem;
+        }
+
+        @media (max-width: 768px) {
+            .page-content {
+                padding-bottom: 10rem;
+            }
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
@@ -623,6 +633,17 @@
             animation: pulse-bg 2s infinite linear;
         }
 
+        .item-progress .bar.indeterminate {
+            width: 32% !important;
+            background: linear-gradient(90deg, var(--accent), #818cf8);
+            animation: tracker-indeterminate 1.2s ease-in-out infinite;
+        }
+
+        @keyframes tracker-indeterminate {
+            0% { transform: translateX(-110%); }
+            100% { transform: translateX(320%); }
+        }
+
         @keyframes pulse-bg {
             0% { background-position: 100% 0; }
             100% { background-position: -100% 0; }
@@ -682,7 +703,7 @@
                     <a href="{{ path('music_files') }}" class="{{ current_route == 'music_files' ? 'active' : '' }}">Music Downloads</a>
                     <a href="{{ path('torrent') }}" class="{{ current_route == 'torrent' ? 'active' : '' }}">Debrid</a>
                     <a href="{{ path('media_index') }}" class="{{ current_route == 'media_index' ? 'active' : '' }}">Discover</a>
-                    <a href="{{ path('automation') }}" class="{{ current_route in ['automation', 'automation_settings'] ? 'active' : '' }}">Automations</a>
+                    <a href="{{ path('automation') }}" class="{{ current_route starts with 'automation' ? 'active' : '' }}">Automations</a>
                     <a href="{{ path('queue') }}" class="{{ current_route == 'queue' ? 'active' : '' }}">Queue</a>
                     <a href="{{ path('history') }}" class="{{ current_route == 'history' ? 'active' : '' }}">History</a>
                     <a href="{{ path('config') }}" class="{{ current_route == 'config' ? 'active' : '' }}">Settings</a>
@@ -711,7 +732,7 @@
     </div>
     {% endif %}
 
-    <div class="container">
+    <div class="container page-content">
         <div class="toast-container" id="toast-container"></div>
         {% for message in app.flashes('success') %}
             <div class="alert alert-success">
@@ -1333,6 +1354,24 @@
                 const typeIcon = mediaIcons[active.type] || (active.type === 'music' || active.type === 'audio' ? '🎵' : '🎥');
                 const typeLabel = (active.type || 'torrent').toUpperCase();
                 const isMusic = active.type === 'music';
+                const downloaded = Number(progress.downloaded || 0);
+                const total = Number(progress.total || 0) > 0 ? Number(progress.total) : Number(active.size || 0);
+                const percentage = Number(progress.total || 0) > 0
+                    ? Number(progress.percentage || 0)
+                    : (total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0);
+                const hasTotal = total > 0;
+                const formatBytes = bytes => {
+                    if (bytes >= 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+                    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+                    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                    return bytes + ' B';
+                };
+                const percentLabel = hasTotal ? percentage + '%' : '—';
+                const statusLabel = isMusic
+                    ? 'See Queue for full logs'
+                    : (progress.status === 'downloading'
+                        ? (hasTotal ? 'Downloading...' : 'Downloading... ' + formatBytes(downloaded))
+                        : 'Starting...');
 
                 list.innerHTML = `
                     <div class="active-item" id="active-${downloadId}">
@@ -1344,13 +1383,13 @@
                         </div>
                         <div class="item-header">
                             <span class="item-name" title="${filename}" style="font-size: 0.9rem; font-weight: 600; font-family: ${isMusic ? 'monospace' : 'inherit'};">${filename}</span>
-                            ${!isMusic ? `<span class="item-percent" style="font-weight: bold; color: var(--accent);">${progress.percentage || 0}%</span>` : ''}
+                            ${!isMusic ? `<span class="item-percent" style="font-weight: bold; color: var(--accent);">${percentLabel}</span>` : ''}
                         </div>
                         <div class="item-progress" style="${isMusic ? 'height: 2px; opacity: 0.5;' : ''}">
-                            <div class="bar ${isMusic ? ' pulsing' : ''}" style="width: ${isMusic ? '100' : (progress.percentage || 0)}%"></div>
+                            <div class="bar ${isMusic ? 'pulsing' : (!hasTotal ? 'indeterminate' : '')}" style="width: ${isMusic ? '100' : (hasTotal ? percentage : '32')}%"></div>
                         </div>
                         <div class="item-footer">
-                            <span class="item-status">${isMusic ? 'See Queue for full logs' : (progress.status === 'downloading' ? 'Downloading...' : 'Starting...')}</span>
+                            <span class="item-status">${statusLabel}</span>
                             <span class="item-speed">${progress.speed || '...'}</span>
                         </div>
                     </div>
