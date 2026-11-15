@@ -858,7 +858,8 @@ pip install -r cli/requirements.txt
   lancé automatiquement par `QueueManager::triggerWorker()` lors d'un enqueue.
 
 ### Vérifications / qualité
-Il n'y a **aucune suite de tests** dans le dépôt. Vérifications minimales après
+La batterie de non-régression est constituée de smoke tests PHP standalone
+(sans PHPUnit ni dépendance supplémentaire). Vérifications minimales après
 modification :
 ```bash
 find src config public -name '*.php' -not -path '*/vendor/*' -exec php -l {} \;
@@ -867,6 +868,41 @@ php bin/console lint:twig templates
 php bin/console lint:container
 php bin/console debug:router
 ```
+Suites disponibles :
+```bash
+composer test:auth          # auth/session/logout/idle timeout/password legacy + routes
+composer test:security:all  # auth + session_secrets + csrf + ssrf
+composer test:automation
+composer test:backfill
+composer test:jellyfin
+composer test:functional    # functional_flow + automation + backfill + jellyfin
+composer test:all           # security:all + functional + lint Twig/container
+composer test:http-auth     # live optionnel, read-only, BASE_URL=http://127.0.0.1:8000
+```
+Les tests unitaires/fonctionnels ne font **aucun appel réseau** : TMDB, listes,
+addons, streams, downloads et Alldebrid sont remplacés par des fakes. Ils
+utilisent un projet temporaire, une DB SQLite temporaire et des racines NAS
+factices. Ne jamais pointer ces tests vers le NAS, la DB ou les addons de
+production.
+
+Le dossier `tests/` n'est pas bind-mounté dans le conteneur `downloader-dev`
+(seuls `src/`, `templates/`, `cli/`, `public/` et `config/` le sont), et
+`composer.json` n'est pas monté non plus. Pour exécuter les tests dans Docker,
+copier les fichiers ou reconstruire l'image :
+```bash
+docker cp tests/auth_security_smoke.php downloader-dev:/var/www/html/tests/
+docker cp tests/functional_flow_smoke.php downloader-dev:/var/www/html/tests/
+docker cp tests/http_auth_smoke.php downloader-dev:/var/www/html/tests/
+docker cp composer.json downloader-dev:/var/www/html/composer.json
+docker exec downloader-dev composer dump-autoload --optimize --classmap-authoritative
+docker exec downloader-dev php bin/console cache:clear
+docker exec downloader-dev composer test:auth
+docker exec downloader-dev composer test:functional
+```
+La suite HTTP live (`test:http-auth`) est optionnelle, en lecture seule, sans
+identifiants réels et sans suivi de redirection. Elle est ignorée proprement si
+`BASE_URL` n'est pas joignable.
+
 Pour les scripts Python :
 ```bash
 python3 -m py_compile cli/*.py
@@ -1546,8 +1582,33 @@ pendant le polling.
 - `composer test:backfill` ou `php tests/backfill_smoke.php` : intégrité des
   téléchargements, reprise des intents, plafonds, sélection de fichiers et
   notifications de backfill.
+- `composer test:auth` ou `php tests/auth_security_smoke.php` : inventaire des
+  routes via `debug:router`, redirection login de toutes les routes GET
+  protégées et polling, exemptions login/Jellyfin/framework, AuthService
+  (plaintext legacy, hash, logout, idle timeout 2 h, polling sans refresh),
+  JellyfinAuthService (token, refus, révocation, routes publiques/protégées).
+- `composer test:http-auth` ou `php tests/http_auth_smoke.php` : contrôle live
+  optionnel et read-only des redirections login, du CSRF `POST /login`, des
+  routes Jellyfin publiques/protégées. `BASE_URL` par défaut
+  `http://127.0.0.1:8000`.
+- `composer test:functional` ou `php tests/functional_flow_smoke.php` : flux
+  complets avec fakes (liste → dry-run → queue → resolve → payload/naming →
+  succès → scan → présent), split TVDB 24/23 (TMDB S01E25 → release S02E01),
+  épisode local/déplacé/supprimé, plafond/queue guard, release-verify,
+  sélection déterministe de fichier, scan/racine vide/déplacement entre
+  racines/reconcile-missing et Jellyfin local/TMDB avec IDs stables.
+- `composer test:security:all` : `auth` + `security` (session/secrets) +
+  `csrf` + `ssrf`.
+- `composer test:all` : `security:all` + `functional` + `lint:twig` +
+  `lint:container`.
 - Les tests de stockage nécessitent `pdo_sqlite` ; utiliser l'image Docker si
-  le PHP local ne l'a pas.
+  le PHP local ne l'a pas. La suite HTTP live utilise `ext-curl` si présent,
+  sinon le fallback stream.
+
+Critère d'acceptation sécurité prioritaire : authentification/session,
+protection des routes web/polling, CSRF, exemptions Jellyfin et auth par token.
+Les smoke tests XSS/SSRF avancé/DNS rebinding et dépendances restent exécutés
+pour non-régression, mais ne sont pas des critères GO produit de ce lot.
 
 ### Limites connues de ce lot
 
