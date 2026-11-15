@@ -2339,7 +2339,7 @@ class AutomationStore
 
     public const ACTIVE_INTENT_STATUSES = ['pending', 'resolving', 'queued', 'downloading', 'success'];
 
-    public function hasActiveMovieEntry(?int $tmdbId, ?string $imdbId, string $titleNormalized, ?int $year): bool
+    public function hasActiveMovieEntry(?int $tmdbId, ?string $imdbId, string $titleNormalized, ?int $year, bool $includeIgnored = false): bool
     {
         $this->initialize();
         $clauses = [];
@@ -2365,10 +2365,11 @@ class AutomationStore
             return false;
         }
 
+        $ignoredClause = $includeIgnored ? '' : ' AND ignored_at IS NULL';
         $stmt = $this->getPdo()->prepare(
             "SELECT COUNT(*) FROM library_entries
              WHERE status = 'active'
-               AND ignored_at IS NULL
+               {$ignoredClause}
                AND media_type = 'movie'
                AND (" . implode(' OR ', $clauses) . ')'
         );
@@ -2634,11 +2635,28 @@ class AutomationStore
         return $row;
     }
 
-    public function createIntent(array $data): array
+    public function createIntent(array $data, bool $reactivateOrphanSuccess = false): array
     {
         $this->initialize();
         $existing = $this->findExistingIntent($data);
         if ($existing !== null) {
+            if ($reactivateOrphanSuccess
+                && (string) ($existing['status'] ?? '') === 'success'
+                && !$this->hasActiveEntryForIntent($existing)
+            ) {
+                $this->updateIntent((int) $existing['id'], [
+                    'status' => 'pending',
+                    'attempts' => 0,
+                    'next_attempt_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                    'download_id' => null,
+                    'info_hash' => null,
+                    'file_idx' => null,
+                    'error_message' => 'Reactivated because the library file is missing.',
+                ]);
+
+                return ['status' => 'reactivated', 'intent' => $this->getIntent((int) $existing['id'])];
+            }
+
             return ['status' => 'existing', 'intent' => $existing];
         }
 
@@ -2679,6 +2697,50 @@ class AutomationStore
         });
 
         return ['status' => 'inserted', 'intent' => $this->getIntent($id)];
+    }
+
+    private function hasActiveEntryForIntent(array $intent): bool
+    {
+        $mediaType = (string) ($intent['media_type'] ?? 'movie');
+        $tmdbId = !empty($intent['tmdb_id']) ? (int) $intent['tmdb_id'] : null;
+        $imdbId = trim((string) ($intent['imdb_id'] ?? ''));
+        $title = $this->normalizeLookupTitle((string) ($intent['title'] ?? ''));
+        $year = !empty($intent['year']) ? (int) $intent['year'] : null;
+
+        if (in_array($mediaType, ['series', 'anime', 'episode'], true)) {
+            $season = isset($intent['season']) && $intent['season'] !== null ? (int) $intent['season'] : null;
+            $episode = isset($intent['episode']) && $intent['episode'] !== null ? (int) $intent['episode'] : null;
+            $releaseSeason = isset($intent['release_season']) && $intent['release_season'] !== null ? (int) $intent['release_season'] : $season;
+            $releaseEpisode = isset($intent['release_episode']) && $intent['release_episode'] !== null ? (int) $intent['release_episode'] : $episode;
+            if ($season === null || $episode === null) {
+                return false;
+            }
+            if ($this->hasActiveEpisodeEntry($tmdbId, $imdbId !== '' ? $imdbId : null, $title, $year, $releaseSeason, $releaseEpisode, true)) {
+                return true;
+            }
+
+            return $releaseSeason !== $season || $releaseEpisode !== $episode
+                ? $this->hasActiveEpisodeEntry($tmdbId, $imdbId !== '' ? $imdbId : null, $title, $year, $season, $episode, true)
+                : false;
+        }
+
+        return $this->hasActiveMovieEntry($tmdbId, $imdbId !== '' ? $imdbId : null, $title, $year, true);
+    }
+
+    private function normalizeLookupTitle(string $title): string
+    {
+        $title = trim($title);
+        if (class_exists(\Normalizer::class)) {
+            $decomposed = \Normalizer::normalize($title, \Normalizer::FORM_D);
+            if (is_string($decomposed)) {
+                $title = $decomposed;
+            }
+        }
+        $title = preg_replace('/\p{M}+/u', '', $title) ?? $title;
+        $title = mb_strtolower($title, 'UTF-8');
+        $title = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $title) ?? $title;
+
+        return trim(preg_replace('/\s+/u', ' ', $title) ?? $title);
     }
 
     public function getIntent(int $id): ?array

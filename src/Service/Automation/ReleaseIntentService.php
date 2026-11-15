@@ -83,6 +83,7 @@ class ReleaseIntentService
             'created' => 0,
             'existing' => 0,
             'library_present' => 0,
+            'reactivated' => 0,
             'skipped' => 0,
             'warnings' => [],
         ];
@@ -151,10 +152,12 @@ class ReleaseIntentService
                     'imdb_id' => $imdbId !== '' ? $imdbId : null,
                     'title' => $title,
                     'year' => $year,
-                ]);
+                ], true);
 
                 if (($result['status'] ?? '') === 'inserted') {
                     $stats['created']++;
+                } elseif (($result['status'] ?? '') === 'reactivated') {
+                    $stats['reactivated']++;
                 } else {
                     $stats['existing']++;
                 }
@@ -162,8 +165,9 @@ class ReleaseIntentService
         }
 
         $message = sprintf(
-            '%d intent(s) created, %d already present, %d already in library, %d skipped.',
+            '%d intent(s) created, %d reactivated, %d already present, %d already in library, %d skipped.',
             $stats['created'],
+            $stats['reactivated'],
             $stats['existing'],
             $stats['library_present'],
             $stats['skipped']
@@ -184,6 +188,7 @@ class ReleaseIntentService
             'created' => 0,
             'existing' => 0,
             'library_present' => 0,
+            'reactivated' => 0,
             'skipped' => 0,
             'invalid' => 0,
             'warnings' => [],
@@ -351,10 +356,12 @@ class ReleaseIntentService
                         'release_season' => $releaseSeason,
                         'release_episode' => $releaseEpisode,
                         'numbering_source' => $numberingSource,
-                    ]);
+                    ], true);
 
                     if (($result['status'] ?? '') === 'inserted') {
                         $stats['created']++;
+                    } elseif (($result['status'] ?? '') === 'reactivated') {
+                        $stats['reactivated']++;
                     } else {
                         $stats['existing']++;
                     }
@@ -363,8 +370,9 @@ class ReleaseIntentService
         }
 
         $message = sprintf(
-            '%d episode intent(s) created, %d already present, %d already in library, %d skipped, %d invalid.',
+            '%d episode intent(s) created, %d reactivated, %d already present, %d already in library, %d skipped, %d invalid.',
             $stats['created'],
+            $stats['reactivated'],
             $stats['existing'],
             $stats['library_present'],
             $stats['skipped'],

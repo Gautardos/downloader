@@ -1234,7 +1234,9 @@ pendant le polling.
   `automation_intent_id`/`automation_media_key`, ou `media_title` pour les
   films), puis `next_attempt_at` pour les échecs récents. Après succès,
   l'intent reste `success` et une indexation ciblée de la racine films ou
-  séries est demandée.
+  séries est demandée. Si un intent `success` n'a plus d'entrée library active
+  correspondante (fichier supprimé ou déplacé), il est **réactivé** sur place
+  (`pending`, attempts 0, download nettoyé) au lieu de créer un doublon.
 - Profil qualité stocké sous `settings.quality_profile` : résolution min/max et
   ordre, codecs autorisés, HDR (`ignore`/`prefer`/`require`), langues audio,
   seeders minimum, **taille max film** (`max_movie_size_gb`), **taille max

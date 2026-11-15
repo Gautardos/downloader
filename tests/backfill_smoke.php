@@ -199,5 +199,114 @@ eq(0, (int) ($reintent['attempts'] ?? -1), 'attempts are reset');
 check(is_file($goodFile), 'valid file is never quarantined');
 removeTree($project);
 
+echo "Orphan success reactivation\n";
+$orphanProject = tempProject('backfill-orphan-smoke');
+$orphanStore = new AutomationStore($orphanProject);
+$movieData = [
+    'media_key' => 'movie:tmdb:2001',
+    'media_type' => 'movie',
+    'tmdb_id' => 2001,
+    'imdb_id' => 'tt2001001',
+    'title' => 'Orphan Movie',
+    'year' => 2020,
+];
+$movieIntent = $orphanStore->createIntent($movieData);
+$movieId = (int) $movieIntent['intent']['id'];
+$orphanStore->updateIntent($movieId, [
+    'status' => 'success',
+    'attempts' => 3,
+    'download_id' => 'old-dl',
+    'info_hash' => 'old-hash',
+    'file_idx' => 7,
+]);
+$reactivated = $orphanStore->createIntent($movieData, true);
+eq('reactivated', $reactivated['status'], 'missing movie success intent is reactivated');
+eq('pending', $reactivated['intent']['status'] ?? null, 'reactivated movie is pending');
+eq(0, (int) ($reactivated['intent']['attempts'] ?? -1), 'reactivated movie attempts are reset');
+eq(null, $reactivated['intent']['download_id'] ?? null, 'reactivated movie download id is cleared');
+eq(null, $reactivated['intent']['info_hash'] ?? null, 'reactivated movie info hash is cleared');
+eq(null, $reactivated['intent']['file_idx'] ?? null, 'reactivated movie file index is cleared');
+eq($movieData['media_key'], $reactivated['intent']['media_key'] ?? null, 'reactivated movie keeps its media key');
+eq($movieData['title'], $reactivated['intent']['title'] ?? null, 'reactivated movie keeps its title');
+
+$moviePath = $orphanProject . '/files/Orphan Movie (2020).mkv';
+sparseFile($moviePath, 2 * 1024 * 1024);
+$orphanStore->upsertLibraryEntry([
+    'root_key' => 'movies',
+    'path' => $moviePath,
+    'relative_path' => 'Orphan Movie (2020)/Orphan Movie (2020).mkv',
+    'folder_path' => 'Orphan Movie (2020)',
+    'filename' => basename($moviePath),
+    'extension' => 'mkv',
+    'media_type' => 'movie',
+    'title' => 'Orphan Movie',
+    'title_normalized' => 'orphan movie',
+    'year' => 2020,
+    'season' => null,
+    'episode' => null,
+    'quality' => '1080p',
+    'size' => filesize($moviePath),
+    'mtime' => filemtime($moviePath),
+    'media_key' => 'movie:tmdb:2001',
+    'tmdb_id' => 2001,
+    'imdb_id' => 'tt2001001',
+    'confidence' => 0.99,
+    'parse_source' => 'filename',
+]);
+$orphanStore->updateIntent($movieId, ['status' => 'success', 'download_id' => 'active-dl']);
+$present = $orphanStore->createIntent($movieData, true);
+eq('existing', $present['status'], 'active movie entry prevents reactivation');
+eq('success', $present['intent']['status'] ?? null, 'present movie intent remains success');
+
+$episodeData = [
+    'media_key' => 'series:tmdb:3001:s01e01',
+    'media_type' => 'series',
+    'tmdb_id' => 3001,
+    'imdb_id' => 'tt3001001',
+    'title' => 'Orphan Show',
+    'year' => 2021,
+    'season' => 1,
+    'episode' => 1,
+    'release_season' => 2,
+    'release_episode' => 1,
+];
+$episodeIntent = $orphanStore->createIntent($episodeData);
+$episodeId = (int) $episodeIntent['intent']['id'];
+$orphanStore->updateIntent($episodeId, ['status' => 'success', 'attempts' => 2, 'download_id' => 'old-ep']);
+$episodeReactivated = $orphanStore->createIntent($episodeData, true);
+eq('reactivated', $episodeReactivated['status'], 'missing episode success intent is reactivated');
+eq(2, (int) ($episodeReactivated['intent']['release_season'] ?? 0), 'reactivated episode keeps release season');
+eq(1, (int) ($episodeReactivated['intent']['release_episode'] ?? 0), 'reactivated episode keeps release episode');
+$episodePath = $orphanProject . '/files/Orphan Show (2021)/Season 02/Orphan Show (2021) - S02E01.mkv';
+@mkdir(dirname($episodePath), 0700, true);
+sparseFile($episodePath, 2 * 1024 * 1024);
+$orphanStore->upsertLibraryEntry([
+    'root_key' => 'series',
+    'path' => $episodePath,
+    'relative_path' => 'Orphan Show (2021)/Season 02/Orphan Show (2021) - S02E01.mkv',
+    'folder_path' => 'Orphan Show (2021)/Season 02',
+    'filename' => basename($episodePath),
+    'extension' => 'mkv',
+    'media_type' => 'series',
+    'title' => 'Orphan Show',
+    'title_normalized' => 'orphan show',
+    'year' => 2021,
+    'season' => 2,
+    'episode' => 1,
+    'quality' => '1080p',
+    'size' => filesize($episodePath),
+    'mtime' => filemtime($episodePath),
+    'media_key' => 'series:tmdb:3001:s02e01',
+    'tmdb_id' => 3001,
+    'imdb_id' => 'tt3001001',
+    'confidence' => 0.99,
+    'parse_source' => 'filename',
+    'show_folder' => 'Orphan Show (2021)',
+]);
+$orphanStore->updateIntent($episodeId, ['status' => 'success', 'download_id' => 'active-ep']);
+$episodePresent = $orphanStore->createIntent($episodeData, true);
+eq('existing', $episodePresent['status'], 'active split episode prevents reactivation');
+removeTree($orphanProject);
+
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);
