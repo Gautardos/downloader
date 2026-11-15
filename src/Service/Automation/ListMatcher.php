@@ -6,6 +6,8 @@ use App\Service\TmdbService;
 
 class ListMatcher
 {
+    private const MISSING_EPISODES_LIMIT = 5000;
+
     private AutomationStore $store;
     private AutomationSettings $settings;
     private TmdbService $tmdb;
@@ -133,7 +135,7 @@ class ListMatcher
             'episodes_total' => count($episodes),
             'episodes_present' => 0,
             'episodes_missing' => count($episodes),
-            'missing_episodes' => array_slice($missing, 0, 50),
+            'missing_episodes' => array_slice($missing, 0, self::MISSING_EPISODES_LIMIT),
         ]);
     }
 
@@ -236,7 +238,7 @@ class ListMatcher
             'episodes_total' => $episodesTotal,
             'episodes_present' => $episodesPresent,
             'episodes_missing' => $episodesMissing,
-            'missing_episodes' => array_slice($missing, 0, 50),
+            'missing_episodes' => array_slice($missing, 0, self::MISSING_EPISODES_LIMIT),
         ]);
     }
 

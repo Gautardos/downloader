@@ -1214,6 +1214,9 @@ pendant le polling.
 - Films : `queueMissingMovies()` applique le même queue guard et le même
   plafond `backfill.max_intents_per_run` que les épisodes, avec un warning et
   un arrêt propre lorsque le plafond est atteint.
+- `missing_json` conserve la liste canonique complète des épisodes manquants,
+  bornée à 5000 entrées. L'UI n'affiche que les 50 premières et la queue les
+  traite par lots selon `backfill.max_intents_per_run`.
 - Épisodes : `queueMissingEpisodes()` lit `missing_json` (liste de `SxxExx`
   déjà diffusés), ignore les spéciaux si `backfill.exclude_specials`, vérifie
   les entrées `library_entries` actives/ignorées de la même série et les

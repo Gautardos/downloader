@@ -75,7 +75,9 @@ class AutomationListsController extends AbstractController
         $items = $store->getListItems($filters, self::PER_PAGE, $offset);
         foreach ($items as &$item) {
             $missing = json_decode((string) ($item['missing_json'] ?? '[]'), true);
-            $item['missing_episodes'] = is_array($missing) ? array_values($missing) : [];
+            $missing = is_array($missing) ? array_values($missing) : [];
+            $item['missing_episodes_total'] = count($missing);
+            $item['missing_episodes'] = array_slice($missing, 0, 50);
             $item['numbering'] = (string) ($item['media_type'] ?? '') === 'series'
                 ? $store->getSeriesNumbering(!empty($item['tmdb_id']) ? (int) $item['tmdb_id'] : null, $item['imdb_id'] ?? null)
                 : null;

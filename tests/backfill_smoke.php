@@ -4,9 +4,11 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 
 use App\Service\Automation\AutomationSettings;
 use App\Service\Automation\AutomationStore;
+use App\Service\Automation\ListMatcher;
 use App\Service\Automation\ReleaseIntentService;
 use App\Service\Automation\ReleaseIntegrityService;
 use App\Service\JsonStorage;
+use App\Service\TmdbService;
 
 $passes = 0;
 $failures = 0;
@@ -90,6 +92,41 @@ function addHistory(JsonStorage $storage, string $downloadId, string $path, int 
     }
     $history[] = $entry;
     $storage->set('history', $history);
+}
+
+class BackfillFakeTmdb extends TmdbService
+{
+    public function __construct()
+    {
+    }
+
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function details(string $type, int $id, ?string $language = null): ?array
+    {
+        if ($type === 'series' && $id === 6001) {
+            return ['id' => 6001, 'seasons' => [['season_number' => 1, 'episode_count' => 416]]];
+        }
+
+        return null;
+    }
+
+    public function season(int $tvId, int $seasonNumber): array
+    {
+        if ($tvId !== 6001 || $seasonNumber !== 1) {
+            return [];
+        }
+
+        $episodes = [];
+        for ($i = 1; $i <= 416; $i++) {
+            $episodes[] = ['episode_number' => $i, 'name' => 'Episode ' . $i, 'air_date' => '2020-01-01'];
+        }
+
+        return $episodes;
+    }
 }
 
 $project = tempProject('backfill-smoke');
@@ -411,6 +448,61 @@ eq(1, $capResult['stats']['created'], 'movie queue respects max_intents_per_run'
 check(str_contains(implode(' ', $capResult['stats']['warnings']), 'Maximum intents per run'), 'movie cap emits a warning');
 eq(1, (int) $capStore->getPdo()->query("SELECT COUNT(*) FROM intents WHERE media_type = 'movie'")->fetchColumn(), 'only one movie intent is created');
 removeTree($capProject);
+
+echo "Complete bounded missing_json\n";
+$missingProject = tempProject('backfill-missing-smoke');
+$missingStorage = storageAt($missingProject . '/var/storage');
+$missingStore = new AutomationStore($missingProject);
+$missingSettings = new AutomationSettings($missingStore);
+$missingSettings->save([
+    'sources' => [[
+        'id' => 'scrob',
+        'provider' => 'scrob',
+        'label' => 'Scrob',
+        'enabled' => true,
+        'config' => ['auto_download' => false, 'auto_download_series' => true, 'list_ids' => []],
+    ]],
+    'backfill' => ['max_intents_per_run' => 50, 'queue_guard' => 20, 'exclude_specials' => true],
+]);
+$missingRun = $missingStore->startListRun('scrob', 'scrob', 'dry_run');
+$missingStore->finishListRun($missingRun, ['items_seen' => 1], 'success');
+$missingStore->upsertListItem([
+    'source_id' => 'scrob',
+    'provider' => 'scrob',
+    'list_ref' => '1',
+    'remote_key' => 'bleach-416',
+    'media_type' => 'series',
+    'tmdb_id' => 6001,
+    'imdb_id' => 'tt6001001',
+    'title' => 'Bleach 416',
+    'title_normalized' => 'bleach 416',
+    'year' => 2004,
+    'raw' => [],
+], $missingRun);
+$missingItemId = (int) $missingStore->getPdo()->query("SELECT id FROM list_items WHERE remote_key = 'bleach-416'")->fetchColumn();
+$missingItem = $missingStore->getListItem($missingItemId);
+$matcher = new ListMatcher($missingStore, $missingSettings, new BackfillFakeTmdb(), null);
+$matcher->beginRun(10);
+$match = $matcher->match($missingItem);
+eq('missing', $match['status'], '416-episode series is missing');
+eq(416, (int) $match['episodes_total'], '416 aired episodes are counted');
+eq(416, count($match['missing_episodes']), 'all 416 missing episodes are stored');
+$missingStore->updateListItemMatch($missingItemId, $match, $missingRun);
+$storedMissing = json_decode((string) $missingStore->getListItem($missingItemId)['missing_json'], true);
+eq(416, count($storedMissing), 'missing_json keeps the complete bounded list');
+$listsControllerSource = file_get_contents(dirname(__DIR__) . '/src/Controller/AutomationListsController.php');
+check(str_contains($listsControllerSource, 'array_slice($missing, 0, 50)'), 'lists UI caps the missing episode preview at 50');
+$missingService = (new ReflectionClass(ReleaseIntentService::class))->newInstanceWithoutConstructor();
+foreach (['store' => $missingStore, 'settings' => $missingSettings, 'storage' => $missingStorage, 'numbering' => null] as $property => $value) {
+    $ref = new ReflectionProperty(ReleaseIntentService::class, $property);
+    $ref->setAccessible(true);
+    $ref->setValue($missingService, $value);
+}
+$missingQueue = $missingService->queueMissingEpisodes(false);
+eq(50, $missingQueue['stats']['created'], '416 missing episodes are queued in a 50-intent batch');
+check(str_contains(implode(' ', $missingQueue['stats']['warnings']), 'Maximum intents per run'), '416 queue reports the per-run cap');
+eq(50, (int) $missingStore->getPdo()->query("SELECT COUNT(*) FROM intents WHERE media_type = 'series'")->fetchColumn(), 'first batch contains exactly 50 intents');
+removeTree($missingProject);
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);
