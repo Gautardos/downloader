@@ -8,6 +8,7 @@ use App\Service\Automation\AutomationStore;
 use App\Service\Automation\ListMatcher;
 use App\Service\Automation\ReleaseIntentService;
 use App\Service\Automation\ReleaseIntegrityService;
+use App\Service\DownloadManager;
 use App\Service\JsonStorage;
 use App\Service\MediaDownloadService;
 use App\Service\TmdbService;
@@ -571,6 +572,21 @@ check(str_contains($message, 'Series: 11'), 'grouped notification counts series'
 check(str_contains($message, 'Movies: 1'), 'grouped notification counts movies');
 check(str_contains($message, 'Source unavailable'), 'grouped notification keeps a grouped error sample');
 removeTree($notifyProject);
+
+echo "Redacted integrity diagnostics\n";
+$diagFile = sys_get_temp_dir() . '/integrity-diag-' . bin2hex(random_bytes(4));
+file_put_contents($diagFile, '{"error":"not ready"}');
+$diagManager = (new ReflectionClass(DownloadManager::class))->newInstanceWithoutConstructor();
+$diagMethod = new ReflectionMethod(DownloadManager::class, 'integrityDiagnostic');
+$diagMethod->setAccessible(true);
+$diag = $diagMethod->invoke($diagManager, $diagFile, ['Content-Type: application/json'], 415250, 'https://cdn.example.com/file?token=secret');
+check(str_contains($diag, 'host=cdn.example.com'), 'diagnostic includes the host');
+check(str_contains($diag, 'content-type=application/json'), 'diagnostic includes the content type');
+check(str_contains($diag, 'bytes=415250'), 'diagnostic includes the byte count');
+check(str_contains($diag, 'head_hex='), 'diagnostic includes a short payload fingerprint');
+check(!str_contains($diag, 'token='), 'diagnostic never includes signed query parameters');
+check(!str_contains($diag, 'secret'), 'diagnostic never includes URL secrets');
+@unlink($diagFile);
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);

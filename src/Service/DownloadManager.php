@@ -189,24 +189,25 @@ class DownloadManager
             }
 
             $check = (string) @file_get_contents($filePath, false, null, 0, 512);
+            $diagnostic = $this->integrityDiagnostic($filePath, $headers, $bytes, $currentUrl);
             if (stripos($check, '<html') !== false || stripos($check, '<!DOCTYPE') !== false) {
                 @unlink($filePath);
-                throw new \Exception('Download resulted in an HTML error page (expired link?).');
+                throw new \Exception('Download resulted in an HTML error page (expired link?).' . $diagnostic);
             }
 
             if ($bytes < 1024 * 1024) {
                 @unlink($filePath);
-                throw new \Exception('Downloaded file is too small to be a video (' . $bytes . ' bytes).');
+                throw new \Exception('Downloaded file is too small to be a video (' . $bytes . ' bytes).' . $diagnostic);
             }
 
             if ($headerTotal > 0 && $bytes < $headerTotal) {
                 @unlink($filePath);
-                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for ' . $headerTotal . ' expected.');
+                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for ' . $headerTotal . ' expected.' . $diagnostic);
             }
 
             if ($expectedSize > 0 && $bytes < (int) round($expectedSize * 0.9)) {
                 @unlink($filePath);
-                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for an expected size of ' . $expectedSize . '.');
+                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for an expected size of ' . $expectedSize . '.' . $diagnostic);
             }
 
             $duration = microtime(true) - $startTime;
@@ -237,6 +238,31 @@ class DownloadManager
             ]);
             return ['success' => false, 'message' => $e->getMessage()];
         }
+    }
+
+    private function integrityDiagnostic(string $filePath, array $headers, int $bytes, string $url): string
+    {
+        $contentType = 'unknown';
+        foreach ($headers as $header) {
+            if (preg_match('/^content-type:\s*(.+)$/i', trim((string) $header), $matches)) {
+                $contentType = substr(trim($matches[1]), 0, 80);
+                break;
+            }
+        }
+
+        $headHex = '';
+        if (is_file($filePath)) {
+            $head = @file_get_contents($filePath, false, null, 0, 16);
+            if (is_string($head) && $head !== '') {
+                $headHex = bin2hex($head);
+            }
+        }
+
+        return ' [host=' . $this->urlHost($url)
+            . '; content-type=' . $contentType
+            . '; bytes=' . $bytes
+            . ($headHex !== '' ? '; head_hex=' . $headHex : '')
+            . ']';
     }
 
     private function parseStatusCode(array $headers): int

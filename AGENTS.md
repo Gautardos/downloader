@@ -1353,7 +1353,11 @@ pendant le polling.
 - `DownloadManager` rejette les téléchargements manifestement invalides : page
   HTML, fichier < 1 Mo, contenu plus court que `Content-Length`, ou taille
   inférieure à 90 % de la taille attendue. Le fichier partiel est supprimé et
-  l'intent passe en erreur/retry au lieu d'être marqué `success`.
+  l'intent passe en erreur/retry au lieu d'être marqué `success`. Le message
+  d'erreur ajoute un diagnostic redacted (`host`, `content-type`, `bytes`,
+  `head_hex`) sans URL signée. Les petits payloads récurrents observés côté
+  Alldebrid/CDN restent traités comme des erreurs d'intégrité : les seuils ne
+  sont pas affaiblis.
 - `app:release-verify-downloads [--apply] [--quarantine]` vérifie les intents
   `success` contre la taille **exacte** enregistrée dans l'historique
   (`actual_size`, issue des octets réellement téléchargés). Il n'utilise jamais
