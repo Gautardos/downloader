@@ -232,6 +232,21 @@ class AutomationWorkerCommand extends Command
                             $stats['ambiguous'] ?? 0,
                             $stats['ignored'] ?? 0
                         ));
+                        if ((int) ($stats['sources'] ?? 0) > 0) {
+                            try {
+                                $reconcile = $this->releaseIntents->reconcileFromLists(false);
+                                if (!empty($reconcile['success'])) {
+                                    $reconcileStats = $reconcile['stats'] ?? [];
+                                    $log('Intent reconciliation done: ' . ($reconcileStats['deleted'] ?? 0) . ' deleted, ' . ($reconcileStats['kept_desired'] ?? 0) . ' desired kept, ' . ($reconcileStats['kept_protected'] ?? 0) . ' protected.');
+                                } elseif (!empty($reconcile['skipped'])) {
+                                    $log('Intent reconciliation skipped: ' . ($reconcile['message'] ?? 'unknown reason'));
+                                } else {
+                                    $log('Intent reconciliation failed: ' . ($reconcile['message'] ?? 'unknown reason'));
+                                }
+                            } catch (\Throwable $e) {
+                                $log('Intent reconciliation failed: ' . $e->getMessage());
+                            }
+                        }
                     } else {
                         $log('List dry-run skipped: ' . ($result['message'] ?? 'unknown reason'));
                     }

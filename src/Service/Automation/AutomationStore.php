@@ -2848,6 +2848,87 @@ class AutomationStore
         return (int) $stmt->fetchColumn();
     }
 
+    public function restoreIgnoredIntents(): int
+    {
+        $this->initialize();
+        $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $stmt = $this->getPdo()->prepare(
+            "UPDATE intents SET
+                status = 'pending',
+                attempts = 0,
+                next_attempt_at = :now,
+                download_id = NULL,
+                info_hash = NULL,
+                file_idx = NULL,
+                error_message = NULL,
+                updated_at = :updated_at
+             WHERE status = 'ignored'"
+        );
+
+        return $this->withRetry(function () use ($stmt, $now): int {
+            $stmt->execute([':now' => $now, ':updated_at' => $now]);
+
+            return $stmt->rowCount();
+        });
+    }
+
+    public function deleteIgnoredIntent(int $id): bool
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare("DELETE FROM intents WHERE id = :id AND status = 'ignored'");
+
+        return $this->withRetry(function () use ($stmt, $id): bool {
+            $stmt->execute([':id' => $id]);
+
+            return $stmt->rowCount() > 0;
+        });
+    }
+
+    public function getAllIntentsForReconcile(): array
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->query(
+            'SELECT id, status, media_key, media_type, tmdb_id, imdb_id, title, year, season, episode
+             FROM intents
+             ORDER BY id'
+        );
+
+        return $stmt->fetchAll();
+    }
+
+    public function deleteIntentsByIds(array $ids): int
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', $ids),
+            static fn (int $id): bool => $id > 0
+        )));
+        if ($ids === []) {
+            return 0;
+        }
+
+        return $this->withRetry(function () use ($ids): int {
+            $pdo = $this->getPdo();
+            $deleted = 0;
+            $pdo->beginTransaction();
+            try {
+                foreach (array_chunk($ids, 500) as $chunk) {
+                    $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+                    $stmt = $pdo->prepare('DELETE FROM intents WHERE id IN (' . $placeholders . ')');
+                    $stmt->execute($chunk);
+                    $deleted += $stmt->rowCount();
+                }
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $e;
+            }
+
+            return $deleted;
+        });
+    }
+
     private function intentWhere(array $filters): array
     {
         $status = (string) ($filters['status'] ?? 'all');

@@ -151,6 +151,26 @@ function routeIsAuthExempt(string $name, string $path): bool
         || str_starts_with($path, '/jellyfin');
 }
 
+function routeSupportsStateChangingMethod(string $method): bool
+{
+    $method = strtoupper($method);
+
+    return $method === 'ANY' || preg_match('/\b(POST|PUT|PATCH|DELETE)\b/', $method) === 1;
+}
+
+function routePrimaryStateChangingMethod(string $method): string
+{
+    $method = strtoupper($method);
+    if ($method === 'ANY') {
+        return 'POST';
+    }
+    if (preg_match('/\b(POST|PUT|PATCH|DELETE)\b/', $method, $matches) === 1) {
+        return $matches[1];
+    }
+
+    return 'POST';
+}
+
 function concretePath(string $path): string
 {
     return preg_replace('/\{[^}]+\}/', '1', $path) ?: $path;
@@ -265,6 +285,61 @@ $normalEvent = eventFor($normalRequest);
 authSubscriberFor($authStorage, $normalRequest)->onKernelRequest($normalEvent);
 check($normalEvent->getResponse() === null, 'authenticated normal request is allowed');
 check((int) $pollingSession->get('last_activity') > $lastActivity, 'normal request refreshes last_activity');
+
+echo "State-changing route inventory\n";
+$stateChangingRoutes = 0;
+$protectedStateChanging = [];
+$exemptStateChanging = [];
+$unexpectedStateChangingExempt = [];
+foreach ($routes as $name => $route) {
+    $method = strtoupper((string) ($route['method'] ?? ''));
+    if (!routeSupportsStateChangingMethod($method)) {
+        continue;
+    }
+    $stateChangingRoutes++;
+    $path = (string) ($route['path'] ?? '');
+    $verb = routePrimaryStateChangingMethod($method);
+    if (routeIsAuthExempt($name, $path)) {
+        $exemptStateChanging[] = ['name' => $name, 'path' => $path, 'method' => $verb];
+        $expected = $name === 'login'
+            || str_starts_with($name, '_')
+            || str_starts_with($name, 'jellyfin_')
+            || str_starts_with($path, '/jellyfin');
+        if (!$expected) {
+            $unexpectedStateChangingExempt[] = $name . ' ' . $path;
+        }
+        continue;
+    }
+    $protectedStateChanging[] = ['name' => $name, 'path' => $path, 'method' => $verb];
+}
+check($stateChangingRoutes > 0, 'at least one state-changing route is inventoried', $stateChangingRoutes);
+check(count($protectedStateChanging) + count($exemptStateChanging) === $stateChangingRoutes, 'every state-changing route is protected or explicitly exempted');
+eq([], $unexpectedStateChangingExempt, 'only login, framework, and Jellyfin state-changing routes are exempted');
+$stateChangingExemptNames = array_column($exemptStateChanging, 'name');
+check(in_array('login', $stateChangingExemptNames, true), 'login is the only non-framework/non-Jellyfin exemption');
+foreach ($exemptStateChanging as $route) {
+    check(
+        $route['name'] === 'login'
+            || str_starts_with($route['name'], '_')
+            || str_starts_with($route['name'], 'jellyfin_')
+            || str_starts_with($route['path'], '/jellyfin'),
+        'state-changing exemption is explicitly allowed: ' . $route['name'] . ' ' . $route['path']
+    );
+}
+foreach ($protectedStateChanging as $route) {
+    $anonymousSession = new Session(new MockArraySessionStorage());
+    $anonymousSession->start();
+    $request = requestForRoute($route['name'], $route['path'], $anonymousSession, $route['method']);
+    $event = eventFor($request);
+    authSubscriberFor($authStorage, $request)->onKernelRequest($event);
+    $response = $event->getResponse();
+    check(
+        $response instanceof RedirectResponse && $response->getTargetUrl() === '/login',
+        'unauthenticated ' . $route['method'] . ' is redirected: ' . $route['name']
+    );
+}
+check(count($protectedStateChanging) > 0, 'a meaningful number of state-changing routes is protected', count($protectedStateChanging));
+echo '  info state-changing routes: ' . $stateChangingRoutes . '; protected: ' . count($protectedStateChanging) . '; exempt: ' . count($exemptStateChanging) . "\n";
 
 echo "AuthSubscriber exemptions\n";
 $loginSession = new Session(new MockArraySessionStorage());

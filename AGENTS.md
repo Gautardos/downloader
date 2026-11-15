@@ -1117,6 +1117,7 @@ de séries** (backfill par épisode, packs refusés, multi-épisodes parqués) s
 | `src/Command/SeriesNumberingCommand.php` | `app:series-numbering [--tmdb=] [--imdb=] [--refresh] [--limit=]` |
 | `src/Service/Automation/AutomationNotifier.php` | Notifications in-app groupées |
 | `src/Command/ReleaseIntentsCommand.php` | `app:release-intents [--queue] [--episodes] [--run] [--auto] [--max=]` |
+| `src/Command/ReleaseIntentReconcileCommand.php` | `app:release-intents-reconcile [--dry-run]` |
 | `src/Service/Automation/ReleaseDryRunService.php` | Preview des releases/sources sans queue ni download |
 | `src/Command/ReleaseDryRunCommand.php` | `app:release-dry-run [--limit=] [--source=]` |
 | `src/Controller/AutomationDownloadsController.php` | Page Downloads : intents, runs, actions |
@@ -1171,6 +1172,8 @@ Le worker vérifie le heartbeat et déclenche les scans planifiés.
 | POST | `/automation/downloads/intent/download` | `automation_downloads_intent_download` | Queue manuellement une source choisie |
 | POST | `/automation/downloads/intent/retry` | `automation_downloads_intent_retry` | Réessaie un intent |
 | POST | `/automation/downloads/intent/ignore` | `automation_downloads_intent_ignore` | Ignore/restaure un intent |
+| POST | `/automation/downloads/intent/restore-ignored` | `automation_downloads_intent_restore_ignored` | Restaure tous les intents ignorés en `pending` |
+| POST | `/automation/downloads/intent/delete` | `automation_downloads_intent_delete` | Supprime un intent ignoré |
 | GET | `/automation/downloads/status` | `automation_downloads_status` | Statut JSON des intents |
 
 `automation_status` et `automation_lists_status` sont dans
@@ -1328,6 +1331,29 @@ pendant le polling.
   tous les streams addons évalués (acceptés et filtrés). L’utilisateur peut
   queue manuellement une autre source ; ce choix contourne volontairement le
   profil qualité et met à jour l’intent avec le nouveau `download_id`.
+
+### Réconciliation des intents avec les listes
+
+- Les listes synchronisées représentent l'état désiré ; les intents représentent
+  l'exécution. Après un dry-run de listes réussi, le worker et
+  `app:lists-sync` lancent une réconciliation globale des intents.
+- L'état désiré est l'union des `list_items` actifs, non ignorés,
+  `match_status = missing`, des sources activées et des `list_ids` sélectionnés.
+  Pour une série, chaque code de `missing_json` est pris en compte.
+- Sont supprimés uniquement les intents non désirés aux statuts `pending`,
+  `no_source`, `error` et `ignored`. Un `ignored` n'est supprimé que si plus
+  aucune liste active ne demande ce média.
+- Les statuts `success`, `resolving`, `queued` et `downloading` sont toujours
+  conservés. Les `success` restent en historique même si leur liste disparaît.
+- La comparaison se fait via une clé normalisée TMDB/IMDb/titre + saison/épisode,
+  afin de reconnaître les anciens `media_key`.
+- Aucune source activée : la réconciliation est ignorée pour éviter une purge
+  accidentelle.
+- Prévisualisation et réparation manuelle :
+  `php bin/console app:release-intents-reconcile --dry-run` puis sans option.
+- La désynchronisation d'une liste ne supprime rien à la sauvegarde : c'est le
+  prochain dry-run de listes réussi qui marque les items `removed` puis
+  réconcilie les intents.
 
 ### Numérotation des séries (backfill)
 
@@ -1596,7 +1622,8 @@ pendant le polling.
   succès → scan → présent), split TVDB 24/23 (TMDB S01E25 → release S02E01),
   épisode local/déplacé/supprimé, plafond/queue guard, release-verify,
   sélection déterministe de fichier, scan/racine vide/déplacement entre
-  racines/reconcile-missing et Jellyfin local/TMDB avec IDs stables.
+  racines/reconcile-missing, restauration/suppression des intents ignorés,
+  réconciliation globale avec les listes et Jellyfin local/TMDB avec IDs stables.
 - `composer test:security:all` : `auth` + `security` (session/secrets) +
   `csrf` + `ssrf`.
 - `composer test:all` : `security:all` + `functional` + `lint:twig` +

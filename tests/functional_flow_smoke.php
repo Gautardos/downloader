@@ -3,6 +3,7 @@
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use App\Command\LibraryReconcileMissingCommand;
+use App\Command\ReleaseIntentReconcileCommand;
 use App\Service\Automation\AutomationNotifier;
 use App\Service\Automation\AutomationSettings;
 use App\Service\Automation\AutomationStore;
@@ -1194,6 +1195,216 @@ $tmdbStreamI = $libraryTmdbI->streamEntries($tmdbSeasonOneI['Items'][0]['Id'], $
 check($tmdbStreamI !== null && $tmdbStreamI['entry']['path'] === $splitPathI, 'I TMDB virtual episode streams the local split file');
 eq(0, $libraryTmdbI->episodes($seriesI['Id'], 'user', 2)['TotalRecordCount'], 'I TMDB mode hides the local release season 2');
 removeTree($projectI);
+
+echo "J. Ignored intent maintenance\n";
+$projectJ = tempProject('functional-j');
+$storeJ = new AutomationStore($projectJ);
+$settingsJ = new AutomationSettings($storeJ);
+$storageJ = storageAt($projectJ . '/var/storage');
+$createIntentJ = static function (string $key, string $type, array $extra = []) use ($storeJ): int {
+    $created = $storeJ->createIntent(array_merge([
+        'media_key' => $key,
+        'media_type' => $type,
+        'title' => 'Ignored Smoke ' . $key,
+        'year' => 2024,
+    ], $extra));
+
+    return (int) $created['intent']['id'];
+};
+$ignoredOneJ = $createIntentJ('movie:tmdb:8101', 'movie', ['tmdb_id' => 8101]);
+$ignoredTwoJ = $createIntentJ('movie:tmdb:8102', 'movie', ['tmdb_id' => 8102]);
+$errorJ = $createIntentJ('movie:tmdb:8103', 'movie', ['tmdb_id' => 8103]);
+$successJ = $createIntentJ('movie:tmdb:8104', 'movie', ['tmdb_id' => 8104]);
+foreach ([$ignoredOneJ, $ignoredTwoJ] as $id) {
+    $storeJ->updateIntent($id, [
+        'status' => 'ignored',
+        'attempts' => 2,
+        'download_id' => 'old-download-' . $id,
+        'info_hash' => str_repeat('f', 40),
+        'file_idx' => 4,
+        'error_message' => 'Ignored manually.',
+    ]);
+}
+$storeJ->updateIntent($errorJ, ['status' => 'error', 'attempts' => 1, 'error_message' => 'Still failing.']);
+$storeJ->updateIntent($successJ, ['status' => 'success', 'download_id' => 'kept-success']);
+$resolverJ = (new ReflectionClass(ReleaseResolverService::class))->newInstanceWithoutConstructor();
+$intentsJ = new ReleaseIntentService($storeJ, $settingsJ, $resolverJ, new AutomationNotifier($storageJ), $storageJ, $projectJ);
+$restoredJ = $intentsJ->restoreAllIgnored();
+eq(2, $restoredJ['restored'] ?? null, 'J restore all ignored restores every ignored intent');
+$restoredOneJ = $storeJ->getIntent($ignoredOneJ);
+eq('pending', $restoredOneJ['status'] ?? null, 'J restored intent is pending');
+eq(0, (int) ($restoredOneJ['attempts'] ?? -1), 'J restored intent attempts are reset');
+check(array_key_exists('download_id', $restoredOneJ) && $restoredOneJ['download_id'] === null, 'J restored intent download id is cleared');
+check(array_key_exists('info_hash', $restoredOneJ) && $restoredOneJ['info_hash'] === null, 'J restored intent info hash is cleared');
+check(array_key_exists('file_idx', $restoredOneJ) && $restoredOneJ['file_idx'] === null, 'J restored intent file index is cleared');
+check(array_key_exists('error_message', $restoredOneJ) && $restoredOneJ['error_message'] === null, 'J restored intent error is cleared');
+eq('error', $storeJ->getIntent($errorJ)['status'] ?? null, 'J restore all does not touch error intents');
+eq('success', $storeJ->getIntent($successJ)['status'] ?? null, 'J restore all does not touch success intents');
+eq(0, $intentsJ->restoreAllIgnored()['restored'] ?? null, 'J restore all is idempotent');
+$intentsJ->ignoreIntent($errorJ, true);
+eq('ignored', $storeJ->getIntent($errorJ)['status'] ?? null, 'J intent can be ignored before deletion');
+$deletedJ = $intentsJ->deleteIgnoredIntent($errorJ);
+check(!empty($deletedJ['success']), 'J ignored intent can be deleted', $deletedJ);
+eq(null, $storeJ->getIntent($errorJ), 'J deleted ignored intent is gone');
+$notIgnoredJ = $intentsJ->deleteIgnoredIntent($successJ);
+check(empty($notIgnoredJ['success']) && ($notIgnoredJ['reason'] ?? null) === 'not_ignored', 'J non-ignored intent cannot be deleted');
+check($storeJ->getIntent($successJ) !== null, 'J non-ignored intent remains after refused deletion');
+$missingJ = $intentsJ->deleteIgnoredIntent(999999);
+check(empty($missingJ['success']) && ($missingJ['reason'] ?? null) === 'not_found', 'J missing intent deletion is rejected');
+removeTree($projectJ);
+
+echo "K. Global intent reconciliation\n";
+$projectK = tempProject('functional-k');
+$storeK = new AutomationStore($projectK);
+$settingsK = new AutomationSettings($storeK);
+$storageK = storageAt($projectK . '/var/storage');
+$sourcesK = [
+    ['id' => 'scrob', 'provider' => 'scrob', 'label' => 'Scrob', 'enabled' => true, 'config' => ['api_key' => 'test', 'list_ids' => ['1']]],
+    ['id' => 'mdblist', 'provider' => 'mdblist', 'label' => 'MDBList', 'enabled' => true, 'config' => ['api_key' => 'test', 'list_ids' => ['2']]],
+];
+$settingsK->save(['sources' => $sourcesK]);
+$runScrobK = seedListRun($storeK, 'scrob', 3);
+$runMdbK = seedListRun($storeK, 'mdblist', 2);
+seedListItem($storeK, $runScrobK, [
+    'remote_key' => 'k-movie-desired',
+    'media_type' => 'movie',
+    'tmdb_id' => 9101,
+    'title' => 'Desired Movie',
+    'year' => 2024,
+    'list_ref' => '1',
+], ['status' => 'missing']);
+seedListItem($storeK, $runScrobK, [
+    'remote_key' => 'k-series-desired',
+    'media_type' => 'series',
+    'tmdb_id' => 9102,
+    'imdb_id' => 'tt9102002',
+    'title' => 'Desired Show',
+    'year' => 2024,
+    'list_ref' => '1',
+], [
+    'status' => 'missing',
+    'missing_episodes' => ['S01E01', 'S01E02'],
+    'episodes_total' => 2,
+    'episodes_present' => 0,
+    'episodes_missing' => 2,
+]);
+seedListItem($storeK, $runScrobK, [
+    'remote_key' => 'k-movie-wrong-list',
+    'media_type' => 'movie',
+    'tmdb_id' => 9103,
+    'title' => 'Wrong List Movie',
+    'year' => 2024,
+    'list_ref' => '3',
+], ['status' => 'missing']);
+seedListItem($storeK, $runMdbK, [
+    'remote_key' => 'k-movie-mdb',
+    'source_id' => 'mdblist',
+    'provider' => 'mdblist',
+    'media_type' => 'movie',
+    'tmdb_id' => 9104,
+    'title' => 'MDB Movie',
+    'year' => 2024,
+    'list_ref' => '2',
+], ['status' => 'missing']);
+seedListItem($storeK, $runMdbK, [
+    'remote_key' => 'k-movie-mdb-wrong-list',
+    'source_id' => 'mdblist',
+    'provider' => 'mdblist',
+    'media_type' => 'movie',
+    'tmdb_id' => 9105,
+    'title' => 'MDB Wrong List',
+    'year' => 2024,
+    'list_ref' => '9',
+], ['status' => 'missing']);
+
+$createIntentK = static function (string $key, string $type, array $extra = []) use ($storeK): int {
+    $created = $storeK->createIntent(array_merge([
+        'media_key' => $key,
+        'media_type' => $type,
+        'title' => 'Reconcile Smoke ' . $key,
+        'year' => 2024,
+    ], $extra));
+
+    return (int) $created['intent']['id'];
+};
+$desiredMovieK = $createIntentK('movie:tmdb:9101', 'movie', ['tmdb_id' => 9101, 'title' => 'Desired Movie']);
+$desiredEpisodeOneK = $createIntentK('series:tmdb:9102:s01e01', 'series', ['tmdb_id' => 9102, 'imdb_id' => 'tt9102002', 'title' => 'Desired Show', 'season' => 1, 'episode' => 1]);
+$desiredEpisodeTwoK = $createIntentK('series:tmdb:9102:s01e02', 'series', ['tmdb_id' => 9102, 'imdb_id' => 'tt9102002', 'title' => 'Desired Show', 'season' => 1, 'episode' => 2]);
+$undesiredEpisodeK = $createIntentK('series:tmdb:9102:s01e03', 'series', ['tmdb_id' => 9102, 'imdb_id' => 'tt9102002', 'title' => 'Desired Show', 'season' => 1, 'episode' => 3]);
+$wrongListMovieK = $createIntentK('movie:tmdb:9103', 'movie', ['tmdb_id' => 9103, 'title' => 'Wrong List Movie']);
+$legacyKeyMovieK = $createIntentK('movie:title:legacy title:2024', 'movie', ['tmdb_id' => 9104, 'title' => 'Legacy Title']);
+$wrongListMdbK = $createIntentK('movie:tmdb:9105', 'movie', ['tmdb_id' => 9105, 'title' => 'MDB Wrong List']);
+$successK = $createIntentK('movie:tmdb:9106', 'movie', ['tmdb_id' => 9106, 'title' => 'Success Movie']);
+$queuedK = $createIntentK('movie:tmdb:9107', 'movie', ['tmdb_id' => 9107, 'title' => 'Queued Movie']);
+$downloadingK = $createIntentK('movie:tmdb:9108', 'movie', ['tmdb_id' => 9108, 'title' => 'Downloading Movie']);
+$resolvingK = $createIntentK('movie:tmdb:9109', 'movie', ['tmdb_id' => 9109, 'title' => 'Resolving Movie']);
+$noSourceK = $createIntentK('movie:tmdb:9110', 'movie', ['tmdb_id' => 9110, 'title' => 'No Source Movie']);
+$errorK = $createIntentK('movie:tmdb:9111', 'movie', ['tmdb_id' => 9111, 'title' => 'Error Movie']);
+$storeK->updateIntent($desiredEpisodeOneK, ['status' => 'ignored', 'error_message' => 'Ignored manually.']);
+$storeK->updateIntent($desiredEpisodeTwoK, ['status' => 'error']);
+$storeK->updateIntent($successK, ['status' => 'success']);
+$storeK->updateIntent($queuedK, ['status' => 'queued']);
+$storeK->updateIntent($downloadingK, ['status' => 'downloading']);
+$storeK->updateIntent($resolvingK, ['status' => 'resolving']);
+$storeK->updateIntent($noSourceK, ['status' => 'no_source']);
+$storeK->updateIntent($errorK, ['status' => 'error']);
+
+$resolverK = (new ReflectionClass(ReleaseResolverService::class))->newInstanceWithoutConstructor();
+$intentsK = new ReleaseIntentService($storeK, $settingsK, $resolverK, new AutomationNotifier($storageK), $storageK, $projectK);
+$totalBeforeK = $storeK->countIntents();
+$previewK = $intentsK->reconcileFromLists(true);
+check(!empty($previewK['success']), 'K reconciliation dry-run succeeds', $previewK);
+eq(5, $previewK['stats']['would_delete'] ?? null, 'K dry-run finds five non-desired actionable intents');
+eq(0, $previewK['stats']['deleted'] ?? null, 'K dry-run deletes nothing');
+eq($totalBeforeK, $storeK->countIntents(), 'K dry-run leaves intent count unchanged');
+$candidateIdsK = array_column($previewK['candidates'] ?? [], 'id');
+check(in_array($undesiredEpisodeK, $candidateIdsK, true), 'K non-desired episode is a deletion candidate');
+check(in_array($wrongListMovieK, $candidateIdsK, true), 'K wrong-list movie is a deletion candidate');
+check(in_array($wrongListMdbK, $candidateIdsK, true), 'K wrong-list MDBList movie is a deletion candidate');
+check(in_array($noSourceK, $candidateIdsK, true), 'K no_source movie is a deletion candidate');
+check(in_array($errorK, $candidateIdsK, true), 'K error movie is a deletion candidate');
+check(!in_array($successK, $candidateIdsK, true), 'K success intent is protected');
+check(!in_array($queuedK, $candidateIdsK, true), 'K queued intent is protected');
+check(!in_array($downloadingK, $candidateIdsK, true), 'K downloading intent is protected');
+check(!in_array($resolvingK, $candidateIdsK, true), 'K resolving intent is protected');
+check(!in_array($desiredEpisodeOneK, $candidateIdsK, true), 'K desired ignored intent is kept');
+check(!in_array($legacyKeyMovieK, $candidateIdsK, true), 'K legacy media_key is matched through TMDB identity');
+
+$appliedK = $intentsK->reconcileFromLists(false);
+check(!empty($appliedK['success']), 'K reconciliation apply succeeds', $appliedK);
+eq(5, $appliedK['stats']['deleted'] ?? null, 'K apply deletes five non-desired actionable intents');
+eq($totalBeforeK - 5, $storeK->countIntents(), 'K apply keeps the expected intents');
+eq(null, $storeK->getIntent($undesiredEpisodeK), 'K non-desired episode is deleted');
+eq(null, $storeK->getIntent($wrongListMovieK), 'K wrong-list movie is deleted');
+eq(null, $storeK->getIntent($wrongListMdbK), 'K wrong-list MDBList movie is deleted');
+eq(null, $storeK->getIntent($noSourceK), 'K no_source movie is deleted');
+eq(null, $storeK->getIntent($errorK), 'K error movie is deleted');
+eq('pending', $storeK->getIntent($desiredMovieK)['status'] ?? null, 'K desired pending movie is kept');
+eq('ignored', $storeK->getIntent($desiredEpisodeOneK)['status'] ?? null, 'K desired ignored episode stays ignored');
+eq('success', $storeK->getIntent($successK)['status'] ?? null, 'K success history is kept even if non-desired');
+eq('queued', $storeK->getIntent($queuedK)['status'] ?? null, 'K queued intent is kept');
+eq('downloading', $storeK->getIntent($downloadingK)['status'] ?? null, 'K downloading intent is kept');
+eq('resolving', $storeK->getIntent($resolvingK)['status'] ?? null, 'K resolving intent is kept');
+eq('pending', $storeK->getIntent($legacyKeyMovieK)['status'] ?? null, 'K legacy-key desired movie is kept');
+
+$sourcesK[1]['enabled'] = false;
+$settingsK->save(['sources' => $sourcesK]);
+$disabledSourceK = $intentsK->reconcileFromLists(false);
+eq(1, $disabledSourceK['stats']['deleted'] ?? null, 'K disabling a source deletes its non-desired intents');
+eq(null, $storeK->getIntent($legacyKeyMovieK), 'K disabled-source movie is deleted');
+eq(0, $intentsK->reconcileFromLists(false)['stats']['deleted'] ?? null, 'K reconciliation is idempotent');
+
+$sourcesK[0]['enabled'] = false;
+$settingsK->save(['sources' => $sourcesK]);
+$remainingK = $storeK->countIntents();
+$skippedK = $intentsK->reconcileFromLists(false);
+check(empty($skippedK['success']) && !empty($skippedK['skipped']), 'K reconciliation is skipped when no source is enabled');
+eq($remainingK, $storeK->countIntents(), 'K skipped reconciliation deletes nothing');
+$reconcileCommandK = new ReleaseIntentReconcileCommand($intentsK);
+$reconcileTesterK = new CommandTester($reconcileCommandK);
+eq(0, $reconcileTesterK->execute(['--dry-run' => true]), 'K reconciliation command exits successfully when skipped');
+check(str_contains($reconcileTesterK->getDisplay(), 'skipped'), 'K reconciliation command reports the skip reason', $reconcileTesterK->getDisplay());
+removeTree($projectK);
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);

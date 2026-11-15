@@ -267,6 +267,31 @@ class AutomationDownloadsController extends AbstractController
         return $this->json($result, !empty($result['success']) ? 200 : 404);
     }
 
+    #[Route('/automation/downloads/intent/delete', name: 'automation_downloads_intent_delete', methods: ['POST'])]
+    public function deleteIntent(Request $request, ReleaseIntentService $intents): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $result = $intents->deleteIgnoredIntent((int) ($data['id'] ?? 0));
+        $status = !empty($result['success']) ? 200 : (($result['reason'] ?? '') === 'not_found' ? 404 : 409);
+
+        return $this->json($result, $status);
+    }
+
+    #[Route('/automation/downloads/intent/restore-ignored', name: 'automation_downloads_intent_restore_ignored', methods: ['POST'])]
+    public function restoreIgnored(Request $request, ReleaseIntentService $intents): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        return $this->json($intents->restoreAllIgnored());
+    }
+
     #[Route('/automation/downloads/intent/sources', name: 'automation_downloads_intent_sources', methods: ['POST'])]
     public function intentSources(Request $request, AutomationStore $store, ReleaseResolverService $resolver, TmdbService $tmdb, AutomationSettings $settings): Response
     {

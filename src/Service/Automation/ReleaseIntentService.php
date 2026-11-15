@@ -165,9 +165,7 @@ class ReleaseIntentService
                     continue;
                 }
 
-                $mediaKey = $tmdbId !== null
-                    ? 'movie:tmdb:' . $tmdbId
-                    : ($imdbId !== '' ? 'movie:imdb:' . $imdbId : 'movie:title:' . $titleNormalized . ':' . ($year ?? 'unknown'));
+                $mediaKey = $this->movieMediaKey($tmdbId, $imdbId, $titleNormalized, $year);
 
                 $result = $this->store->createIntent([
                     'source_id' => $sourceId,
@@ -804,6 +802,242 @@ class ReleaseIntentService
         ]);
 
         return ['success' => true, 'ignored' => $ignored];
+    }
+
+    public function restoreAllIgnored(): array
+    {
+        $restored = $this->store->restoreIgnoredIntents();
+        if ($restored > 0) {
+            $this->log('Restored ' . $restored . ' ignored intent(s).');
+        }
+
+        return [
+            'success' => true,
+            'restored' => $restored,
+            'message' => $restored === 1
+                ? '1 ignored intent restored.'
+                : $restored . ' ignored intents restored.',
+        ];
+    }
+
+    public function deleteIgnoredIntent(int $id): array
+    {
+        $intent = $this->store->getIntent($id);
+        if ($intent === null) {
+            return ['success' => false, 'reason' => 'not_found', 'message' => 'Intent not found.'];
+        }
+        if ((string) ($intent['status'] ?? '') !== 'ignored') {
+            return ['success' => false, 'reason' => 'not_ignored', 'message' => 'Only ignored intents can be deleted.'];
+        }
+        if (!$this->store->deleteIgnoredIntent($id)) {
+            return ['success' => false, 'reason' => 'delete_failed', 'message' => 'Could not delete this ignored intent.'];
+        }
+        $this->log('Deleted ignored intent #' . $id . '.');
+
+        return ['success' => true, 'message' => 'Ignored intent deleted.'];
+    }
+
+    public function reconcileFromLists(bool $dryRun = false): array
+    {
+        $lock = $this->tryAcquireLock();
+        if ($lock['error'] !== null) {
+            return ['success' => false, 'message' => $lock['error'], 'stats' => []];
+        }
+        if ($lock['busy']) {
+            return ['success' => false, 'message' => 'An intent operation is already running.', 'stats' => []];
+        }
+
+        $stats = [
+            'enabled_sources' => 0,
+            'desired_keys' => 0,
+            'intents_seen' => 0,
+            'kept_desired' => 0,
+            'kept_protected' => 0,
+            'skipped' => 0,
+            'would_delete' => 0,
+            'deleted' => 0,
+            'warnings' => [],
+        ];
+        $candidates = [];
+
+        try {
+            $desiredInfo = $this->desiredMediaKeys();
+            $stats['enabled_sources'] = (int) ($desiredInfo['enabled_sources'] ?? 0);
+            $desired = $desiredInfo['keys'];
+            $stats['desired_keys'] = count($desired);
+            if ($stats['enabled_sources'] === 0) {
+                return [
+                    'success' => false,
+                    'skipped' => true,
+                    'message' => 'No enabled list source; intent reconciliation was skipped.',
+                    'stats' => $stats,
+                    'candidates' => [],
+                ];
+            }
+
+            $protectedStatuses = ['success', 'resolving', 'queued', 'downloading'];
+            $actionableStatuses = ['pending', 'no_source', 'error', 'ignored'];
+
+            foreach ($this->store->getAllIntentsForReconcile() as $intent) {
+                $stats['intents_seen']++;
+                $status = (string) ($intent['status'] ?? '');
+                if (in_array($status, $protectedStatuses, true)) {
+                    $stats['kept_protected']++;
+                    continue;
+                }
+                if (!in_array($status, $actionableStatuses, true)) {
+                    $stats['skipped']++;
+                    continue;
+                }
+
+                $mediaKey = $this->intentMediaKey($intent);
+                if ($mediaKey === null) {
+                    $stats['skipped']++;
+                    $stats['warnings'][] = 'Intent #' . (int) ($intent['id'] ?? 0) . ' has no usable media key; kept.';
+                    continue;
+                }
+                if (isset($desired[$mediaKey])) {
+                    $stats['kept_desired']++;
+                    continue;
+                }
+
+                $candidates[] = [
+                    'id' => (int) ($intent['id'] ?? 0),
+                    'status' => $status,
+                    'media_key' => $mediaKey,
+                    'title' => (string) ($intent['title'] ?? ''),
+                    'season' => $intent['season'] !== null ? (int) $intent['season'] : null,
+                    'episode' => $intent['episode'] !== null ? (int) $intent['episode'] : null,
+                ];
+            }
+
+            $stats['would_delete'] = count($candidates);
+            if (!$dryRun && $candidates !== []) {
+                $stats['deleted'] = $this->store->deleteIntentsByIds(array_column($candidates, 'id'));
+                $this->log('Intent reconciliation deleted ' . $stats['deleted'] . ' non-desired intent(s).');
+            }
+
+            return [
+                'success' => true,
+                'dry_run' => $dryRun,
+                'message' => $dryRun
+                    ? $stats['would_delete'] . ' intent(s) would be deleted.'
+                    : $stats['deleted'] . ' intent(s) deleted.',
+                'stats' => $stats,
+                'candidates' => $candidates,
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => $e->getMessage(), 'stats' => $stats, 'candidates' => $candidates];
+        } finally {
+            $this->releaseLock($lock['handle']);
+        }
+    }
+
+    private function desiredMediaKeys(): array
+    {
+        $desired = [];
+        $enabledSources = 0;
+
+        foreach ($this->settings->getSources() as $source) {
+            if (!is_array($source) || empty($source['enabled'])) {
+                continue;
+            }
+            $sourceId = (string) ($source['id'] ?? $source['provider'] ?? '');
+            if ($sourceId === '') {
+                continue;
+            }
+            $enabledSources++;
+            $config = is_array($source['config'] ?? null) ? $source['config'] : [];
+            $listIds = array_values(array_filter(array_map(
+                static fn ($value) => trim((string) $value),
+                is_array($config['list_ids'] ?? null) ? $config['list_ids'] : []
+            )));
+            $items = $this->store->getListItems(['status' => 'missing', 'source' => $sourceId], 100000);
+
+            foreach ($items as $item) {
+                if (!is_array($item) || !empty($item['ignored_at']) || (string) ($item['match_status'] ?? '') !== 'missing') {
+                    continue;
+                }
+                $listRef = (string) ($item['list_ref'] ?? '');
+                if ($listIds !== [] && $listRef !== '' && !in_array($listRef, $listIds, true)) {
+                    continue;
+                }
+
+                $mediaType = (string) ($item['media_type'] ?? 'movie');
+                $tmdbId = !empty($item['tmdb_id']) ? (int) $item['tmdb_id'] : null;
+                $imdbId = trim((string) ($item['imdb_id'] ?? ''));
+                $title = trim((string) ($item['title'] ?? ''));
+                $year = !empty($item['year']) ? (int) $item['year'] : null;
+                $titleNormalized = trim((string) ($item['title_normalized'] ?? ''));
+                if ($titleNormalized === '') {
+                    $titleNormalized = $this->normalizeTitle($title);
+                }
+
+                if (in_array($mediaType, ['series', 'anime', 'episode'], true)) {
+                    $missing = json_decode((string) ($item['missing_json'] ?? '[]'), true);
+                    $missing = is_array($missing) ? $missing : [];
+                    if ($missing === [] && $item['season'] !== null && $item['episode'] !== null) {
+                        $missing[] = $this->episodeCode((int) $item['season'], (int) $item['episode']);
+                    }
+                    foreach ($missing as $code) {
+                        $parsed = $this->parseEpisodeCode((string) $code);
+                        if ($parsed === null) {
+                            continue;
+                        }
+                        if ($tmdbId === null && $imdbId === '' && $titleNormalized === '') {
+                            continue;
+                        }
+                        $desired[$this->episodeMediaKey($tmdbId, $imdbId, $titleNormalized, $year, $parsed[0], $parsed[1])] = true;
+                    }
+                    continue;
+                }
+
+                if ($tmdbId === null && $imdbId === '' && $titleNormalized === '') {
+                    continue;
+                }
+                $desired[$this->movieMediaKey($tmdbId, $imdbId, $titleNormalized, $year)] = true;
+            }
+        }
+
+        return ['enabled_sources' => $enabledSources, 'keys' => $desired];
+    }
+
+    private function intentMediaKey(array $intent): ?string
+    {
+        $mediaType = (string) ($intent['media_type'] ?? 'movie');
+        $tmdbId = !empty($intent['tmdb_id']) ? (int) $intent['tmdb_id'] : null;
+        $imdbId = trim((string) ($intent['imdb_id'] ?? ''));
+        $titleNormalized = $this->normalizeTitle((string) ($intent['title'] ?? ''));
+        $year = !empty($intent['year']) ? (int) $intent['year'] : null;
+
+        if (in_array($mediaType, ['series', 'anime', 'episode'], true)) {
+            if ($intent['season'] === null || $intent['episode'] === null) {
+                return null;
+            }
+            if ($tmdbId === null && $imdbId === '' && $titleNormalized === '') {
+                return null;
+            }
+
+            return $this->episodeMediaKey($tmdbId, $imdbId, $titleNormalized, $year, (int) $intent['season'], (int) $intent['episode']);
+        }
+
+        if ($tmdbId === null && $imdbId === '' && $titleNormalized === '') {
+            return null;
+        }
+
+        return $this->movieMediaKey($tmdbId, $imdbId, $titleNormalized, $year);
+    }
+
+    private function movieMediaKey(?int $tmdbId, string $imdbId, string $titleNormalized, ?int $year): string
+    {
+        if ($tmdbId !== null && $tmdbId > 0) {
+            return 'movie:tmdb:' . $tmdbId;
+        }
+        if ($imdbId !== '') {
+            return 'movie:imdb:' . $imdbId;
+        }
+
+        return 'movie:title:' . $titleNormalized . ':' . ($year ?? 'unknown');
     }
 
     private function tryAcquireLock(): array

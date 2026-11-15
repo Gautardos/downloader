@@ -3,6 +3,7 @@
 namespace App\Command;
 
 use App\Service\Automation\ListSyncService;
+use App\Service\Automation\ReleaseIntentService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -16,11 +17,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 class ListsSyncCommand extends Command
 {
     private ListSyncService $listSync;
+    private ReleaseIntentService $releaseIntents;
 
-    public function __construct(ListSyncService $listSync)
+    public function __construct(ListSyncService $listSync, ReleaseIntentService $releaseIntents)
     {
         parent::__construct();
         $this->listSync = $listSync;
+        $this->releaseIntents = $releaseIntents;
     }
 
     protected function configure(): void
@@ -62,6 +65,18 @@ class ListsSyncCommand extends Command
             $stats['ambiguous'] ?? 0,
             $stats['ignored'] ?? 0
         ));
+
+        if ((int) ($stats['sources'] ?? 0) > 0) {
+            $reconcile = $this->releaseIntents->reconcileFromLists(false);
+            if (!empty($reconcile['success'])) {
+                $reconcileStats = $reconcile['stats'] ?? [];
+                $output->writeln('Intent reconciliation: ' . ($reconcileStats['deleted'] ?? 0) . ' deleted, ' . ($reconcileStats['kept_desired'] ?? 0) . ' desired kept, ' . ($reconcileStats['kept_protected'] ?? 0) . ' protected.');
+            } elseif (!empty($reconcile['skipped'])) {
+                $output->writeln('<comment>' . ($reconcile['message'] ?? 'Intent reconciliation skipped.') . '</comment>');
+            } else {
+                $output->writeln('<error>' . ($reconcile['message'] ?? 'Intent reconciliation failed.') . '</error>');
+            }
+        }
 
         return Command::SUCCESS;
     }

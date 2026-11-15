@@ -368,6 +368,9 @@
     {% block actions %}
         <span class="badge {{ worker_online ? 'badge-success' : 'badge-danger' }}">{{ worker_online ? 'Worker online' : 'Worker offline' }}</span>
         <a class="btn btn-secondary" href="{{ path('automation_config') }}#config-quality">Settings</a>
+        {% if counts.ignored > 0 %}
+            <button class="btn btn-secondary" type="button" onclick="restoreAllIgnored()" title="Restore every ignored intent and make it pending again.">Restore all ignored ({{ counts.ignored }})</button>
+        {% endif %}
         <button class="btn btn-secondary" type="button" onclick="startReleaseDryRun()" title="Preview movie releases only, without queueing anything. Use Prepare episode intents for series.">Preview movie releases</button>
         <button class="btn btn-primary" type="button" onclick="runDownloadAutomation()" title="Prepare missing movies and episodes, then resolve and queue downloads.">Run download automation</button>
     {% endblock %}
@@ -772,6 +775,7 @@
                                     {% endif %}
                                     {% if item.status == 'ignored' %}
                                         <button class="btn btn-ghost btn-sm" type="button" data-intent-ignore="{{ item.id }}" data-intent-ignored="1">Restore</button>
+                                        <button class="btn btn-ghost btn-sm" type="button" data-intent-delete="{{ item.id }}" style="color: var(--danger);" title="Delete this ignored intent permanently.">Delete</button>
                                     {% elseif item.status != 'success' %}
                                         <button class="btn btn-ghost btn-sm" type="button" data-intent-ignore="{{ item.id }}" data-intent-ignored="0">Ignore</button>
                                     {% endif %}
@@ -863,6 +867,8 @@
     const downloadsRunAllRoute = "{{ path('automation_downloads_run_all') }}";
     const downloadsRetryRoute = "{{ path('automation_downloads_intent_retry') }}";
     const downloadsIgnoreRoute = "{{ path('automation_downloads_intent_ignore') }}";
+    const downloadsDeleteIntentRoute = "{{ path('automation_downloads_intent_delete') }}";
+    const downloadsRestoreIgnoredRoute = "{{ path('automation_downloads_intent_restore_ignored') }}";
     const downloadsCsrfToken = "{{ csrf_token|e('js') }}";
     const downloadsStatusRoute = "{{ path('automation_downloads_status') }}";
     const dryRunRoute = "{{ path('automation_downloads_dry_run') }}";
@@ -1076,6 +1082,18 @@
         }
     }
 
+    async function restoreAllIgnored() {
+        const count = {{ counts.ignored }};
+        if (!confirm(`Restore ${count} ignored intent${count === 1 ? '' : 's'}?`)) return;
+        try {
+            const data = await postDownloadsJson(downloadsRestoreIgnoredRoute, {});
+            if (window.notify) window.notify('success', data.message || 'Ignored intents restored.');
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
     async function startReleaseDryRun() {
         try {
             const data = await postDownloadsJson(dryRunRoute, {});
@@ -1211,6 +1229,21 @@
             } catch (error) {
                 if (window.notify) window.notify('error', error.message);
                 retry.disabled = false;
+            }
+            return;
+        }
+
+        const deleteIntent = event.target.closest('[data-intent-delete]');
+        if (deleteIntent) {
+            if (!confirm('Delete this ignored intent permanently?')) return;
+            deleteIntent.disabled = true;
+            try {
+                await postDownloadsJson(downloadsDeleteIntentRoute, { id: Number(deleteIntent.getAttribute('data-intent-delete')) });
+                if (window.notify) window.notify('success', 'Ignored intent deleted.');
+                window.location.reload();
+            } catch (error) {
+                if (window.notify) window.notify('error', error.message);
+                deleteIntent.disabled = false;
             }
             return;
         }
