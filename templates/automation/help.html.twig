@@ -1,0 +1,822 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Guide Automations - Downloader{% endblock %}
+
+{% block body %}
+<style>
+    .help-layout {
+        display: grid;
+        grid-template-columns: 245px minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: start;
+    }
+    .help-toc {
+        position: sticky;
+        top: 88px;
+        padding: 1rem;
+    }
+    .help-toc-title {
+        margin: 0 0 .65rem;
+        color: var(--text-secondary);
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+    .help-toc a {
+        display: block;
+        padding: .42rem .55rem;
+        border-radius: 8px;
+        color: var(--text-secondary);
+        font-size: .78rem;
+        line-height: 1.35;
+        text-decoration: none;
+    }
+    .help-toc a:hover {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, .05);
+    }
+    .help-content {
+        min-width: 0;
+    }
+    .help-section {
+        scroll-margin-top: 92px;
+        padding: 0 0 1.7rem;
+        margin: 0 0 1.7rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .13);
+    }
+    .help-section:last-child {
+        border-bottom: 0;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+    .help-section h2 {
+        margin: 0 0 .55rem;
+        font-size: 1.35rem;
+        letter-spacing: -.03em;
+    }
+    .help-section h3 {
+        margin: 1.25rem 0 .45rem;
+        font-size: .98rem;
+        letter-spacing: -.01em;
+    }
+    .help-lead {
+        margin: 0 0 1rem;
+        color: var(--text-secondary);
+        font-size: .9rem;
+        line-height: 1.7;
+    }
+    .help-text {
+        color: var(--text-secondary);
+        font-size: .83rem;
+        line-height: 1.7;
+    }
+    .help-text strong,
+    .help-lead strong {
+        color: var(--text-primary);
+    }
+    .help-text a,
+    .help-lead a {
+        color: var(--accent);
+    }
+    .help-text code,
+    .help-lead code,
+    .help-table code,
+    .help-callout code {
+        padding: .1rem .3rem;
+        border: 1px solid rgba(148, 163, 184, .2);
+        border-radius: 5px;
+        background: rgba(15, 23, 42, .7);
+        color: #bae6fd;
+        font-size: .92em;
+    }
+    .help-muted {
+        color: var(--text-muted, #64748b);
+    }
+    .help-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .8rem;
+        margin: 1rem 0;
+    }
+    .help-grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .help-card {
+        padding: .9rem 1rem;
+        border: 1px solid rgba(148, 163, 184, .15);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, .38);
+    }
+    .help-card-title {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        margin: 0 0 .35rem;
+        font-size: .83rem;
+        font-weight: 800;
+    }
+    .help-card p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: .76rem;
+        line-height: 1.55;
+    }
+    .help-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        flex: 0 0 auto;
+        border-radius: 7px;
+        background: rgba(56, 189, 248, .12);
+        color: #7dd3fc;
+        font-size: .7rem;
+        font-weight: 900;
+    }
+    .help-pipeline {
+        display: flex;
+        align-items: stretch;
+        gap: .4rem;
+        margin: 1rem 0;
+        overflow-x: auto;
+        padding-bottom: .25rem;
+    }
+    .help-pipeline-step {
+        flex: 1 0 120px;
+        min-width: 0;
+        padding: .72rem .7rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, .52);
+    }
+    .help-pipeline-step b {
+        display: block;
+        color: var(--text-primary);
+        font-size: .76rem;
+    }
+    .help-pipeline-step small {
+        display: block;
+        margin-top: .22rem;
+        color: var(--text-secondary);
+        font-size: .67rem;
+        line-height: 1.35;
+    }
+    .help-pipeline-arrow {
+        align-self: center;
+        color: #38bdf8;
+        font-size: 1.1rem;
+        line-height: 1;
+    }
+    .help-check-list {
+        display: grid;
+        gap: .55rem;
+        margin: .8rem 0 1rem;
+        padding: 1rem;
+        border: 1px solid rgba(148, 163, 184, .14);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, .32);
+    }
+    .help-check-item {
+        display: flex;
+        align-items: flex-start;
+        gap: .55rem;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        line-height: 1.55;
+    }
+    .help-check-mark {
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        margin-top: .05rem;
+        border-radius: 50%;
+        background: rgba(34, 197, 94, .15);
+        color: #86efac;
+        font-size: .65rem;
+        font-weight: 900;
+    }
+    .help-callout {
+        margin: .9rem 0;
+        padding: .8rem .9rem;
+        border: 1px solid rgba(56, 189, 248, .22);
+        border-left: 3px solid var(--accent);
+        border-radius: 9px;
+        background: rgba(56, 189, 248, .06);
+        color: var(--text-secondary);
+        font-size: .78rem;
+        line-height: 1.6;
+    }
+    .help-callout.warning {
+        border-color: rgba(245, 158, 11, .28);
+        border-left-color: var(--warning);
+        background: rgba(245, 158, 11, .06);
+    }
+    .help-callout strong {
+        color: var(--text-primary);
+    }
+    .help-steps {
+        display: grid;
+        gap: .65rem;
+        margin: 1rem 0;
+        counter-reset: help-step;
+    }
+    .help-step {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr);
+        gap: .7rem;
+        padding: .75rem .85rem;
+        border: 1px solid rgba(148, 163, 184, .13);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, .3);
+    }
+    .help-step-num {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        background: rgba(56, 189, 248, .14);
+        color: #bae6fd;
+        font-size: .74rem;
+        font-weight: 900;
+    }
+    .help-step-body {
+        min-width: 0;
+    }
+    .help-step-title {
+        color: var(--text-primary);
+        font-size: .8rem;
+        font-weight: 750;
+    }
+    .help-step-text {
+        margin-top: .18rem;
+        color: var(--text-secondary);
+        font-size: .76rem;
+        line-height: 1.55;
+    }
+    .help-table-wrap {
+        overflow-x: auto;
+        margin: .9rem 0;
+        border: 1px solid rgba(148, 163, 184, .13);
+        border-radius: 10px;
+    }
+    .help-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 560px;
+        font-size: .77rem;
+    }
+    .help-table th,
+    .help-table td {
+        padding: .65rem .75rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .1);
+        text-align: left;
+        vertical-align: top;
+        line-height: 1.5;
+    }
+    .help-table th {
+        color: var(--text-secondary);
+        background: rgba(15, 23, 42, .45);
+        font-size: .68rem;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+    .help-table td {
+        color: var(--text-secondary);
+    }
+    .help-table tr:last-child td {
+        border-bottom: 0;
+    }
+    .help-table td:first-child {
+        color: var(--text-primary);
+        font-weight: 650;
+        white-space: nowrap;
+    }
+    .help-figure {
+        margin: 1rem 0 1.2rem;
+    }
+    .help-figure a {
+        display: block;
+    }
+    .help-figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid rgba(148, 163, 184, .18);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, .5);
+        box-shadow: 0 18px 45px rgba(0, 0, 0, .18);
+    }
+    .help-figure figcaption {
+        margin-top: .5rem;
+        color: var(--text-secondary);
+        font-size: .72rem;
+        line-height: 1.5;
+    }
+    .help-status-flow {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .35rem;
+        margin: .9rem 0;
+    }
+    .help-status {
+        display: inline-flex;
+        align-items: center;
+        padding: .32rem .5rem;
+        border: 1px solid rgba(148, 163, 184, .18);
+        border-radius: 999px;
+        color: var(--text-secondary);
+        background: rgba(15, 23, 42, .45);
+        font-size: .7rem;
+        font-weight: 700;
+    }
+    .help-status.ok { border-color: rgba(34, 197, 94, .28); color: #86efac; background: rgba(34, 197, 94, .07); }
+    .help-status.warn { border-color: rgba(245, 158, 11, .28); color: #fcd34d; background: rgba(245, 158, 11, .07); }
+    .help-status.bad { border-color: rgba(239, 68, 68, .28); color: #fca5a5; background: rgba(239, 68, 68, .07); }
+    .help-status-arrow {
+        color: var(--text-muted, #64748b);
+        font-size: .8rem;
+    }
+    .help-columns {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .8rem;
+        margin: .9rem 0;
+    }
+    .help-list {
+        margin: .5rem 0 0;
+        padding-left: 1.1rem;
+        color: var(--text-secondary);
+        font-size: .79rem;
+        line-height: 1.65;
+    }
+    .help-list li + li {
+        margin-top: .25rem;
+    }
+    .help-list strong {
+        color: var(--text-primary);
+    }
+    .help-tag {
+        display: inline-block;
+        padding: .12rem .38rem;
+        border-radius: 5px;
+        background: rgba(148, 163, 184, .12);
+        color: var(--text-secondary);
+        font-size: .68rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .help-back {
+        display: inline-flex;
+        margin-top: .8rem;
+        color: var(--text-secondary);
+        font-size: .74rem;
+        text-decoration: none;
+    }
+    .help-back:hover {
+        color: var(--accent);
+    }
+    @media (max-width: 1020px) {
+        .help-layout {
+            grid-template-columns: 1fr;
+        }
+        .help-toc {
+            position: static;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: .15rem;
+        }
+        .help-toc-title {
+            grid-column: 1 / -1;
+        }
+        .help-grid,
+        .help-grid.two {
+            grid-template-columns: 1fr;
+        }
+        .help-columns {
+            grid-template-columns: 1fr;
+        }
+    }
+    @media (max-width: 640px) {
+        .help-toc {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .help-pipeline {
+            flex-direction: column;
+        }
+        .help-pipeline-arrow {
+            display: none;
+        }
+        .help-pipeline-step {
+            flex-basis: auto;
+        }
+    }
+</style>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Guide Automations',
+    subtitle: 'De la configuration initiale au premier épisode téléchargé : le mode d’emploi complet, le workflow de synchronisation et les réflexes de dépannage.',
+    icon: 'automation'
+} %}
+    {% block actions %}
+        <a class="btn btn-secondary" href="{{ path('automation_config') }}">Configuration</a>
+        <a class="btn btn-primary" href="{{ path('automation') }}">Retour à l’overview</a>
+    {% endblock %}
+{% endembed %}
+
+{% include 'automation/_nav.html.twig' %}
+
+<div class="help-layout">
+    <aside class="help-toc card" aria-label="Sommaire du guide">
+        <div class="help-toc-title">Sommaire</div>
+        <a href="#comprendre">Comprendre Automations</a>
+        <a href="#prerequis">Prérequis</a>
+        <a href="#configuration">Configuration initiale</a>
+        <a href="#workflow">Workflow de synchronisation</a>
+        <a href="#series">Séries et numérotation</a>
+        <a href="#statuts">Statuts des intents</a>
+        <a href="#securite">Sécurité et garde-fous</a>
+        <a href="#depannage">Dépannage</a>
+        <a href="#cli">Commandes avancées</a>
+        <a href="#limites">Limites assumées</a>
+    </aside>
+
+    <div class="help-content">
+        <section class="help-section" id="comprendre">
+            <h2>Comprendre Automations</h2>
+            <p class="help-lead">
+                Automations relie trois choses : vos <strong>listes</strong> Scrob ou MDBList, l’<strong>index de votre NAS</strong> et des <strong>intents</strong> de téléchargement. Le worker entretient la boucle en arrière-plan ; vous validez les étapes qui engagent votre bibliothèque.
+            </p>
+
+            <div class="help-grid">
+                <div class="help-card">
+                    <div class="help-card-title"><span class="help-icon">1</span>Les listes</div>
+                    <p>Scrob et MDBList fournissent les envies : films, séries et épisodes à acquérir. Elles sont lues, fusionnées et normalisées.</p>
+                </div>
+                <div class="help-card">
+                    <div class="help-card-title"><span class="help-icon">2</span>L’index NAS</div>
+                    <p>Le scanner indexe les fichiers réels, puis TMDB et IMDb donnent une identité aux films, séries et épisodes.</p>
+                </div>
+                <div class="help-card">
+                    <div class="help-card-title"><span class="help-icon">3</span>Les intents</div>
+                    <p>Un intent est une intention de téléchargement pour un film ou un épisode manquant. Il avance par étapes, avec retries et garde-fous.</p>
+                </div>
+            </div>
+
+            <div class="help-pipeline" aria-label="Pipeline Automations">
+                <div class="help-pipeline-step"><b>Listes</b><small>Scrob / MDBList</small></div>
+                <span class="help-pipeline-arrow" aria-hidden="true">→</span>
+                <div class="help-pipeline-step"><b>Index NAS</b><small>Films, séries, épisodes</small></div>
+                <span class="help-pipeline-arrow" aria-hidden="true">→</span>
+                <div class="help-pipeline-step"><b>Dry-run</b><small>Présent / manquant / ambigu</small></div>
+                <span class="help-pipeline-arrow" aria-hidden="true">→</span>
+                <div class="help-pipeline-step"><b>Intents</b><small>Pending, resolving, queued</small></div>
+                <span class="help-pipeline-arrow" aria-hidden="true">→</span>
+                <div class="help-pipeline-step"><b>Téléchargement</b><small>Résolution + file</small></div>
+                <span class="help-pipeline-arrow" aria-hidden="true">→</span>
+                <div class="help-pipeline-step"><b>Jellyfin</b><small>Lecture directe</small></div>
+            </div>
+
+            <p class="help-text">
+                Un <strong>dry-run</strong> ne télécharge rien : il compare la liste à l’index et affiche l’écart. Un <strong>intent</strong> ne devient un téléchargement qu’après résolution d’une release compatible avec votre profil qualité. Le worker peut enchaîner les étapes automatiquement, mais les dry-runs et les previews restent vos points de contrôle.
+            </p>
+        </section>
+
+        <section class="help-section" id="prerequis">
+            <h2>Prérequis</h2>
+            <p class="help-text">Avant de lancer la première synchronisation, vérifiez ces éléments :</p>
+            <div class="help-check-list">
+                <div class="help-check-item"><span class="help-check-mark">✓</span><span>La stack Docker tourne et le dossier NAS est monté dans le conteneur, par exemple sur <code>/nas/Video/Movies</code> et <code>/nas/Video/TV Shows</code>.</span></div>
+                <div class="help-check-item"><span class="help-check-mark">✓</span><span>Une clé <strong>TMDB</strong> est enregistrée dans <strong>Discover &gt; Media addons</strong>. Elle sert à la recherche, aux métadonnées, aux saisons et aux identifiants IMDb.</span></div>
+                <div class="help-check-item"><span class="help-check-mark">✓</span><span>La clé <strong>Alldebrid</strong> est configurée dans <strong>Settings</strong>.</span></div>
+                <div class="help-check-item"><span class="help-check-mark">✓</span><span>Les addons Stremio/Nuvio sont ajoutés dans <strong>Discover &gt; Media addons</strong> avec des URLs HTTPS publiques.</span></div>
+                <div class="help-check-item"><span class="help-check-mark">✓</span><span>Une source <strong>Scrob</strong> ou <strong>MDBList</strong> est configurée dans <strong>Connected Lists</strong>, avec au moins une liste sélectionnée.</span></div>
+                <div class="help-check-item"><span class="help-check-mark">✓</span><span>L’<strong>Automation worker</strong> est online sur l’overview. S’il est offline, scans, dry-runs et téléchargements restent en attente.</span></div>
+                <div class="help-check-item"><span class="help-check-mark">✓</span><span>Pour Nuvio, la <strong>passerelle Jellyfin</strong> est activée dans <strong>Settings</strong> avec un compte dédié et un mot de passe non vide.</span></div>
+            </div>
+            <div class="help-callout warning">
+                <strong>Un dry-run validé est obligatoire avant tout auto-download.</strong> Les cases « Auto download missing movies » et « Auto download series episodes » n’ont aucun effet tant que la source n’a pas terminé un dry-run avec succès.
+            </div>
+        </section>
+
+        <section class="help-section" id="configuration">
+            <h2>Configuration initiale</h2>
+            <p class="help-lead">Tout se règle dans <strong>Automations &gt; Configuration</strong>, sauf les sources (Connected Lists) et la passerelle Jellyfin (Settings). Les valeurs ci-dessous correspondent aux réglages par défaut ; adaptez-les à votre bibliothèque.</p>
+
+            <h3>1. Racines NAS et scanner</h3>
+            <p class="help-text">Les chemins sont des chemins <strong>internes au conteneur</strong>. Activez les racines utiles, puis vérifiez les extensions vidéo, la taille minimale et l’intervalle de scan.</p>
+            <ul class="help-list">
+                <li><strong>Movies</strong>, <strong>TV Shows</strong> et <strong>Anime</strong> : activez uniquement les racines qui existent réellement.</li>
+                <li><strong>Video extensions</strong> : liste séparée par des virgules. Les extensions sont normalisées en minuscules.</li>
+                <li><strong>Minimum file size</strong> : ignore les fichiers trop petits, par exemple les extraits ou les échantillons.</li>
+                <li><strong>Automatic scan interval</strong> : 6 heures par défaut. Le scan peut aussi être lancé à la main avec <strong>Scan now with saved settings</strong>.</li>
+                <li><strong>Skip samples, trailers, and featurettes</strong> et <strong>Read NFO metadata</strong> sont activés par défaut.</li>
+                <li><strong>Load the full folder tree in one request</strong> : pratique pour une petite bibliothèque, mais plus lourd pour un gros NAS. Le chargement à la demande reste la valeur sûre.</li>
+            </ul>
+
+            <h3>2. Profil qualité</h3>
+            <p class="help-text">Le même profil s’applique aux films et aux épisodes. Les filtres durs refusent une release ; le score pondéré départage les candidates acceptées.</p>
+            <div class="help-table-wrap">
+                <table class="help-table">
+                    <thead><tr><th>Réglage</th><th>Effet</th></tr></thead>
+                    <tbody>
+                        <tr><td>Max / Min resolution</td><td>Borne la résolution acceptée. L’ordre de préférence (ex. 2160p &gt; 1080p &gt; 720p) influence le score.</td></tr>
+                        <tr><td>Codecs</td><td>Autorise ou refuse x265, h264, av1, xvid et divx.</td></tr>
+                        <tr><td>HDR</td><td><strong>Prefer</strong> favorise le HDR, <strong>Require</strong> l’impose, <strong>Ignore</strong> le neutralise.</td></tr>
+                        <tr><td>Audio languages</td><td>Langues attendues dans la release, par exemple <code>VF</code>, <code>VOSTFR</code> ou <code>MULTI</code>.</td></tr>
+                        <tr><td>Minimum seeders</td><td>Écarte les releases trop peu partagées.</td></tr>
+                        <tr><td>Maximum movie / episode size</td><td>Plafonds séparés pour les films et les épisodes.</td></tr>
+                        <tr><td>Excluded tags</td><td>Refus immédiat. Ajouter <code>HDR</code> ici rejette tout HDR, même si HDR est sur <strong>Prefer</strong>.</td></tr>
+                        <tr><td>Addon priority</td><td>Utilise la priorité des addons dans le score final.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="help-callout">
+                <strong>Le score preview est votre meilleur ami.</strong> Il montre pourquoi une release est acceptée ou filtrée avant même de lancer un téléchargement. Ajustez le profil, puis relancez un dry-run si nécessaire.
+            </div>
+
+            <h3>3. Limites et garde-fous</h3>
+            <p class="help-text">Ces limites protègent la file et évitent les runs trop agressifs.</p>
+            <ul class="help-list">
+                <li><strong>Max intents per run</strong> (50 par défaut) : nombre maximum d’intents traités lors d’un run.</li>
+                <li><strong>Queue guard</strong> (20 par défaut) : si la file atteint ce seuil, l’automatisation s’arrête et attend que la file se vide.</li>
+                <li><strong>Retry backoff</strong> (60 minutes) et <strong>Max attempts</strong> (5) : espacement et plafond des nouvelles tentatives.</li>
+                <li><strong>Stale resolving</strong> (30 minutes) : un intent bloqué en résolution est récupéré.</li>
+                <li><strong>Minimum run interval</strong> (60 secondes) : fréquence minimale entre deux runs automatiques.</li>
+            </ul>
+
+            <h3>4. Langue des titres</h3>
+            <p class="help-text">La langue des titres vaut <code>en-US</code> par défaut. Elle est utilisée pour les titres de films des nouveaux téléchargements et par <strong>Refresh English titles</strong>. Après un refresh, utilisez <strong>Rename matched</strong> pour aligner les noms de fichiers.</p>
+
+            <h3>5. Sources de listes</h3>
+            <p class="help-text">Dans <strong>Connected Lists</strong>, ouvrez la carte d’une source pour la configurer.</p>
+            <ul class="help-list">
+                <li><strong>Scrob</strong> : renseignez l’URL de base (ex. <code>http://scrob:7330</code>) et le préfixe API (<code>/api/proxy</code> pour l’application Scrob standard, vide si vous attaquez directement le backend).</li>
+                <li><strong>MDBList</strong> : renseignez la clé API.</li>
+                <li><strong>Lists</strong> : sélectionnez une ou plusieurs listes. L’indicateur de connexion rafraîchit les listes disponibles.</li>
+                <li><strong>Enable this source</strong> : sans cette case, la source est ignorée.</li>
+                <li><strong>Auto download missing movies</strong> et <strong>Auto download series episodes</strong> : deux automatisations indépendantes, à activer seulement après un dry-run réussi.</li>
+            </ul>
+
+            <h3>6. Jellyfin / Nuvio</h3>
+            <p class="help-text">Dans <strong>Settings &gt; Jellyfin API (Nuvio)</strong>, activez la passerelle, donnez-lui un nom, puis définissez un <strong>compte dédié</strong>. Dans Nuvio, ajoutez un serveur Jellyfin avec <code>http://votre-hote:8000/jellyfin</code>.</p>
+            <p class="help-text">Le compte Jellyfin est séparé du compte admin. Tant que le mot de passe Jellyfin est vide, l’authentification Jellyfin reste désactivée. Lancez un scan de bibliothèque avant la première connexion si l’index est vide.</p>
+
+            <figure class="help-figure">
+                <a href="/help/automation/jellyfin.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/jellyfin.webp" alt="Réglages Jellyfin API dans Settings" loading="lazy" decoding="async">
+                </a>
+                <figcaption>La passerelle Jellyfin se configure dans Settings. Utilisez un compte dédié et un mot de passe non vide, puis connectez Nuvio sur <code>/jellyfin</code>.</figcaption>
+            </figure>
+
+            <figure class="help-figure">
+                <a href="/help/automation/configuration.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/configuration.webp" alt="Configuration Automation : profil qualité, limites, métadonnées et racines NAS" loading="lazy" decoding="async">
+                </a>
+                <figcaption>La page Configuration regroupe le profil qualité, les limites, la langue des titres et les racines NAS. Cliquez sur une capture pour l’ouvrir en grand.</figcaption>
+            </figure>
+        </section>
+
+        <section class="help-section" id="workflow">
+            <h2>Workflow de synchronisation</h2>
+            <p class="help-lead">Le worker tourne en boucle. Il vérifie son heartbeat toutes les 5 secondes, récupère les téléchargements bloqués, exécute les tâches dues puis se rendort brièvement. Les boutons de l’interface servent à demander une tâche immédiate ou à valider une étape.</p>
+
+            <div class="help-columns">
+                <div class="help-card">
+                    <div class="help-card-title"><span class="help-icon">A</span>Ce que fait le worker</div>
+                    <ul class="help-list">
+                        <li>Scan NAS selon l’intervalle configuré, ou sur demande.</li>
+                        <li>Résolution TMDB/IMDb après un scan si des groupes restent non résolus.</li>
+                        <li>Dry-run des listes selon leur planning, ou sur demande.</li>
+                        <li>Réconciliation des intents après un dry-run réussi.</li>
+                        <li>Auto-queue des intents dus (throttle de 5 minutes).</li>
+                        <li>Run des intents selon l’intervalle minimum et le queue guard.</li>
+                        <li>Reprise des intents stale et des téléchargements bloqués.</li>
+                    </ul>
+                </div>
+                <div class="help-card">
+                    <div class="help-card-title"><span class="help-icon">B</span>Ce que vous validez</div>
+                    <ul class="help-list">
+                        <li>Le choix des listes et des racines NAS.</li>
+                        <li>Le profil qualité et les limites.</li>
+                        <li>Le dry-run et l’interprétation des ambigus.</li>
+                        <li>La numérotation des séries et les mappings à faible confiance.</li>
+                        <li>Le renommage Jellyfin, toujours après preview.</li>
+                        <li>Les previews de releases et les intents d’épisodes.</li>
+                        <li>Le choix manuel d’une source via <strong>Sources</strong>, en dernier recours.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="help-steps">
+                <div class="help-step"><span class="help-step-num">1</span><div class="help-step-body"><div class="help-step-title">Scanner l’index NAS</div><div class="help-step-text">Vérifiez les racines, puis lancez un scan. Les fichiers sont indexés et les métadonnées sont résolues dans la foulée.</div></div></div>
+                <div class="help-step"><span class="help-step-num">2</span><div class="help-step-body"><div class="help-step-title">Corriger les groupes ambigus</div><div class="help-step-text">Dans <strong>Library Browser &gt; Needs attention</strong>, utilisez <strong>Fix match</strong> pour associer le bon film ou la bonne série TMDB, ou ignorez le groupe s’il doit rester hors automatisation.</div></div></div>
+                <div class="help-step"><span class="help-step-num">3</span><div class="help-step-body"><div class="help-step-title">Configurer et tester la source</div><div class="help-step-text">Renseignez la source dans <strong>Connected Lists</strong>, sélectionnez les listes et vérifiez l’indicateur <strong>Connected</strong>.</div></div></div>
+                <div class="help-step"><span class="help-step-num">4</span><div class="help-step-body"><div class="help-step-title">Lancer un dry-run</div><div class="help-step-text">Utilisez <strong>Dry-run this source</strong> pour une source ou <strong>Dry-run all sources</strong>. Le dry-run ne télécharge et ne queue rien.</div></div></div>
+                <div class="help-step"><span class="help-step-num">5</span><div class="help-step-body"><div class="help-step-title">Lire les résultats</div><div class="help-step-text">Présent = déjà sur le NAS. Manquant = film ou épisodes diffusés absents. Ambigu = identité ou épisode à confirmer. Ignoré = exclu volontairement.</div></div></div>
+                <div class="help-step"><span class="help-step-num">6</span><div class="help-step-body"><div class="help-step-title">Valider la numérotation des séries</div><div class="help-step-text">Contrôlez la colonne <strong>Numbering</strong>. Confirmez les mappings en <strong>Review</strong>, relancez une détection si nécessaire, puis choisissez le mode Jellyfin <strong>Local</strong> ou <strong>TMDB</strong>.</div></div></div>
+                <div class="help-step"><span class="help-step-num">7</span><div class="help-step-body"><div class="help-step-title">Prévisualiser le renommage</div><div class="help-step-text"><strong>Rename matched</strong> montre les déplacements avant application. Les runs peuvent être annulés en CLI si nécessaire.</div></div></div>
+                <div class="help-step"><span class="help-step-num">8</span><div class="help-step-body"><div class="help-step-title">Préparer les intents</div><div class="help-step-text"><strong>Preview movie releases</strong> inspecte les films sans rien modifier. <strong>Prepare episode intents</strong> et <strong>Prepare movie intents</strong> créent les intents sans lancer de téléchargement.</div></div></div>
+                <div class="help-step"><span class="help-step-num">9</span><div class="help-step-body"><div class="help-step-title">Lancer ou laisser faire le worker</div><div class="help-step-text"><strong>Run download automation</strong> prépare puis résout et met en file les deux types. Sinon, activez les auto-downloads et laissez le worker travailler.</div></div></div>
+                <div class="help-step"><span class="help-step-num">10</span><div class="help-step-body"><div class="help-step-title">Surveiller puis lire</div><div class="help-step-text">Suivez <strong>Activity</strong> et <strong>Queue</strong>. Une fois les fichiers indexés, la passerelle Jellyfin les expose à Nuvio en direct play.</div></div></div>
+            </div>
+
+            <div class="help-callout">
+                <strong>Un dry-run doit être validé pour chaque source.</strong> Le worker ne crée pas d’intents automatiques sur une source dont le dernier dry-run n’a pas réussi. Le dry-run est aussi ce qui met à jour les compteurs de présence et de manque.
+            </div>
+
+            <h3>Library Browser et renommage</h3>
+            <p class="help-text">Le <strong>Library Browser</strong> montre l’index réel : vue <strong>Flat</strong>, arborescence <strong>Folders</strong> ou grille <strong>Discovery</strong>. Les groupes ambigus passent par <strong>Needs attention</strong>. Avant tout déplacement, <strong>Rename matched</strong> affiche les fichiers sources, les cibles, les conflits et les fichiers ignorés.</p>
+
+            <figure class="help-figure">
+                <a href="/help/automation/library-discovery.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/library-discovery.webp" alt="Library Browser en vue Discovery avec les affiches et les états de matching" loading="lazy" decoding="async">
+                </a>
+                <figcaption>La vue Discovery enrichit l’index avec les métadonnées TMDB. Les affiches sont floutées dans cette capture de documentation.</figcaption>
+            </figure>
+
+            <figure class="help-figure">
+                <a href="/help/automation/rename-preview.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/rename-preview.webp" alt="Preview de renommage avec les chemins source et cible" loading="lazy" decoding="async">
+                </a>
+                <figcaption>La preview de renommage est obligatoire avant application : elle montre les mouvements, les conflits et les fichiers exclus.</figcaption>
+            </figure>
+
+            <figure class="help-figure">
+                <a href="/help/automation/overview.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/overview.webp" alt="Vue d’ensemble Automations avec l’état du worker et les dernières activités" loading="lazy" decoding="async">
+                </a>
+                <figcaption>L’overview donne l’état du worker, le heartbeat, les derniers runs et les alertes. C’est le point de départ pour savoir si la boucle tourne.</figcaption>
+            </figure>
+
+            <figure class="help-figure">
+                <a href="/help/automation/connected-lists.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/connected-lists.webp" alt="Connected Lists avec les sources et le bouton Dry-run all sources" loading="lazy" decoding="async">
+                </a>
+                <figcaption>Connected Lists rassemble les sources, leur état de connexion et les dry-runs. <strong>Queue missing episodes</strong> prépare les épisodes sans les télécharger.</figcaption>
+            </figure>
+
+            <figure class="help-figure">
+                <a href="/help/automation/dry-run-results.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/dry-run-results.webp" alt="Résultats de dry-run avec statuts, épisodes manquants et numérotation" loading="lazy" decoding="async">
+                </a>
+                <figcaption>Les résultats montrent les films et séries présents, manquants ou ambigus, ainsi que les épisodes manquants et l’état de numérotation.</figcaption>
+            </figure>
+
+            <figure class="help-figure">
+                <a href="/help/automation/download-automations.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/download-automations.webp" alt="Download Automations avec les intents films et séries, les filtres et le bouton Sources" loading="lazy" decoding="async">
+                </a>
+                <figcaption>Download Automations pilote les intents. Les filtres Type, Season et Source permettent de retrouver rapidement un film ou un épisode.</figcaption>
+            </figure>
+
+            <figure class="help-figure">
+                <a href="/help/automation/intent-sources.webp" target="_blank" rel="noopener">
+                    <img src="/help/automation/intent-sources.webp" alt="Dialogue Sources d’un intent avec les candidats acceptés et filtrés" loading="lazy" decoding="async">
+                </a>
+                <figcaption>Le dialogue Sources montre les candidats, leur score, leur cache et les raisons de filtrage. Choisir une source manuellement contourne volontairement le profil qualité.</figcaption>
+            </figure>
+        </section>
+
+        <section class="help-section" id="series">
+            <h2>Séries et numérotation</h2>
+            <p class="help-lead">Le découpage TMDB n’est pas toujours celui des releases ni celui de vos fichiers. Un anime peut être exposé en <code>1×47</code> par TMDB alors que les releases utilisent <code>S01 24 + S02 23</code>. Automations conserve cette correspondance pour ne pas télécharger le mauvais épisode.</p>
+
+            <div class="help-grid two">
+                <div class="help-card">
+                    <div class="help-card-title"><span class="help-icon">T</span>Numérotation TMDB</div>
+                    <p>La référence canonique utilisée pour le matching, les listes, les épisodes manquants et les fiches. C’est elle qui définit <code>missing_json</code>.</p>
+                </div>
+                <div class="help-card">
+                    <div class="help-card-title"><span class="help-icon">L</span>Numérotation locale</div>
+                    <p>La numérotation d’acquisition utilisée par les addons, les releases et éventuellement les fichiers locaux. Elle peut être exposée à Jellyfin sans déplacer les fichiers.</p>
+                </div>
+            </div>
+
+            <ul class="help-list">
+                <li><strong>Detect numbering</strong> interroge les providers (AIOMetadata, puis Cinemeta et TVmaze) et stocke les segments détectés.</li>
+                <li><strong>Mapped</strong> indique une correspondance exploitable. <strong>Review</strong> signale une confiance inférieure à 75 % : confirmez avec <strong>Confirm mapping</strong> avant de l’utiliser.</li>
+                <li><strong>Ambiguous</strong> signifie que le mapping n’est pas sûr. Aucun intent épisode n’est créé automatiquement tant que la situation n’est pas clarifiée.</li>
+                <li><strong>Re-detect</strong> relance la détection après un changement de provider ou une correction de métadonnées.</li>
+                <li><strong>Jellyfin Local / TMDB</strong> choisit la numérotation exposée par la passerelle. Les fichiers ne sont pas renommés par ce réglage.</li>
+            </ul>
+
+            <div class="help-status-flow" aria-label="Cycle d’un intent">
+                <span class="help-status">pending</span><span class="help-status-arrow">→</span>
+                <span class="help-status">resolving</span><span class="help-status-arrow">→</span>
+                <span class="help-status">queued</span><span class="help-status-arrow">→</span>
+                <span class="help-status">downloading</span><span class="help-status-arrow">→</span>
+                <span class="help-status ok">success</span>
+                <span class="help-status-arrow">/</span>
+                <span class="help-status bad">error</span>
+                <span class="help-status-arrow">/</span>
+                <span class="help-status warn">no_source</span>
+            </div>
+
+            <div class="help-callout warning">
+                <strong>Packs et multi-épisodes.</strong> Un pack de saison n’est pas téléchargé en bloc. Downloader cherche le fichier qui correspond exactement à l’épisode demandé ; sans correspondance, l’intent est parqué. Les multi-épisodes comme <code>S01E01E02</code> restent ambigus et ne sont pas utilisés automatiquement.
+            </div>
+        </section>
+
+        <section class="help-section" id="statuts">
+            <h2>Statuts des intents</h2>
+            <p class="help-text">Un intent représente un film ou un épisode. Son statut indique où il en est ; les actions disponibles dépendent de l’état.</p>
+            <div class="help-table-wrap">
+                <table class="help-table">
+                    <thead><tr><th>Statut</th><th>Signification</th><th>Action utile</th></tr></thead>
+                    <tbody>
+                        <tr><td>pending</td><td>En attente de traitement par le worker ou d’un run manuel.</td><td>Attendre, ou lancer un run.</td></tr>
+                        <tr><td>resolving</td><td>Recherche d’identité ou de sources en cours.</td><td>Attendre ; le worker récupère les intents stale.</td></tr>
+                        <tr><td>queued</td><td>Release envoyée dans la file de téléchargement.</td><td><strong>View queue</strong>.</td></tr>
+                        <tr><td>downloading</td><td>Téléchargement en cours.</td><td>Suivre la Queue.</td></tr>
+                        <tr><td>success</td><td>Intent terminé et fichier récupéré.</td><td>Vérifier l’index et la lecture Jellyfin.</td></tr>
+                        <tr><td>error</td><td>Échec après résolution ou téléchargement.</td><td><strong>Sources</strong>, puis <strong>Retry</strong> ; consulter l’erreur.</td></tr>
+                        <tr><td>no_source</td><td>Aucune source ne correspond au profil ou aux addons.</td><td><strong>Sources</strong> pour inspecter les candidats, puis <strong>Retry</strong>.</td></tr>
+                        <tr><td>ignored</td><td>Intent exclu volontairement de l’automatisation.</td><td><strong>Restore</strong> pour le réactiver.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="help-text"><strong>Sources</strong> affiche la fiche, les streams et les raisons d’acceptation ou de filtrage. <strong>Queue anyway</strong> est un choix explicite : il contourne les filtres du profil qualité et ne doit servir qu’en dernier recours.</p>
+        </section>
+
+        <section class="help-section" id="securite">
+            <h2>Sécurité et garde-fous</h2>
+            <ul class="help-list">
+                <li><strong>Queue guard</strong> : l’automatisation s’arrête dès que la file atteint le seuil configuré.</li>
+                <li><strong>Déduplication</strong> par TMDB/IMDb, saison et épisode, et vérification de la file existante.</li>
+                <li><strong>Retries avec backoff</strong> et nombre de tentatives plafonné.</li>
+                <li><strong>Intégrité des téléchargements</strong> : les pages HTML, fichiers trop petits, contenus incomplets ou tailles incohérentes sont refusés.</li>
+                <li><strong>Quarantaine</strong> : un fichier invalide peut être renommé en <code>.invalid-&lt;date&gt;</code>, jamais supprimé.</li>
+                <li><strong>Aucune suppression de fichiers du NAS</strong> : les opérations de maintenance agissent sur l’index, pas sur vos médias.</li>
+                <li><strong>CSRF, SSRF, sessions et secrets</strong> : les routes qui modifient l’état sont protégées, les URLs d’addons sont validées, les sessions expirent et les journaux sont nettoyés.</li>
+            </ul>
+            <div class="help-callout">
+                <strong>Le choix manuel d’une source est assumé.</strong> Il est utile quand une release est valide mais mal notée par le profil. Il contourne les filtres qualité : à utiliser en connaissance de cause.
+            </div>
+        </section>
+
+        <section class="help-section" id="depannage">
+            <h2>Dépannage</h2>
+            <div class="help-table-wrap">
+                <table class="help-table">
+                    <thead><tr><th>Symptôme</th><th>À vérifier / faire</th></tr></thead>
+                    <tbody>
+                        <tr><td>Worker offline</td><td>Vérifier que le conteneur tourne et que le worker supervisor est actif. L’overview affiche le dernier heartbeat.</td></tr>
+                        <tr><td>Rien n’est manquant</td><td>Lancer un dry-run, vérifier que la source est active, que les listes sont sélectionnées et que la racine NAS est montée.</td></tr>
+                        <tr><td>Tout est ambigu</td><td>Vérifier la clé TMDB, corriger avec <strong>Fix match</strong>, contrôler le nommage des dossiers et des fichiers.</td></tr>
+                        <tr><td>Numérotation en Review / Ambiguous</td><td>Cliquer sur <strong>Confirm mapping</strong> ou <strong>Re-detect</strong>. Vérifier la source et la confiance affichées.</td></tr>
+                        <tr><td>Aucun intent auto créé</td><td>Le dry-run doit être validé, la case d’auto-download doit être cochée et le queue guard ne doit pas être atteint.</td></tr>
+                        <tr><td>no_source / error</td><td>Ouvrir <strong>Sources</strong>, vérifier les addons, Alldebrid et les filtres du profil. Utiliser <strong>Retry</strong> après correction.</td></tr>
+                        <tr><td>Un fichier « success » est invalide</td><td><code>app:release-verify-downloads --apply --quarantine</code> renomme le fichier invalide et remet l’intent en attente.</td></tr>
+                        <tr><td>Jellyfin est vide</td><td>Lancer un scan, activer la passerelle, définir un mot de passe Jellyfin non vide et utiliser <code>/jellyfin</code> dans Nuvio.</td></tr>
+                        <tr><td>Fichiers déplacés manuellement</td><td><code>app:library-reconcile-missing --all --dry-run</code>, puis sans <code>--dry-run</code> pour marquer les entrées manquantes.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="help-section" id="cli">
+            <h2>Commandes avancées</h2>
+            <p class="help-text">Les commandes ci-dessous s’exécutent dans le conteneur ou via <code>docker exec</code>. Elles sont utiles pour forcer une tâche, diagnostiquer ou réparer un index.</p>
+            <div class="help-table-wrap">
+                <table class="help-table">
+                    <thead><tr><th>Commande</th><th>Usage</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>app:library-scan</code></td><td>Force un scan de la bibliothèque.</td></tr>
+                        <tr><td><code>app:library-resolve</code></td><td>Relance la résolution TMDB/IMDb.</td></tr>
+                        <tr><td><code>app:library-title-refresh</code></td><td>Rafraîchit les titres films dans la langue configurée.</td></tr>
+                        <tr><td><code>app:library-reconcile-missing</code></td><td>Marque les fichiers absents. Options : <code>--root=movies,series</code>, <code>--all</code>, <code>--dry-run</code>.</td></tr>
+                        <tr><td><code>app:library-rename-undo</code></td><td>Prévisualise ou annule un run de renommage. Options : <code>--run=ID</code>, <code>--apply</code>.</td></tr>
+                        <tr><td><code>app:series-numbering</code></td><td>Détecte ou rafraîchit la numérotation. Options : <code>--tmdb=</code>, <code>--imdb=</code>, <code>--refresh</code>, <code>--limit=</code>.</td></tr>
+                        <tr><td><code>app:automation-worker</code></td><td>Lance le worker. Options : <code>--once</code>, <code>--force-scan</code>, <code>--root=</code>.</td></tr>
+                        <tr><td><code>app:lists-sync</code></td><td>Force un dry-run des listes.</td></tr>
+                        <tr><td><code>app:release-dry-run</code></td><td>Prévisualise la sélection des releases films.</td></tr>
+                        <tr><td><code>app:release-intents</code></td><td>Traite les intents. Options : <code>--queue</code>, <code>--episodes</code>, <code>--run</code>, <code>--auto</code>, <code>--max=</code>.</td></tr>
+                        <tr><td><code>app:release-intents-reconcile</code></td><td>Supprime les intents qui ne sont plus demandés par une source active.</td></tr>
+                        <tr><td><code>app:release-verify-downloads</code></td><td>Vérifie les succès. <code>--apply</code> exige <code>--quarantine</code> ; option <code>--limit=</code>.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="help-section" id="limites">
+            <h2>Limites assumées</h2>
+            <ul class="help-list">
+                <li>Les <strong>packs de saison</strong> ne sont pas téléchargés en bloc : seul un fichier correspondant exactement à l’épisode est accepté.</li>
+                <li>Les <strong>multi-épisodes</strong> restent ambigus et ne sont pas queue ni téléchargés automatiquement.</li>
+                <li>Une <strong>numérotation ambiguë</strong> doit être confirmée manuellement avant d’être utilisée.</li>
+                <li>La passerelle Jellyfin est en <strong>lecture seule</strong> et en <strong>direct play</strong> : pas de transcodage HLS.</li>
+                <li>La passerelle expose la vidéo, pas la musique, et ne gère pas les collections/boxsets.</li>
+                <li>Aucun fallback hors profil qualité : mieux vaut ne rien télécharger que télécharger mal. Le choix manuel via <strong>Sources</strong> est l’exception explicite.</li>
+                <li>Aucun fichier du NAS n’est supprimé par l’automatisation.</li>
+            </ul>
+            <p class="help-text">Pour les cas où un fichier a été déplacé ou supprimé hors de l’application, utilisez les commandes de réconciliation et de vérification plutôt que de modifier l’index à la main.</p>
+            <a class="help-back" href="#">↑ Revenir en haut</a>
+        </section>
+    </div>
+</div>
+{% endblock %}

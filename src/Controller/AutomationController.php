@@ -61,6 +61,12 @@ class AutomationController extends AbstractController
         ]);
     }
 
+    #[Route('/automation/help', name: 'automation_help', methods: ['GET'])]
+    public function help(): Response
+    {
+        return $this->render('automation/help.html.twig');
+    }
+
     #[Route('/automation/activity', name: 'automation_activity', methods: ['GET'])]
     public function activity(
         AutomationStore $store,

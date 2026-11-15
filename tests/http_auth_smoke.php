@@ -119,7 +119,7 @@ if ($probe['status'] === 0) {
 check($probe['status'] === 200, 'login page is reachable', $probe['status']);
 
 echo "Protected GET pages\n";
-$protectedPages = ['/', '/config', '/automation', '/automation/downloads', '/media', '/history', '/queue', '/logs', '/debug-storage'];
+$protectedPages = ['/', '/config', '/automation', '/automation/help', '/automation/downloads', '/media', '/history', '/queue', '/logs', '/debug-storage'];
 foreach ($protectedPages as $path) {
     $response = httpRequest('GET', urlFor($baseUrl, $path));
     check(redirectsToLogin($response), 'protected GET redirects to login: ' . $path, [$response['status'], $response['location']]);
