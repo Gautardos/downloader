@@ -65,7 +65,8 @@
             "@auto-scripts"
         ],
         "test:automation": "php tests/automation_smoke.php",
-        "test:jellyfin": "php tests/jellyfin_smoke.php"
+        "test:jellyfin": "php tests/jellyfin_smoke.php",
+        "test:security": "php tests/session_secrets_smoke.php"
     },
     "conflict": {
         "symfony/symfony": "*"

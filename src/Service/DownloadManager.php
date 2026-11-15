@@ -192,7 +192,12 @@ class DownloadManager
 
     private function getStatusFile(string $downloadId): string
     {
-        return $this->storage->getStorageDir() . '/progress_' . $downloadId . '.json';
+        $file = $this->storage->getStorageDir() . '/progress_' . $downloadId . '.json';
+        if (is_file($file)) {
+            @chmod($file, 0600);
+        }
+
+        return $file;
     }
 
     private function updateProgress(string $downloadId, array $data): void
@@ -200,6 +205,7 @@ class DownloadManager
         $file = $this->getStatusFile($downloadId);
         $data['last_update'] = time(); // Heartbeat for mutex
         file_put_contents($file, json_encode($data));
+        @chmod($file, 0600);
     }
 
     private function parseContentLength(array $headers): int

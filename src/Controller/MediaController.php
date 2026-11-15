@@ -23,7 +23,7 @@ class MediaController extends AbstractController
         return $this->render('media/index.html.twig', [
             'trending' => $tmdbConfigured ? $tmdb->trending() : [],
             'tmdb_configured' => $tmdbConfigured,
-            'tmdb_api_key' => (string) ($config['tmdb_api_key'] ?? ''),
+            'tmdb_key_saved' => trim((string) ($config['tmdb_api_key'] ?? '')) !== '',
             'tmdb_language' => (string) ($config['tmdb_language'] ?? 'fr-FR'),
             'media_addons' => $addons->getAddons(),
             'default_path' => (string) ($config['default_path'] ?? '/nas/'),
@@ -299,7 +299,15 @@ class MediaController extends AbstractController
 
         $config = $storage->get('config', []);
         $previous = $config;
+        $currentKey = trim((string) ($config['tmdb_api_key'] ?? ''));
         $key = trim((string) ($data['tmdb_api_key'] ?? ''));
+        $clearKey = !empty($data['clear_tmdb_api_key']);
+        if ($clearKey) {
+            $key = '';
+        } elseif ($key === '') {
+            $key = $currentKey;
+        }
+
         $language = (string) ($data['tmdb_language'] ?? 'fr-FR');
         if (!in_array($language, ['fr-FR', 'en-US', 'en-GB', 'es-ES', 'de-DE', 'it-IT', 'pt-BR'], true)) {
             $language = 'fr-FR';
@@ -309,7 +317,7 @@ class MediaController extends AbstractController
         $config['tmdb_language'] = $language;
         $storage->set('config', $config);
 
-        if ($key !== '' && !$tmdb->testCredentials()) {
+        if ($key !== '' && $key !== $currentKey && !$tmdb->testCredentials()) {
             $storage->set('config', $previous);
             return $this->json(['success' => false, 'message' => 'TMDB rejected this API key. Settings were not saved.'], 422);
         }

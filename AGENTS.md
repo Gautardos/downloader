@@ -1509,6 +1509,8 @@ pendant le polling.
   (segments, intents release, résolution sur la saison release et affichage
   Jellyfin virtuel).
 - Lancement : `composer test:automation` ou `php tests/automation_smoke.php`.
+- `composer test:security` ou `php tests/session_secrets_smoke.php` : hashing
+  legacy, idle timeout, redaction des logs, permissions et secrets config.
 - Les tests de stockage nécessitent `pdo_sqlite` ; utiliser l'image Docker si
   le PHP local ne l'a pas.
 
@@ -1533,6 +1535,9 @@ pendant le polling.
 - Les notifications de release (no source, échec, interruption, disque plein)
   utilisent `server_notifications` et sont groupées par run ; aucun envoi
   externe n'est branché.
+- Les anciens journaux `var/storage/logs/history_*.log` peuvent contenir des
+  secrets historiques. Ils sont redacted à la lecture par les endpoints, mais
+  restent sensibles au repos : les purger ou les roter manuellement.
 - Le matching d'un item de liste ne résout pas automatiquement son identité
   TMDB : il s'appuie sur les IDs fournis par Scrob/MDBList ou sur le fallback
   titre/année de l'index.

@@ -3,14 +3,18 @@
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use App\Controller\ConfigController;
+use App\Controller\MediaController;
 use App\Service\AuthService;
 use App\Service\Automation\AutomationStore;
+use App\Service\DownloadManager;
 use App\Service\JsonStorage;
 use App\Service\Jellyfin\JellyfinAuthService;
 use App\Service\LogRedactor;
 use App\Service\PasswordService;
+use App\Service\TmdbService;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
@@ -69,6 +73,32 @@ function storageAt(string $dir): JsonStorage
     $property->setValue($storage, $dir);
 
     return $storage;
+}
+
+class SessionSecretsTestMediaController extends MediaController
+{
+    public array $lastJson = [];
+
+    protected function json(mixed $data, int $status = 200, array $headers = [], array $context = []): JsonResponse
+    {
+        $this->lastJson = [$data, $status];
+
+        return new JsonResponse($data, $status);
+    }
+}
+
+class SessionSecretsTestTmdb extends TmdbService
+{
+    public bool $accepted = true;
+
+    public function __construct()
+    {
+    }
+
+    public function testCredentials(): bool
+    {
+        return $this->accepted;
+    }
 }
 
 class SessionSecretsTestConfigController extends ConfigController
@@ -223,6 +253,59 @@ $configTemplate = file_get_contents(dirname(__DIR__) . '/templates/config/index.
 foreach (['api_key', 'openrouter_api_key', 'grok_api_key', 'spotify_client_secret', 'genius_api_token', 'lrclib_token', 'admin_password', 'jellyfin_password'] as $field) {
     check(!preg_match('/name="' . preg_quote($field, '/') . '"[^>]*value="\{\{/', $configTemplate), 'template does not prefill ' . $field);
 }
+
+echo "Media TMDB key
+";
+$mediaDir = tempDir('media-key-smoke');
+$mediaStorage = storageAt($mediaDir);
+$mediaStorage->set('config', ['tmdb_api_key' => 'old-tmdb', 'tmdb_language' => 'fr-FR']);
+$mediaController = new SessionSecretsTestMediaController();
+$tmdb = new SessionSecretsTestTmdb();
+$saveMedia = static function (array $data) use ($mediaController, $mediaStorage, $tmdb): void {
+    $request = Request::create(
+        '/media/settings',
+        'POST',
+        [],
+        [],
+        [],
+        ['CONTENT_TYPE' => 'application/json'],
+        json_encode($data)
+    );
+    $mediaController->settings($request, $mediaStorage, $tmdb);
+};
+$saveMedia(['tmdb_api_key' => '', 'tmdb_language' => 'fr-FR']);
+check((string) $mediaStorage->get('config')['tmdb_api_key'] === 'old-tmdb', 'blank TMDB key keeps existing value');
+$saveMedia(['tmdb_api_key' => 'new-tmdb', 'tmdb_language' => 'fr-FR']);
+check((string) $mediaStorage->get('config')['tmdb_api_key'] === 'new-tmdb', 'new TMDB key replaces saved value');
+$tmdb->accepted = false;
+$saveMedia(['tmdb_api_key' => 'bad-tmdb', 'tmdb_language' => 'fr-FR']);
+check((string) $mediaStorage->get('config')['tmdb_api_key'] === 'new-tmdb', 'rejected TMDB key is rolled back');
+$tmdb->accepted = true;
+$saveMedia(['tmdb_api_key' => '', 'clear_tmdb_api_key' => true, 'tmdb_language' => 'fr-FR']);
+check((string) $mediaStorage->get('config')['tmdb_api_key'] === '', 'explicit clear removes TMDB key');
+$mediaTemplate = file_get_contents(dirname(__DIR__) . '/templates/media/index.html.twig');
+check(!str_contains($mediaTemplate, 'savedTmdbApiKey'), 'media template no longer embeds saved TMDB key in JS');
+check(!str_contains($mediaTemplate, '{{ tmdb_api_key'), 'media template no longer renders TMDB key in HTML');
+removeTree($mediaDir);
+
+echo "Progress file permissions
+";
+$progressDir = tempDir('progress-perm-smoke');
+$progressStorage = storageAt($progressDir);
+$downloadManager = new DownloadManager($progressStorage);
+$updateProgress = new ReflectionMethod(DownloadManager::class, 'updateProgress');
+$updateProgress->setAccessible(true);
+$updateProgress->invoke($downloadManager, 'qa', ['status' => 'downloading']);
+$progressFile = $progressDir . '/progress_qa.json';
+check((fileperms($progressFile) & 0777) === 0600, 'progress file is 0600 after write');
+$oldProgress = $progressDir . '/progress_old.json';
+file_put_contents($oldProgress, '{}');
+chmod($oldProgress, 0644);
+$getStatusFile = new ReflectionMethod(DownloadManager::class, 'getStatusFile');
+$getStatusFile->setAccessible(true);
+$getStatusFile->invoke($downloadManager, 'old');
+check((fileperms($oldProgress) & 0777) === 0600, 'existing progress file is tightened on next access');
+removeTree($progressDir);
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);
