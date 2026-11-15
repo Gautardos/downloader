@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Service\AiService;
+use App\Service\CsrfTokenService;
 use App\Service\Automation\QueueSizeResolver;
 use App\Service\AlldebridService;
 use App\Service\DebridHistoryService;
@@ -10,6 +11,7 @@ use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
 use App\Service\QueueManager;
+use App\Service\ServerNotificationService;
 use App\Service\SpotifyService;
 use App\Service\SpotifyUserService;
 use App\Service\TorrentDbService;
@@ -561,17 +563,30 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/notifications-poll', name: 'notifications_poll', methods: ['GET'])]
-    public function notificationsPoll(JsonStorage $storage): Response
+    public function notificationsPoll(JsonStorage $storage, ServerNotificationService $notifications): Response
     {
-        $notifications = $storage->get('server_notifications', []);
+        return $this->json([
+            'notifications' => $notifications->all($storage),
+        ]);
+    }
 
-        // Clear them after reading
-        if (!empty($notifications)) {
-            $storage->set('server_notifications', []);
+    #[Route('/notifications-ack', name: 'notifications_ack', methods: ['POST'])]
+    public function notificationsAck(
+        Request $request,
+        JsonStorage $storage,
+        ServerNotificationService $notifications,
+        CsrfTokenService $csrf
+    ): Response {
+        if (!$csrf->isValid($request, $csrf->fromRequest($request))) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
         }
 
+        $payload = json_decode((string) $request->getContent(), true);
+        $ids = is_array($payload) && is_array($payload['ids'] ?? null) ? $payload['ids'] : [];
+
         return $this->json([
-            'notifications' => $notifications
+            'success' => true,
+            'acknowledged' => $notifications->acknowledge($storage, $ids),
         ]);
     }
 

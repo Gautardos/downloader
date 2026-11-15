@@ -3,31 +3,29 @@
 namespace App\Service\Automation;
 
 use App\Service\JsonStorage;
+use App\Service\ServerNotificationService;
 
 class AutomationNotifier
 {
     private JsonStorage $storage;
+    private ServerNotificationService $notifications;
 
-    public function __construct(JsonStorage $storage)
+    public function __construct(JsonStorage $storage, ?ServerNotificationService $notifications = null)
     {
         $this->storage = $storage;
+        $this->notifications = $notifications ?? new ServerNotificationService();
     }
 
     public function notify(string $type, string $message, string $action = '', string $item = '', string $mediaType = ''): void
     {
-        $notifications = $this->storage->get('server_notifications', []);
-        if (!is_array($notifications)) {
-            $notifications = [];
-        }
-        $notifications[] = [
+        $this->notifications->push($this->storage, [
             'type' => $type,
             'message' => $message,
             'action' => $action,
             'item' => $item,
             'media_type' => $mediaType,
             'time' => date('H:i:s'),
-        ];
-        $this->storage->set('server_notifications', array_values($notifications));
+        ]);
     }
 
     public function notifyIntentRun(array $stats, ?string $error = null): void

@@ -1319,6 +1319,7 @@
         const progressRouteTemplate = "{{ path('progress', {downloadId: '000000'}) }}";
         const queueStatusRoute = "{{ path('queue_status') }}";
         const queueRemoveRouteTemplate = "{{ path('queue_remove', {index: 'IDX'}) }}";
+        const notificationsAckRoute = "{{ path('notifications_ack') }}";
         const csrfToken = "{{ csrf_token|default('')|e('js') }}";
         window.csrfToken = csrfToken;
 
@@ -1672,39 +1673,80 @@
         document.addEventListener('DOMContentLoaded', () => {
             const logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
             const container = document.getElementById('notif-content');
-            if (logs.length > 0) {
+            if (logs.length > 0 && container) {
                 container.innerHTML = '';
                 logs.forEach(log => renderNotification(log, container));
             }
 
+            const seenNotificationsKey = 'notif_server_seen_ids';
             async function pollServerNotifications() {
-            try {
-                const res = await fetch("{{ path('notifications_poll') }}");
-                const data = await res.json();
-                if (data.notifications && data.notifications.length > 0) {
-                    data.notifications.forEach(notif => {
+                try {
+                    const res = await fetch("{{ path('notifications_poll') }}");
+                    const data = await res.json();
+                    const notifications = Array.isArray(data.notifications) ? data.notifications : [];
+                    if (notifications.length === 0) {
+                        return;
+                    }
+
+                    let seen = [];
+                    try {
+                        seen = JSON.parse(localStorage.getItem(seenNotificationsKey) || '[]');
+                    } catch (e) {
+                        seen = [];
+                    }
+                    const seenSet = new Set(seen.map(String));
+                    const ids = [];
+
+                    notifications.forEach(notif => {
+                        const id = String(notif.id || '');
+                        if (id && seenSet.has(id)) {
+                            ids.push(id);
+                            return;
+                        }
                         if (window.notify) {
                             window.notify(notif.type, notif);
                         }
+                        if (id) {
+                            seenSet.add(id);
+                            ids.push(id);
+                        }
                     });
+
+                    localStorage.setItem(seenNotificationsKey, JSON.stringify(Array.from(seenSet).slice(-500)));
+
+                    if (ids.length > 0) {
+                        await fetch(notificationsAckRoute, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': csrfToken
+                            },
+                            body: JSON.stringify({ csrf: csrfToken, ids })
+                        });
+                    }
+                } catch (e) {
+                    console.error("Failed to poll notifications", e);
                 }
-            } catch (e) {
-                console.error("Failed to poll notifications", e);
+            }
+
+        // Initialize
+        const tracker = document.getElementById('download-tracker');
+        const trackerToggle = document.getElementById('tracker-toggle-btn');
+        if (tracker && trackerToggle) {
+            if (localStorage.getItem('tracker_collapsed') === 'true') {
+                tracker.classList.add('collapsed');
+                trackerToggle.innerText = '▲';
+            } else {
+                tracker.classList.remove('collapsed');
+                trackerToggle.innerText = '▼';
             }
         }
 
-        // Initialize
-        if (localStorage.getItem('tracker_collapsed') === 'true') {
-            document.getElementById('download-tracker').classList.add('collapsed');
-            document.getElementById('tracker-toggle-btn').innerText = '▲';
-        } else {
-            document.getElementById('download-tracker').classList.remove('collapsed');
-            document.getElementById('tracker-toggle-btn').innerText = '▼';
-        }
-
+        {% if app.session and app.session.get('authenticated') %}
         syncWithServer();
         setInterval(syncWithServer, 3000);
         setInterval(pollServerNotifications, 5000);
+        {% endif %}
 
         if (Notification.permission === "granted") {
             const btn = document.getElementById('btn-browser-notif');

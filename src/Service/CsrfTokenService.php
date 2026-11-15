@@ -39,11 +39,14 @@ class CsrfTokenService
             }
         }
 
-        $payload = json_decode((string) $request->getContent(), true);
-        if (is_array($payload)) {
-            foreach (['csrf', '_token'] as $key) {
-                if (isset($payload[$key]) && is_string($payload[$key]) && $payload[$key] !== '') {
-                    return $payload[$key];
+        $contentType = strtolower((string) $request->headers->get('Content-Type', ''));
+        if (str_contains($contentType, 'application/json')) {
+            $payload = json_decode((string) $request->getContent(), true);
+            if (is_array($payload)) {
+                foreach (['csrf', '_token'] as $key) {
+                    if (isset($payload[$key]) && is_string($payload[$key]) && $payload[$key] !== '') {
+                        return $payload[$key];
+                    }
                 }
             }
         }

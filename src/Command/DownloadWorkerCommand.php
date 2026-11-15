@@ -6,6 +6,7 @@ use App\Service\Automation\ReleaseIntentService;
 use App\Service\DownloadManager;
 use App\Service\QueueManager;
 use App\Service\JsonStorage;
+use App\Service\ServerNotificationService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -24,18 +25,21 @@ class DownloadWorkerCommand extends Command
     private QueueManager $queueManager;
     private DownloadManager $downloadManager;
     private ReleaseIntentService $releaseIntents;
+    private ServerNotificationService $notifications;
     private string $projectDir;
 
     public function __construct(
         QueueManager $queueManager,
         DownloadManager $downloadManager,
         ReleaseIntentService $releaseIntents,
+        ServerNotificationService $notifications,
         string $projectDir
     ) {
         parent::__construct();
         $this->queueManager = $queueManager;
         $this->downloadManager = $downloadManager;
         $this->releaseIntents = $releaseIntents;
+        $this->notifications = $notifications;
         $this->projectDir = $projectDir;
     }
 
@@ -559,15 +563,13 @@ class DownloadWorkerCommand extends Command
 
     private function addServerNotification($storage, string $type, string $message, string $action = '', string $item = '', string $mediaType = ''): void
     {
-        $notifications = $storage->get('server_notifications', []);
-        $notifications[] = [
+        $this->notifications->push($storage, [
             'type' => $type,
             'message' => $message,
             'action' => $action,
             'item' => $item,
             'media_type' => $mediaType,
-            'time' => date('H:i:s')
-        ];
-        $storage->set('server_notifications', $notifications);
+            'time' => date('H:i:s'),
+        ]);
     }
 }
