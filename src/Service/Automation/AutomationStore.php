@@ -231,6 +231,11 @@ class AutomationStore
                 imdb_id TEXT NULL,
                 title TEXT NOT NULL,
                 year INTEGER NULL,
+                season INTEGER NULL,
+                episode INTEGER NULL,
+                release_season INTEGER NULL,
+                release_episode INTEGER NULL,
+                numbering_source TEXT NULL,
                 status TEXT NOT NULL DEFAULT \'pending\',
                 attempts INTEGER NOT NULL DEFAULT 0,
                 next_attempt_at TEXT NULL,
@@ -264,6 +269,28 @@ class AutomationStore
             )'
         );
 
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS series_numbering (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tmdb_id INTEGER NULL,
+                imdb_id TEXT NULL,
+                title TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT \'auto\',
+                source_ref TEXT NULL,
+                segments_json TEXT NULL,
+                mapping_json TEXT NULL,
+                confidence REAL NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT \'ok\',
+                reason TEXT NULL,
+                tmdb_snapshot_json TEXT NULL,
+                target_mode TEXT NOT NULL DEFAULT \'local\',
+                jellyfin_mode TEXT NOT NULL DEFAULT \'local\',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(tmdb_id)
+            )'
+        );
+
         $this->ensureColumn('scan_runs', 'warnings_json', 'TEXT NULL');
         $this->ensureColumn('library_entries', 'folder_path', 'TEXT NULL');
         $this->ensureColumn('library_entries', 'parser_version', 'INTEGER NOT NULL DEFAULT 0');
@@ -272,6 +299,11 @@ class AutomationStore
         $this->ensureColumn('library_entries', 'ignored_at', 'TEXT NULL');
         $this->ensureColumn('library_entries', 'resolved_at', 'TEXT NULL');
         $this->ensureColumn('library_entries', 'resolution_source', 'TEXT NULL');
+        $this->ensureColumn('intents', 'season', 'INTEGER NULL');
+        $this->ensureColumn('intents', 'episode', 'INTEGER NULL');
+        $this->ensureColumn('intents', 'release_season', 'INTEGER NULL');
+        $this->ensureColumn('intents', 'release_episode', 'INTEGER NULL');
+        $this->ensureColumn('intents', 'numbering_source', 'TEXT NULL');
 
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_library_media_key ON library_entries (media_key)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_library_title ON library_entries (title_normalized, year)');
@@ -292,13 +324,17 @@ class AutomationStore
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_list_items_tmdb ON list_items (tmdb_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_intents_media_key ON intents (media_key, status)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_intents_status ON intents (status, next_attempt_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_intents_type_status ON intents (media_type, status, next_attempt_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_intents_tmdb_episode ON intents (tmdb_id, season, episode)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_intents_updated ON intents (updated_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_intent_runs_status ON intent_runs (status, started_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_series_numbering_imdb ON series_numbering (imdb_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_series_numbering_status ON series_numbering (status)');
 
         // Recovery from the previous pending-based scan implementation.
         $pdo->exec('UPDATE library_entries SET status = \'active\' WHERE status = \'pending\'');
         $pdo->exec('UPDATE library_entries SET folder_path = CASE WHEN length(relative_path) > length(filename) + 1 THEN substr(relative_path, 1, length(relative_path) - length(filename) - 1) ELSE \'\' END WHERE folder_path IS NULL OR folder_path = \'\'');
-        $pdo->exec('PRAGMA user_version = 4');
+        $pdo->exec('PRAGMA user_version = 6');
 
         $this->initialized = true;
     }
@@ -510,6 +546,54 @@ class AutomationStore
         $stmt->execute([':root_key' => $rootKey]);
 
         return (int) $stmt->fetchColumn();
+    }
+
+    public function getActiveLibraryEntriesForRoots(?array $rootKeys = null): array
+    {
+        $this->initialize();
+        $sql = "SELECT id, root_key, path, title, season, episode, show_folder
+                FROM library_entries
+                WHERE status = 'active'";
+        $params = [];
+        if ($rootKeys !== null && $rootKeys !== []) {
+            $placeholders = [];
+            foreach (array_values($rootKeys) as $index => $rootKey) {
+                $key = ':root_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = (string) $rootKey;
+            }
+            $sql .= ' AND root_key IN (' . implode(', ', $placeholders) . ')';
+        }
+        $sql .= ' ORDER BY root_key, title, season, episode, id';
+        $stmt = $this->getPdo()->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll();
+    }
+
+    public function markLibraryEntriesMissing(array $ids): int
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids), static fn (int $id) => $id > 0));
+        if ($ids === []) {
+            return 0;
+        }
+        $this->initialize();
+        $placeholders = [];
+        $params = [':missing' => 'missing'];
+        foreach ($ids as $index => $id) {
+            $key = ':id_' . $index;
+            $placeholders[] = $key;
+            $params[$key] = $id;
+        }
+        $stmt = $this->getPdo()->prepare(
+            "UPDATE library_entries SET status = :missing WHERE id IN (" . implode(', ', $placeholders) . ") AND status = 'active'"
+        );
+
+        return $this->withRetry(function () use ($stmt, $params) {
+            $stmt->execute($params);
+
+            return $stmt->rowCount();
+        });
     }
 
     public function finishRootScan(string $rootKey, int $scanId): int
@@ -1361,6 +1445,46 @@ class AutomationStore
         return $stmt->fetchAll();
     }
 
+    public function markEntryMissingByPath(string $path): int
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare(
+            "UPDATE library_entries SET status = 'missing' WHERE path = :path AND status = 'active'"
+        );
+
+        return $this->withRetry(function () use ($stmt, $path) {
+            $stmt->execute([':path' => $path]);
+
+            return $stmt->rowCount();
+        });
+    }
+
+    public function getEntryById(int $id): ?array
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare(
+            "SELECT * FROM library_entries WHERE id = :id AND status = 'active' LIMIT 1"
+        );
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+
+        return $row === false ? null : $row;
+    }
+
+    public function getActiveEntriesByRoot(string $rootKey): array
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare(
+            "SELECT * FROM library_entries
+             WHERE root_key = :root_key
+               AND status = 'active'
+             ORDER BY title_normalized, year, season, episode, relative_path"
+        );
+        $stmt->execute([':root_key' => $rootKey]);
+
+        return $stmt->fetchAll();
+    }
+
     public function getLibraryEntries(array $filters = [], int $limit = 50, int $offset = 0): array
     {
         $this->initialize();
@@ -1436,6 +1560,11 @@ class AutomationStore
                 break;
         }
 
+        if (!empty($filters['root_key'])) {
+            $conditions[] = 'root_key = :root_key';
+            $params[':root_key'] = (string) $filters['root_key'];
+        }
+
         if (in_array($type, ['movie', 'series', 'anime'], true)) {
             $conditions[] = 'media_type = :media_type';
             $params[':media_type'] = $type;
@@ -1464,6 +1593,46 @@ class AutomationStore
         $stmt->execute();
 
         return $stmt->fetchAll();
+    }
+
+    public function getMoviesForTitleRefresh(int $limit = 5000): array
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare(
+            "SELECT id, tmdb_id, title, title_normalized, year, path
+             FROM library_entries
+             WHERE status IN ('active', 'missing')
+               AND media_type = 'movie'
+               AND tmdb_id IS NOT NULL
+               AND ignored_at IS NULL
+             ORDER BY id
+             LIMIT :limit"
+        );
+        $stmt->bindValue(':limit', max(1, min(10000, $limit)), PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+
+    public function updateEntryTitle(int $id, string $title, string $titleNormalized, ?int $year = null): void
+    {
+        $this->withRetry(function () use ($id, $title, $titleNormalized, $year) {
+            $stmt = $this->getPdo()->prepare(
+                'UPDATE library_entries
+                 SET title = :title,
+                     title_normalized = :title_normalized,
+                     year = COALESCE(:year, year),
+                     last_seen_at = :last_seen_at
+                 WHERE id = :id'
+            );
+            $stmt->execute([
+                ':id' => $id,
+                ':title' => $title,
+                ':title_normalized' => $titleNormalized,
+                ':year' => $year,
+                ':last_seen_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+            ]);
+        });
     }
 
     public function updateEntryPath(int $id, string $path, string $relativePath, string $filename, ?string $showFolder = null, ?string $title = null, ?int $year = null): void
@@ -1538,6 +1707,16 @@ class AutomationStore
                 ':error' => $error,
             ]);
         });
+    }
+
+    public function getRenameRun(int $id): ?array
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare('SELECT * FROM rename_runs WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
     }
 
     public function getRecentRenameRuns(int $limit = 10): array
@@ -2189,28 +2368,139 @@ class AutomationStore
         return (int) $stmt->fetchColumn() > 0;
     }
 
+    public function hasActiveEpisodeEntry(
+        ?int $tmdbId,
+        ?string $imdbId,
+        string $titleNormalized,
+        ?int $year,
+        int $season,
+        int $episode,
+        bool $includeIgnored = false
+    ): bool {
+        $this->initialize();
+        $clauses = [];
+        $params = [];
+        if ($tmdbId !== null && $tmdbId > 0) {
+            $clauses[] = 'tmdb_id = :tmdb_id';
+            $params[':tmdb_id'] = $tmdbId;
+        }
+        if ($imdbId !== null && $imdbId !== '') {
+            $clauses[] = 'imdb_id = :imdb_id';
+            $params[':imdb_id'] = $imdbId;
+        }
+        if ($titleNormalized !== '') {
+            $clause = 'title_normalized = :title_normalized';
+            $params[':title_normalized'] = $titleNormalized;
+            if ($year !== null) {
+                $clause .= ' AND (year = :year OR year IS NULL)';
+                $params[':year'] = $year;
+            }
+            $clauses[] = $clause;
+        }
+        if (empty($clauses)) {
+            return false;
+        }
+
+        $sql = "SELECT COUNT(*) FROM library_entries
+                WHERE status = 'active'
+                  AND media_type IN ('series', 'anime')
+                  AND season = :season
+                  AND episode = :episode
+                  AND COALESCE(confidence, 0) >= 0.8
+                  AND (parse_source IS NULL OR parse_source != 'multi_episode')
+                  AND (" . implode(' OR ', $clauses) . ')';
+        if (!$includeIgnored) {
+            $sql = str_replace("status = 'active'", "status = 'active' AND ignored_at IS NULL", $sql);
+        }
+        $params[':season'] = $season;
+        $params[':episode'] = $episode;
+
+        $stmt = $this->getPdo()->prepare($sql);
+        $stmt->execute($params);
+
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
+    public function getListEpisodeCounts(?string $sourceId = null): array
+    {
+        $this->initialize();
+        $sql = "SELECT
+                    COALESCE(SUM(episodes_present), 0) AS present,
+                    COALESCE(SUM(episodes_missing), 0) AS missing,
+                    COALESCE(SUM(episodes_total), 0) AS total
+                FROM list_items
+                WHERE status = 'active' AND media_type IN ('series', 'anime')";
+        $params = [];
+        if ($sourceId !== null && $sourceId !== '') {
+            $sql .= ' AND source_id = :source_id';
+            $params[':source_id'] = $sourceId;
+        }
+        $stmt = $this->getPdo()->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return [
+            'present' => (int) ($row['present'] ?? 0),
+            'missing' => (int) ($row['missing'] ?? 0),
+            'total' => (int) ($row['total'] ?? 0),
+        ];
+    }
+
     public function findExistingIntent(array $data): ?array
     {
         $this->initialize();
+        $mediaType = (string) ($data['media_type'] ?? 'movie');
+        $season = isset($data['season']) && $data['season'] !== '' ? (int) $data['season'] : null;
+        $episode = isset($data['episode']) && $data['episode'] !== '' ? (int) $data['episode'] : null;
+        $isEpisode = in_array($mediaType, ['series', 'anime', 'episode'], true) && $season !== null && $episode !== null;
+
         $clauses = ['media_key = :media_key'];
         $params = [':media_key' => (string) ($data['media_key'] ?? '')];
-        if (!empty($data['tmdb_id'])) {
-            $clauses[] = 'tmdb_id = :tmdb_id';
-            $params[':tmdb_id'] = (int) $data['tmdb_id'];
-        }
-        if (!empty($data['imdb_id'])) {
-            $clauses[] = 'imdb_id = :imdb_id';
-            $params[':imdb_id'] = (string) $data['imdb_id'];
-        }
-        $title = trim((string) ($data['title'] ?? ''));
-        if ($title !== '') {
-            $clause = 'title = :title';
-            $params[':title'] = $title;
-            if (!empty($data['year'])) {
-                $clause .= ' AND (year = :year OR year IS NULL)';
-                $params[':year'] = (int) $data['year'];
+
+        if ($isEpisode) {
+            if (!empty($data['tmdb_id'])) {
+                $clauses[] = '(tmdb_id = :episode_tmdb_id AND season = :episode_tmdb_season AND episode = :episode_tmdb_episode)';
+                $params[':episode_tmdb_id'] = (int) $data['tmdb_id'];
+                $params[':episode_tmdb_season'] = $season;
+                $params[':episode_tmdb_episode'] = $episode;
             }
-            $clauses[] = $clause;
+            if (!empty($data['imdb_id'])) {
+                $clauses[] = '(imdb_id = :episode_imdb_id AND season = :episode_imdb_season AND episode = :episode_imdb_episode)';
+                $params[':episode_imdb_id'] = (string) $data['imdb_id'];
+                $params[':episode_imdb_season'] = $season;
+                $params[':episode_imdb_episode'] = $episode;
+            }
+            $title = trim((string) ($data['title'] ?? ''));
+            if ($title !== '' && empty($data['tmdb_id']) && empty($data['imdb_id'])) {
+                $clause = '(title = :episode_title AND season = :episode_title_season AND episode = :episode_title_episode';
+                $params[':episode_title'] = $title;
+                $params[':episode_title_season'] = $season;
+                $params[':episode_title_episode'] = $episode;
+                if (!empty($data['year'])) {
+                    $clause .= ' AND (year = :episode_title_year OR year IS NULL)';
+                    $params[':episode_title_year'] = (int) $data['year'];
+                }
+                $clauses[] = $clause . ')';
+            }
+        } else {
+            if (!empty($data['tmdb_id'])) {
+                $clauses[] = 'tmdb_id = :tmdb_id';
+                $params[':tmdb_id'] = (int) $data['tmdb_id'];
+            }
+            if (!empty($data['imdb_id'])) {
+                $clauses[] = 'imdb_id = :imdb_id';
+                $params[':imdb_id'] = (string) $data['imdb_id'];
+            }
+            $title = trim((string) ($data['title'] ?? ''));
+            if ($title !== '') {
+                $clause = 'title = :title';
+                $params[':title'] = $title;
+                if (!empty($data['year'])) {
+                    $clause .= ' AND (year = :year OR year IS NULL)';
+                    $params[':year'] = (int) $data['year'];
+                }
+                $clauses[] = $clause;
+            }
         }
 
         $stmt = $this->getPdo()->prepare(
@@ -2220,6 +2510,119 @@ class AutomationStore
         $row = $stmt->fetch();
 
         return $row ?: null;
+    }
+
+    public function getSeriesNumbering(?int $tmdbId, ?string $imdbId = null): ?array
+    {
+        $this->initialize();
+        if ($tmdbId !== null && $tmdbId > 0) {
+            $stmt = $this->getPdo()->prepare('SELECT * FROM series_numbering WHERE tmdb_id = :tmdb_id LIMIT 1');
+            $stmt->execute([':tmdb_id' => $tmdbId]);
+        } elseif ($imdbId !== null && $imdbId !== '') {
+            $stmt = $this->getPdo()->prepare('SELECT * FROM series_numbering WHERE imdb_id = :imdb_id ORDER BY id DESC LIMIT 1');
+            $stmt->execute([':imdb_id' => $imdbId]);
+        } else {
+            return null;
+        }
+
+        return $this->hydrateSeriesNumbering($stmt->fetch() ?: null);
+    }
+
+    public function getAllSeriesNumbering(int $limit = 500): array
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare('SELECT * FROM series_numbering ORDER BY updated_at DESC, id DESC LIMIT :limit');
+        $stmt->bindValue(':limit', max(1, min(5000, $limit)), PDO::PARAM_INT);
+        $stmt->execute();
+
+        return array_values(array_map(fn ($row) => $this->hydrateSeriesNumbering($row), $stmt->fetchAll()));
+    }
+
+    public function saveSeriesNumbering(array $data): int
+    {
+        $this->initialize();
+        $tmdbId = !empty($data['tmdb_id']) ? (int) $data['tmdb_id'] : null;
+        $imdbId = trim((string) ($data['imdb_id'] ?? ''));
+        $existing = $this->getSeriesNumbering($tmdbId, $imdbId !== '' ? $imdbId : null);
+        $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $merged = array_merge([
+            'title' => '',
+            'source' => 'auto',
+            'source_ref' => null,
+            'segments' => [],
+            'mapping' => [],
+            'confidence' => 0,
+            'status' => 'ok',
+            'reason' => null,
+            'tmdb_snapshot' => [],
+            'target_mode' => 'local',
+            'jellyfin_mode' => 'local',
+        ], $existing ?? [], $data);
+        $payload = [
+            ':tmdb_id' => $tmdbId,
+            ':imdb_id' => $imdbId !== '' ? $imdbId : null,
+            ':title' => (string) ($merged['title'] ?? ''),
+            ':source' => (string) ($merged['source'] ?? 'auto'),
+            ':source_ref' => isset($merged['source_ref']) && $merged['source_ref'] !== '' ? (string) $merged['source_ref'] : null,
+            ':segments_json' => json_encode(is_array($merged['segments'] ?? null) ? $merged['segments'] : [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            ':mapping_json' => json_encode(is_array($merged['mapping'] ?? null) ? $merged['mapping'] : [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            ':confidence' => (float) ($merged['confidence'] ?? 0),
+            ':status' => (string) ($merged['status'] ?? 'ok'),
+            ':reason' => isset($merged['reason']) && $merged['reason'] !== '' ? (string) $merged['reason'] : null,
+            ':tmdb_snapshot_json' => json_encode(is_array($merged['tmdb_snapshot'] ?? null) ? $merged['tmdb_snapshot'] : [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            ':target_mode' => in_array((string) ($merged['target_mode'] ?? 'local'), ['local', 'tmdb'], true) ? (string) $merged['target_mode'] : 'local',
+            ':jellyfin_mode' => in_array((string) ($merged['jellyfin_mode'] ?? 'local'), ['local', 'tmdb'], true) ? (string) $merged['jellyfin_mode'] : 'local',
+            ':updated_at' => $now,
+        ];
+
+        return $this->withRetry(function () use ($payload, $existing, $now) {
+            if ($existing !== null) {
+                $sets = [];
+                foreach ($payload as $key => $value) {
+                    if ($key === ':updated_at') {
+                        continue;
+                    }
+                    $sets[] = substr($key, 1) . ' = ' . $key;
+                }
+                $sets[] = 'updated_at = :updated_at';
+                $stmt = $this->getPdo()->prepare('UPDATE series_numbering SET ' . implode(', ', $sets) . ' WHERE id = :id');
+                $params = $payload;
+                $params[':id'] = (int) $existing['id'];
+                $stmt->execute($params);
+
+                return (int) $existing['id'];
+            }
+
+            $stmt = $this->getPdo()->prepare(
+                'INSERT INTO series_numbering (
+                    tmdb_id, imdb_id, title, source, source_ref, segments_json, mapping_json,
+                    confidence, status, reason, tmdb_snapshot_json, target_mode, jellyfin_mode,
+                    created_at, updated_at
+                ) VALUES (
+                    :tmdb_id, :imdb_id, :title, :source, :source_ref, :segments_json, :mapping_json,
+                    :confidence, :status, :reason, :tmdb_snapshot_json, :target_mode, :jellyfin_mode,
+                    :created_at, :updated_at
+                )'
+            );
+            $params = $payload;
+            $params[':created_at'] = $now;
+            $stmt->execute($params);
+
+            return (int) $this->getPdo()->lastInsertId();
+        });
+    }
+
+    private function hydrateSeriesNumbering(?array $row): ?array
+    {
+        if (!$row) {
+            return null;
+        }
+        foreach (['segments_json' => 'segments', 'mapping_json' => 'mapping', 'tmdb_snapshot_json' => 'tmdb_snapshot'] as $column => $key) {
+            $decoded = json_decode((string) ($row[$column] ?? '[]'), true);
+            $row[$key] = is_array($decoded) ? $decoded : [];
+        }
+
+        return $row;
     }
 
     public function createIntent(array $data): array
@@ -2234,10 +2637,12 @@ class AutomationStore
         $stmt = $this->getPdo()->prepare(
             'INSERT INTO intents (
                 source_id, source_list_id, media_key, media_type, tmdb_id, imdb_id,
-                title, year, status, attempts, next_attempt_at, created_at, updated_at
+                title, year, season, episode, release_season, release_episode, numbering_source,
+                status, attempts, next_attempt_at, created_at, updated_at
             ) VALUES (
                 :source_id, :source_list_id, :media_key, :media_type, :tmdb_id, :imdb_id,
-                :title, :year, :status, 0, :next_attempt_at, :created_at, :updated_at
+                :title, :year, :season, :episode, :release_season, :release_episode, :numbering_source,
+                :status, 0, :next_attempt_at, :created_at, :updated_at
             )'
         );
         $id = $this->withRetry(function () use ($stmt, $data, $now) {
@@ -2250,6 +2655,11 @@ class AutomationStore
                 ':imdb_id' => !empty($data['imdb_id']) ? (string) $data['imdb_id'] : null,
                 ':title' => (string) ($data['title'] ?? ''),
                 ':year' => !empty($data['year']) ? (int) $data['year'] : null,
+                ':season' => isset($data['season']) && $data['season'] !== '' ? (int) $data['season'] : null,
+                ':episode' => isset($data['episode']) && $data['episode'] !== '' ? (int) $data['episode'] : null,
+                ':release_season' => isset($data['release_season']) && $data['release_season'] !== '' ? (int) $data['release_season'] : null,
+                ':release_episode' => isset($data['release_episode']) && $data['release_episode'] !== '' ? (int) $data['release_episode'] : null,
+                ':numbering_source' => isset($data['numbering_source']) && $data['numbering_source'] !== '' ? (string) $data['numbering_source'] : null,
                 ':status' => 'pending',
                 ':next_attempt_at' => $now,
                 ':created_at' => $now,
@@ -2275,7 +2685,8 @@ class AutomationStore
     {
         $allowed = [
             'source_id', 'source_list_id', 'media_key', 'media_type', 'tmdb_id', 'imdb_id',
-            'title', 'year', 'status', 'attempts', 'next_attempt_at', 'download_id',
+            'title', 'year', 'season', 'episode', 'release_season', 'release_episode', 'numbering_source',
+            'status', 'attempts', 'next_attempt_at', 'download_id',
             'info_hash', 'file_idx', 'selected_source', 'score', 'release_explanation',
             'error_message',
         ];
@@ -2356,6 +2767,8 @@ class AutomationStore
     {
         $status = (string) ($filters['status'] ?? 'all');
         $source = trim((string) ($filters['source'] ?? ''));
+        $type = (string) ($filters['type'] ?? 'all');
+        $season = $filters['season'] ?? null;
         $query = trim((string) ($filters['q'] ?? ''));
         $conditions = [];
         $params = [];
@@ -2367,6 +2780,14 @@ class AutomationStore
         if ($source !== '') {
             $conditions[] = 'source_id = :source_id';
             $params[':source_id'] = $source;
+        }
+        if (in_array($type, ['movie', 'series', 'anime'], true)) {
+            $conditions[] = 'media_type = :media_type';
+            $params[':media_type'] = $type;
+        }
+        if (is_numeric($season)) {
+            $conditions[] = 'season = :season';
+            $params[':season'] = (int) $season;
         }
         if ($query !== '') {
             $conditions[] = '(title LIKE :query OR media_key LIKE :query OR imdb_id LIKE :query OR CAST(tmdb_id AS TEXT) LIKE :query)';
@@ -2388,7 +2809,9 @@ class AutomationStore
                 SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
                 SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error,
                 SUM(CASE WHEN status = 'no_source' THEN 1 ELSE 0 END) AS no_source,
-                SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored
+                SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored,
+                SUM(CASE WHEN media_type = 'movie' THEN 1 ELSE 0 END) AS movies,
+                SUM(CASE WHEN media_type IN ('series', 'anime') THEN 1 ELSE 0 END) AS series
              FROM intents"
         )->fetch();
 
@@ -2402,6 +2825,8 @@ class AutomationStore
             'error' => (int) ($row['error'] ?? 0),
             'no_source' => (int) ($row['no_source'] ?? 0),
             'ignored' => (int) ($row['ignored'] ?? 0),
+            'movies' => (int) ($row['movies'] ?? 0),
+            'series' => (int) ($row['series'] ?? 0),
         ];
     }
 

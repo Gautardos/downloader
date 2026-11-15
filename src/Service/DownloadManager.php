@@ -134,13 +134,30 @@ class DownloadManager
             fclose($source);
             fclose($lastErrorDest = $dest);
 
-            // Sanity check (Alldebrid sometimes returns HTML errors as small files)
-            if ($bytes < 50000) {
-                $check = file_get_contents($filePath, false, null, 0, 100);
-                if (str_contains($check, '<html') || str_contains($check, '<!DOCTYPE')) {
-                    @unlink($filePath);
-                    throw new \Exception("Download resulted in an error page (expired link?).");
-                }
+            if ($bytes === false) {
+                @unlink($filePath);
+                throw new \Exception('Could not read the downloaded stream.');
+            }
+
+            $check = (string) @file_get_contents($filePath, false, null, 0, 512);
+            if (stripos($check, '<html') !== false || stripos($check, '<!DOCTYPE') !== false) {
+                @unlink($filePath);
+                throw new \Exception('Download resulted in an HTML error page (expired link?).');
+            }
+
+            if ($bytes < 1024 * 1024) {
+                @unlink($filePath);
+                throw new \Exception('Downloaded file is too small to be a video (' . $bytes . ' bytes).');
+            }
+
+            if ($headerTotal > 0 && $bytes < $headerTotal) {
+                @unlink($filePath);
+                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for ' . $headerTotal . ' expected.');
+            }
+
+            if ($expectedSize > 0 && $bytes < (int) round($expectedSize * 0.9)) {
+                @unlink($filePath);
+                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for an expected size of ' . $expectedSize . '.');
             }
 
             $duration = microtime(true) - $startTime;

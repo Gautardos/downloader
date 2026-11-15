@@ -559,6 +559,24 @@
             margin-left: 0.25rem;
         }
 
+        .tracker-activity-dot {
+            width: 8px;
+            height: 8px;
+            flex: 0 0 auto;
+            border-radius: 50%;
+            background: var(--success, #22c55e);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, .55);
+            animation: tracker-activity-pulse 1.4s ease-out infinite;
+        }
+        .tracker-activity-dot[hidden] {
+            display: none;
+        }
+        @keyframes tracker-activity-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); opacity: 1; }
+            70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); opacity: .55; }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); opacity: 1; }
+        }
+
         #tracker-toggle-btn {
             font-size: 0.7rem;
             color: var(--text-secondary);
@@ -703,8 +721,8 @@
                     <a href="{{ path('music_files') }}" class="{{ current_route == 'music_files' ? 'active' : '' }}">Music Downloads</a>
                     <a href="{{ path('torrent') }}" class="{{ current_route == 'torrent' ? 'active' : '' }}">Debrid</a>
                     <a href="{{ path('media_index') }}" class="{{ current_route == 'media_index' ? 'active' : '' }}">Discover</a>
-                    <a href="{{ path('automation') }}" class="{{ current_route starts with 'automation' ? 'active' : '' }}">Automations</a>
-                    <a href="{{ path('queue') }}" class="{{ current_route == 'queue' ? 'active' : '' }}">Queue</a>
+                    <a href="{{ path('automation') }}" class="{{ current_route starts with 'automation' ? 'active' : '' }}">Media Library</a>
+                    <a href="{{ path('queue') }}" class="{{ current_route == 'queue' ? 'active' : '' }}">Queue<span id="queue-nav-dot" class="nav-activity-dot" hidden aria-hidden="true"></span></a>
                     <a href="{{ path('history') }}" class="{{ current_route == 'history' ? 'active' : '' }}">History</a>
                     <a href="{{ path('config') }}" class="{{ current_route == 'config' ? 'active' : '' }}">Settings</a>
                 {% else %}
@@ -761,14 +779,15 @@
     <!-- Global Download Tracker -->
     {% if (hide_tracker is not defined or not hide_tracker) and (app.session and app.session.get('authenticated')) %}
     <div id="download-tracker" class="tracker-container collapsed">
-        <div class="tracker-header">
-            <div class="tracker-title" onclick="toggleTracker()">
+        <div class="tracker-header" onclick="toggleTracker()">
+            <div class="tracker-title">
                 <span class="tracker-icon">🚀</span>
                 <strong>Downloads</strong>
+                <span id="tracker-activity-dot" class="tracker-activity-dot" hidden aria-hidden="true"></span>
                 <span id="tracker-summary" class="tracker-summary">(0 active, 0 queued)</span>
             </div>
             <div class="tracker-controls">
-                <button id="tracker-toggle-btn" class="btn btn-secondary btn-icon" onclick="toggleTracker()">▼</button>
+                <button id="tracker-toggle-btn" class="btn btn-secondary btn-icon" type="button">▼</button>
             </div>
         </div>
         <div class="tracker-content">
@@ -860,6 +879,25 @@
         .nav-links a.logout-link {
             color: #f87171 !important;
             margin-left: 0.5rem;
+        }
+
+        .nav-activity-dot {
+            width: 7px;
+            height: 7px;
+            flex: 0 0 auto;
+            display: inline-block;
+            margin-left: .4rem;
+            vertical-align: middle;
+            border-radius: 50%;
+            background: var(--success, #22c55e);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, .55);
+            animation: nav-activity-pulse 1.4s ease-out infinite;
+        }
+        .nav-activity-dot[hidden] { display: none; }
+        @keyframes nav-activity-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); opacity: 1; }
+            70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); opacity: .55; }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); opacity: 1; }
         }
 
         .text-secondary {
@@ -1049,6 +1087,24 @@
             color: var(--text-primary) !important;
         }
 
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-secondary) !important;
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(148, 163, 184, 0.22);
+            color: var(--text-primary) !important;
+        }
+
+        .btn-sm {
+            padding: 0.45rem 0.7rem;
+            font-size: 0.75rem;
+            border-radius: 8px;
+        }
+
         .btn-warning {
             background: linear-gradient(135deg, var(--warning), #fbbf24);
             color: #1f1300;
@@ -1214,19 +1270,28 @@
 
         @media (max-width: 900px) {
             .nav-links {
-                width: 300px;
-                padding-top: 4.5rem;
+                width: min(320px, 86vw);
+                height: 100vh;
+                height: 100dvh;
+                max-height: 100vh;
+                max-height: 100dvh;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                padding: 4.5rem 0 max(1rem, env(safe-area-inset-bottom));
                 align-items: stretch;
+                justify-content: flex-start;
             }
 
             .nav-links a {
                 width: 100%;
-                padding: 1rem 1.25rem;
+                flex: 0 0 auto;
+                padding: .9rem 1.25rem;
                 margin: 0;
                 border-bottom: 1px solid var(--border);
                 border-radius: 0;
                 font-size: 1rem;
                 justify-content: flex-start;
+                gap: .6rem;
             }
 
             .nav-links a.logout-link {
@@ -1259,6 +1324,15 @@
         let serverQueue = [];
         let serverActiveTask = null;
 
+        function parseHumanSizeBytes(value) {
+            if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+            if (value === null || value === undefined || value === '') return 0;
+            const match = String(value).trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(B|KB|MB|GB|TB)?$/i);
+            if (!match) return 0;
+            const units = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+            return Math.round(parseFloat(match[1]) * (units[(match[2] || 'B').toUpperCase()] || 1));
+        }
+
         function toggleTracker() {
             const el = document.getElementById('download-tracker');
             el.classList.toggle('collapsed');
@@ -1270,6 +1344,19 @@
             const activeCount = serverActiveTask ? 1 : 0;
             const queuedCount = serverQueue.length;
             document.getElementById('tracker-summary').innerText = `(${activeCount} active, ${queuedCount} queued)`;
+            const dot = document.getElementById('tracker-activity-dot');
+            if (dot) dot.hidden = activeCount === 0;
+            updateQueueNavDot(activeCount, queuedCount);
+        }
+
+        function updateQueueNavDot(activeCount, queuedCount) {
+            const dot = document.getElementById('queue-nav-dot');
+            if (!dot) return;
+            const busy = activeCount > 0 || queuedCount > 0;
+            dot.hidden = !busy;
+            dot.title = activeCount > 0
+                ? 'Download in progress'
+                : (queuedCount > 0 ? queuedCount + ' queued' : '');
         }
 
         function renderQueue(queue) {
@@ -1355,10 +1442,8 @@
                 const typeLabel = (active.type || 'torrent').toUpperCase();
                 const isMusic = active.type === 'music';
                 const downloaded = Number(progress.downloaded || 0);
-                const total = Number(progress.total || 0) > 0 ? Number(progress.total) : Number(active.size || 0);
-                const percentage = Number(progress.total || 0) > 0
-                    ? Number(progress.percentage || 0)
-                    : (total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0);
+                const total = Number(progress.total || 0) > 0 ? Number(progress.total) : parseHumanSizeBytes(active.size);
+                const percentage = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
                 const hasTotal = total > 0;
                 const formatBytes = bytes => {
                     if (bytes >= 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
@@ -1367,10 +1452,13 @@
                     return bytes + ' B';
                 };
                 const percentLabel = hasTotal ? percentage + '%' : '—';
+                const sizeLabel = hasTotal
+                    ? formatBytes(downloaded) + ' / ' + formatBytes(total)
+                    : (downloaded > 0 ? formatBytes(downloaded) : '');
                 const statusLabel = isMusic
                     ? 'See Queue for full logs'
                     : (progress.status === 'downloading'
-                        ? (hasTotal ? 'Downloading...' : 'Downloading... ' + formatBytes(downloaded))
+                        ? 'Downloading...' + (sizeLabel ? ' ' + sizeLabel : '')
                         : 'Starting...');
 
                 list.innerHTML = `

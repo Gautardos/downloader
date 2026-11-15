@@ -32,6 +32,30 @@ class AutomationConfigurationController extends AbstractController
         ]);
     }
 
+    #[Route('/automation/config/metadata', name: 'automation_config_metadata', methods: ['POST'])]
+    public function saveMetadata(Request $request, AutomationSettings $settings): Response
+    {
+        $payload = $request->request->all();
+        $token = $payload['_token'] ?? $request->headers->get('X-Automation-Csrf');
+        if (!$this->isAutomationCsrfValid($request, is_string($token) ? $token : null)) {
+            $this->addFlash('error', 'Invalid security token. Please try again.');
+            return $this->redirectToRoute('automation_config');
+        }
+
+        $language = trim((string) ($payload['title_language'] ?? 'en-US'));
+        if (!preg_match('/^[a-z]{2}-[A-Z]{2}$/', $language)) {
+            $language = 'en-US';
+        }
+        $settings->save([
+            'metadata' => [
+                'title_language' => $language,
+            ],
+        ]);
+        $this->addFlash('success', 'Metadata title language saved.');
+
+        return $this->redirectToRoute('automation_config');
+    }
+
     private function profilePreviews(ReleasePreferenceService $preferences, array $profile): array
     {
         $fixtures = [
@@ -47,6 +71,13 @@ class AutomationConfigurationController extends AbstractController
         }
 
         return $previews;
+    }
+
+    private function isAutomationCsrfValid(Request $request, ?string $token): bool
+    {
+        $expected = $request->getSession()->get('automation_csrf_token');
+
+        return is_string($expected) && is_string($token) && $token !== '' && hash_equals($expected, $token);
     }
 
     private function getAutomationCsrfToken(Request $request): string

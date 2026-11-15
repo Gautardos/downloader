@@ -248,8 +248,15 @@ class ReleaseMetadataParser
         return null;
     }
 
-    private function parseCached(string $text): bool
+    private function parseCached(string $text): ?bool
     {
-        return preg_match('/\b(cached|cache|instant|⚡)\b/iu', $text) === 1;
+        if (preg_match('/\b(uncached|not\s+cached|no\s+cache)\b/iu', $text)) {
+            return false;
+        }
+        if (preg_match('/\b(cached|cache|instant|⚡)\b/iu', $text)) {
+            return true;
+        }
+
+        return null;
     }
 }

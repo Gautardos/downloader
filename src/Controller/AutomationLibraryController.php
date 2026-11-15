@@ -7,6 +7,7 @@ use App\Service\Automation\AutomationStore;
 use App\Service\Automation\LibraryIndexService;
 use App\Service\Automation\LibraryMetadataResolver;
 use App\Service\Automation\LibraryRenameService;
+use App\Service\Automation\LibraryTitleRefreshService;
 use App\Service\TmdbService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,7 +19,7 @@ class AutomationLibraryController extends AbstractController
     private const PER_PAGE = 50;
 
     #[Route('/automation/library', name: 'automation_library', methods: ['GET'])]
-    public function index(Request $request, AutomationStore $store, AutomationSettings $settings, LibraryRenameService $renameService, TmdbService $tmdb, LibraryMetadataResolver $metadataResolver, LibraryIndexService $libraryIndex): Response
+    public function index(Request $request, AutomationStore $store, AutomationSettings $settings, LibraryRenameService $renameService, TmdbService $tmdb, LibraryMetadataResolver $metadataResolver, LibraryIndexService $libraryIndex, LibraryTitleRefreshService $titleRefresh): Response
     {
         $filters = $this->normalizeFilters([
             'status' => $request->query->get('status', 'all'),
@@ -49,7 +50,7 @@ class AutomationLibraryController extends AbstractController
             $resolveRequested = false;
         }
 
-        $globalPlan = $renameService->preview([], 2000);
+        $globalPlan = $renameService->lightPreview([], 5000);
         $namingSummary = $this->summarizeNaming($globalPlan['items']);
 
         $entries = [];
@@ -93,10 +94,9 @@ class AutomationLibraryController extends AbstractController
                 $selectedFolderPath = '';
             }
 
-            foreach ($folderTree as $key => &$rootNode) {
-                $this->markOpenNodes($rootNode, $key === $selectedRootKey ? $selectedFolderPath : null);
+            if (empty($settings->getScanner()['full_folder_tree'])) {
+                $folderTree = $this->pruneFolderTreeForLazyLoad($folderTree);
             }
-            unset($rootNode);
         } elseif ($view === 'discovery') {
             $allEntries = $store->getLibraryEntries($filters, 2000, 0);
             $elements = [];
@@ -258,7 +258,28 @@ class AutomationLibraryController extends AbstractController
             'scan_requested_at' => $scanRequestedAt,
             'last_scan' => $lastScan,
             'running_scan' => $store->getRunningScan(),
+            'title_refresh' => $titleRefresh->getState(),
         ]);
+    }
+
+    #[Route('/automation/library/title-refresh', name: 'automation_library_title_refresh', methods: ['POST'])]
+    public function titleRefresh(Request $request, LibraryTitleRefreshService $titleRefresh): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $limit = isset($data['limit']) && is_numeric($data['limit']) ? (int) $data['limit'] : null;
+        $result = $titleRefresh->startBackgroundRefresh($limit);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 409);
+    }
+
+    #[Route('/automation/library/title-refresh/status', name: 'automation_library_title_refresh_status', methods: ['GET'])]
+    public function titleRefreshStatus(LibraryTitleRefreshService $titleRefresh): Response
+    {
+        return $this->json(['success' => true, 'title_refresh' => $titleRefresh->getState()]);
     }
 
     #[Route('/automation/library/folder/contents', name: 'automation_library_folder_contents', methods: ['POST'])]
@@ -313,7 +334,11 @@ class AutomationLibraryController extends AbstractController
                     'files' => 0,
                     'missing' => 0,
                     'matched' => 0,
+                    'has_children' => false,
                 ];
+            }
+            if (count($segments) > 1) {
+                $subfolders[$child]['has_children'] = true;
             }
             $subfolders[$child]['files']++;
             if (($entry['status'] ?? '') === 'missing') {
@@ -594,6 +619,18 @@ class AutomationLibraryController extends AbstractController
         return $tree;
     }
 
+    private function pruneFolderTreeForLazyLoad(array $tree): array
+    {
+        foreach ($tree as &$node) {
+            $node['has_children'] = !empty($node['children']);
+            $node['children'] = [];
+            $node['open'] = false;
+        }
+        unset($node);
+
+        return $tree;
+    }
+
     private function incrementFolderNode(array &$node, array $entry): void
     {
         $node['total_files']++;
@@ -681,7 +718,7 @@ class AutomationLibraryController extends AbstractController
     private function buildNamingMap(array $entries, LibraryRenameService $renameService): array
     {
         $namingMap = [];
-        $plan = $renameService->previewEntries($entries);
+        $plan = $renameService->lightPreviewEntries($entries);
         foreach ($plan['items'] as $item) {
             $entry = $item['entry'];
             $status = (string) $item['status'];

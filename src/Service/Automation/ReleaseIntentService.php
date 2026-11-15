@@ -13,6 +13,7 @@ class ReleaseIntentService
     private AutomationNotifier $notifier;
     private JsonStorage $storage;
     private string $projectDir;
+    private ?EpisodeNumberingService $numbering;
 
     public function __construct(
         AutomationStore $store,
@@ -20,7 +21,8 @@ class ReleaseIntentService
         ReleaseResolverService $resolver,
         AutomationNotifier $notifier,
         JsonStorage $storage,
-        string $projectDir
+        string $projectDir,
+        ?EpisodeNumberingService $numbering = null
     ) {
         $this->store = $store;
         $this->settings = $settings;
@@ -28,6 +30,7 @@ class ReleaseIntentService
         $this->notifier = $notifier;
         $this->storage = $storage;
         $this->projectDir = $projectDir;
+        $this->numbering = $numbering;
     }
 
     public function hasAutoDownloadSources(): bool
@@ -38,6 +41,21 @@ class ReleaseIntentService
             }
             $config = is_array($source['config'] ?? null) ? $source['config'] : [];
             if (!empty($config['auto_download'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function hasAutoDownloadSeriesSources(): bool
+    {
+        foreach ($this->settings->getSources() as $source) {
+            if (!is_array($source) || empty($source['enabled'])) {
+                continue;
+            }
+            $config = is_array($source['config'] ?? null) ? $source['config'] : [];
+            if (!empty($config['auto_download_series'])) {
                 return true;
             }
         }
@@ -159,9 +177,211 @@ class ReleaseIntentService
         ];
     }
 
+    public function queueMissingEpisodes(bool $autoOnly = false): array
+    {
+        $stats = [
+            'sources' => 0,
+            'created' => 0,
+            'existing' => 0,
+            'library_present' => 0,
+            'skipped' => 0,
+            'invalid' => 0,
+            'warnings' => [],
+        ];
+
+        $backfill = $this->settings->getBackfill();
+        $maxPerRun = max(1, min(500, (int) ($backfill['max_intents_per_run'] ?? 50)));
+        $queueGuard = max(1, (int) ($backfill['queue_guard'] ?? 20));
+        $queueDepth = $this->getQueueDepth();
+        if ($queueDepth >= $queueGuard) {
+            $stats['warnings'][] = 'Queue guard reached (' . $queueDepth . '/' . $queueGuard . '); episode intents were not created.';
+
+            return [
+                'success' => true,
+                'stats' => $stats,
+                'message' => $stats['warnings'][0],
+            ];
+        }
+
+        $excludeSpecials = (bool) ($this->settings->getBackfill()['exclude_specials'] ?? true);
+        $limitReached = false;
+
+        foreach ($this->settings->getSources() as $source) {
+            if ($limitReached) {
+                break;
+            }
+            if (!is_array($source) || empty($source['enabled'])) {
+                continue;
+            }
+            $sourceId = (string) ($source['id'] ?? $source['provider'] ?? '');
+            $config = is_array($source['config'] ?? null) ? $source['config'] : [];
+            if ($sourceId === '' || ($autoOnly && empty($config['auto_download_series']))) {
+                continue;
+            }
+            if (!$this->dryRunValidated($sourceId)) {
+                $stats['skipped']++;
+                $stats['warnings'][] = $sourceId . ': dry-run not validated, episodes skipped.';
+                continue;
+            }
+
+            $listIds = array_values(array_filter(array_map(
+                static fn ($value) => trim((string) $value),
+                is_array($config['list_ids'] ?? null) ? $config['list_ids'] : []
+            )));
+            $items = $this->store->getListItems([
+                'status' => 'missing',
+                'source' => $sourceId,
+                'type' => 'series',
+            ], 5000);
+            $stats['sources']++;
+
+            foreach ($items as $item) {
+                if ($limitReached) {
+                    break;
+                }
+                if (!empty($item['ignored_at']) || (string) ($item['match_status'] ?? '') !== 'missing') {
+                    $stats['skipped']++;
+                    continue;
+                }
+                $listRef = (string) ($item['list_ref'] ?? '');
+                if (!empty($listIds) && $listRef !== '' && !in_array($listRef, $listIds, true)) {
+                    $stats['skipped']++;
+                    continue;
+                }
+
+                $missing = json_decode((string) ($item['missing_json'] ?? '[]'), true);
+                if (!is_array($missing) || empty($missing)) {
+                    $stats['skipped']++;
+                    continue;
+                }
+
+                $tmdbId = !empty($item['tmdb_id']) ? (int) $item['tmdb_id'] : null;
+                $imdbId = trim((string) ($item['imdb_id'] ?? ''));
+                $title = trim((string) ($item['title'] ?? ''));
+                $year = !empty($item['year']) ? (int) $item['year'] : null;
+                $titleNormalized = trim((string) ($item['title_normalized'] ?? ''));
+                if ($titleNormalized === '') {
+                    $titleNormalized = $this->normalizeTitle($title);
+                }
+
+                $profile = null;
+                if ($this->numbering !== null && $tmdbId !== null) {
+                    $profile = $this->numbering->profileFor([
+                        'tmdb_id' => $tmdbId,
+                        'imdb_id' => $imdbId,
+                        'title' => $title,
+                        'year' => $year,
+                        'title_normalized' => $titleNormalized,
+                    ], false, true);
+                    if (!$this->numbering->isUsable($profile)) {
+                        $stats['skipped']++;
+                        $stats['warnings'][] = $title . ': series numbering unavailable, ambiguous or not confirmed, episodes skipped.';
+                        continue;
+                    }
+                }
+
+                foreach ($missing as $code) {
+                    if ($stats['created'] >= $maxPerRun) {
+                        $limitReached = true;
+                        $stats['warnings'][] = 'Maximum intents per run reached (' . $maxPerRun . '); remaining episodes were skipped.';
+                        break;
+                    }
+                    $parsed = $this->parseEpisodeCode((string) $code);
+                    if ($parsed === null) {
+                        $stats['invalid']++;
+                        continue;
+                    }
+                    [$season, $episode] = $parsed;
+                    if ($season <= 0 && $excludeSpecials) {
+                        $stats['skipped']++;
+                        continue;
+                    }
+
+                    $releaseSeason = $season;
+                    $releaseEpisode = $episode;
+                    $numberingSource = null;
+                    if ($profile !== null) {
+                        $acquisition = $this->numbering->acquisitionFor($profile, $season, $episode);
+                        if ($acquisition === null) {
+                            $stats['skipped']++;
+                            $stats['warnings'][] = $title . ': no release numbering for TMDB S' . str_pad((string) $season, 2, '0', STR_PAD_LEFT) . 'E' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT) . '.';
+                            continue;
+                        }
+                        $releaseSeason = $acquisition['season'];
+                        $releaseEpisode = $acquisition['episode'];
+                        $numberingSource = $acquisition['numbering_source'];
+                    }
+
+                    $libraryPresent = $this->store->hasActiveEpisodeEntry(
+                        $tmdbId,
+                        $imdbId !== '' ? $imdbId : null,
+                        $titleNormalized,
+                        $year,
+                        $releaseSeason,
+                        $releaseEpisode,
+                        true
+                    );
+                    if (!$libraryPresent && ($releaseSeason !== $season || $releaseEpisode !== $episode)) {
+                        $libraryPresent = $this->store->hasActiveEpisodeEntry(
+                            $tmdbId,
+                            $imdbId !== '' ? $imdbId : null,
+                            $titleNormalized,
+                            $year,
+                            $season,
+                            $episode,
+                            true
+                        );
+                    }
+                    if ($libraryPresent) {
+                        $stats['library_present']++;
+                        continue;
+                    }
+
+                    $result = $this->store->createIntent([
+                        'source_id' => $sourceId,
+                        'source_list_id' => $listRef,
+                        'media_key' => $this->episodeMediaKey($tmdbId, $imdbId, $titleNormalized, $year, $season, $episode),
+                        'media_type' => 'series',
+                        'tmdb_id' => $tmdbId,
+                        'imdb_id' => $imdbId !== '' ? $imdbId : null,
+                        'title' => $title,
+                        'year' => $year,
+                        'season' => $season,
+                        'episode' => $episode,
+                        'release_season' => $releaseSeason,
+                        'release_episode' => $releaseEpisode,
+                        'numbering_source' => $numberingSource,
+                    ]);
+
+                    if (($result['status'] ?? '') === 'inserted') {
+                        $stats['created']++;
+                    } else {
+                        $stats['existing']++;
+                    }
+                }
+            }
+        }
+
+        $message = sprintf(
+            '%d episode intent(s) created, %d already present, %d already in library, %d skipped, %d invalid.',
+            $stats['created'],
+            $stats['existing'],
+            $stats['library_present'],
+            $stats['skipped'],
+            $stats['invalid']
+        );
+        $this->log('Episode intent queueing: ' . $message);
+
+        return [
+            'success' => true,
+            'stats' => $stats,
+            'message' => $message,
+        ];
+    }
+
     public function autoQueueDue(int $intervalSeconds = 300): int
     {
-        if (!$this->hasAutoDownloadSources()) {
+        if (!$this->hasAutoDownloadSources() && !$this->hasAutoDownloadSeriesSources()) {
             return 0;
         }
         $last = (int) $this->store->getSetting('intents_auto_queue_last_at', 0);
@@ -169,9 +389,10 @@ class ReleaseIntentService
             return 0;
         }
         $this->store->setSetting('intents_auto_queue_last_at', time());
-        $result = $this->queueMissingMovies(true);
+        $movies = $this->queueMissingMovies(true);
+        $episodes = $this->queueMissingEpisodes(true);
 
-        return (int) ($result['stats']['created'] ?? 0);
+        return (int) ($movies['stats']['created'] ?? 0) + (int) ($episodes['stats']['created'] ?? 0);
     }
 
     public function shouldRunAutomatically(): bool
@@ -188,7 +409,7 @@ class ReleaseIntentService
         if ($this->isRunRequested()) {
             return true;
         }
-        if (!$this->hasAutoDownloadSources()) {
+        if (!$this->hasAutoDownloadSources() && !$this->hasAutoDownloadSeriesSources()) {
             return false;
         }
         $intentSettings = $this->settings->getIntentSettings();
@@ -339,7 +560,7 @@ class ReleaseIntentService
         } catch (\Throwable $e) {
             $stats['duration'] = round(microtime(true) - $started, 2);
             $this->store->finishIntentRun($runId, $stats, 'error', $e->getMessage());
-            $this->notifier->notifyProblem('Movie automation run failed: ' . $e->getMessage(), '', 'error');
+            $this->notifier->notifyProblem('Automation run failed: ' . $e->getMessage(), '', 'error');
             $this->store->setSetting('intent_run_requested', false);
 
             return ['success' => false, 'stats' => $stats, 'run_id' => $runId, 'message' => $e->getMessage()];
@@ -373,6 +594,17 @@ class ReleaseIntentService
             return;
         }
 
+        $mediaType = (string) ($intent['media_type'] ?? 'movie');
+        $isSeries = in_array($mediaType, ['series', 'anime'], true);
+        $label = trim((string) ($intent['title'] ?? $item['filename'] ?? 'Unknown'));
+        if ($isSeries) {
+            $season = isset($intent['season']) ? (int) $intent['season'] : null;
+            $episode = isset($intent['episode']) ? (int) $intent['episode'] : null;
+            if ($season !== null && $episode !== null) {
+                $label = trim($label . ' ' . $this->episodeCode($season, $episode));
+            }
+        }
+
         if ($status === 'success') {
             $this->store->updateIntent($id, [
                 'status' => 'success',
@@ -381,14 +613,19 @@ class ReleaseIntentService
                 'error_message' => null,
             ]);
             $this->store->setSetting('library_scan_requested', true);
-            $this->store->setSetting('library_scan_requested_root', 'movies');
+            $this->store->setSetting(
+                'library_scan_requested_root',
+                $mediaType === 'anime' ? 'anime' : ($isSeries ? 'series' : 'movies')
+            );
+            $this->store->setSetting('library_resolve_requested', true);
+            $this->store->setSetting('library_resolve_requested_at', time());
             $this->log('Intent #' . $id . ' download succeeded.');
             $this->notifier->notify(
                 'success',
-                'Movie downloaded: ' . (string) ($intent['title'] ?? $item['filename'] ?? 'Unknown'),
+                ($isSeries ? 'Episode downloaded: ' : 'Movie downloaded: ') . $label,
                 'Downloaded',
-                (string) ($intent['title'] ?? $item['filename'] ?? ''),
-                'movie'
+                $label,
+                $isSeries ? 'series' : 'movie'
             );
 
             return;
@@ -414,13 +651,13 @@ class ReleaseIntentService
 
         $lower = strtolower($message);
         if (str_contains($lower, 'no space left') || str_contains($lower, 'disk full')) {
-            $alarm = 'Disk full while downloading ' . (string) ($intent['title'] ?? $item['filename'] ?? 'movie') . '.';
+            $alarm = 'Disk full while downloading ' . $label . '.';
         } elseif (str_contains($lower, 'interrupt') || str_contains($lower, 'resume')) {
-            $alarm = 'Download interrupted for ' . (string) ($intent['title'] ?? $item['filename'] ?? 'movie') . '.';
+            $alarm = 'Download interrupted for ' . $label . '.';
         } else {
-            $alarm = 'Download failed for ' . (string) ($intent['title'] ?? $item['filename'] ?? 'movie') . ': ' . $message;
+            $alarm = 'Download failed for ' . $label . ': ' . $message;
         }
-        $this->notifier->notifyProblem($alarm, (string) ($intent['title'] ?? ''), 'error');
+        $this->notifier->notifyProblem($alarm, $label, 'error', $isSeries ? 'series' : 'movie');
     }
 
     public function retryIntent(int $id): array
@@ -487,6 +724,34 @@ class ReleaseIntentService
     {
         $file = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'automation_worker.log';
         @file_put_contents($file, '[' . date('Y-m-d H:i:s') . '] ' . $message . "\n", FILE_APPEND);
+    }
+
+    private function episodeMediaKey(?int $tmdbId, string $imdbId, string $titleNormalized, ?int $year, int $season, int $episode): string
+    {
+        $episodeCode = 's' . str_pad((string) $season, 2, '0', STR_PAD_LEFT) . 'e' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT);
+        if ($tmdbId !== null && $tmdbId > 0) {
+            return 'series:tmdb:' . $tmdbId . ':' . $episodeCode;
+        }
+        if ($imdbId !== '') {
+            return 'series:imdb:' . $imdbId . ':' . $episodeCode;
+        }
+
+        return 'series:title:' . $titleNormalized . ':' . ($year ?? 'unknown') . ':' . $episodeCode;
+    }
+
+    private function parseEpisodeCode(string $code): ?array
+    {
+        if (!preg_match('/^S(\d{1,3})E(\d{1,4})$/i', trim($code), $matches)) {
+            return null;
+        }
+
+        return [(int) $matches[1], (int) $matches[2]];
+    }
+
+    private function episodeCode(int $season, int $episode): string
+    {
+        return 'S' . str_pad((string) $season, 2, '0', STR_PAD_LEFT)
+            . 'E' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT);
     }
 
     private function normalizeTitle(string $title): string

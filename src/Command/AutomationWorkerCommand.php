@@ -140,6 +140,14 @@ class AutomationWorkerCommand extends Command
                             $stats['files_missing'] ?? 0,
                             count($stats['warnings'] ?? [])
                         ));
+                        $hasUnresolved = !empty($this->store->getUnresolvedGroups(1));
+                        if (((int) ($stats['files_indexed'] ?? 0) + (int) ($stats['files_updated'] ?? 0)) > 0 || $hasUnresolved) {
+                            $this->store->setSetting('library_resolve_requested', true);
+                            $this->store->setSetting('library_resolve_requested_at', time());
+                            if ($hasUnresolved) {
+                                $log('Unmatched library entries found; metadata resolution requested.');
+                            }
+                        }
                     } else {
                         $message = (string) ($result['message'] ?? 'unknown reason');
                         $log('Library scan skipped: ' . $message);
@@ -222,20 +230,20 @@ class AutomationWorkerCommand extends Command
             try {
                 $queuedIntents = $this->releaseIntents->autoQueueDue(300);
                 if ($queuedIntents > 0) {
-                    $log('Queued ' . $queuedIntents . ' missing movie intent(s) from auto-download sources.');
+                    $log('Queued ' . $queuedIntents . ' missing movie/episode intent(s) from auto-download sources.');
                 }
             } catch (\Throwable $e) {
                 $log('Intent queueing failed: ' . $e->getMessage());
             }
 
             if ($this->releaseIntents->shouldRunAutomatically()) {
-                $log('Starting movie intent run.');
+                $log('Starting automation intent run.');
                 try {
                     $result = $this->releaseIntents->processDueIntents(null, fn () => $this->store->setWorkerHeartbeat());
                     if (!empty($result['success'])) {
                         $stats = $result['stats'] ?? [];
                         $log(sprintf(
-                            'Movie intent run done: %d seen, %d queued, %d no source, %d error, queue depth %d.',
+                            'Intent run done: %d seen, %d queued, %d no source, %d error, queue depth %d.',
                             $stats['intents_seen'] ?? 0,
                             $stats['intents_queued'] ?? 0,
                             $stats['intents_no_source'] ?? 0,
@@ -243,10 +251,10 @@ class AutomationWorkerCommand extends Command
                             $stats['queue_depth'] ?? 0
                         ));
                     } else {
-                        $log('Movie intent run skipped: ' . ($result['message'] ?? 'unknown reason'));
+                        $log('Intent run skipped: ' . ($result['message'] ?? 'unknown reason'));
                     }
                 } catch (\Throwable $e) {
-                    $log('Movie intent run failed: ' . $e->getMessage());
+                    $log('Intent run failed: ' . $e->getMessage());
                 } finally {
                     $this->store->setWorkerHeartbeat();
                 }

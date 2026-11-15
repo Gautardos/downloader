@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Media Library - Downloader{% endblock %}
+{% block title %}Library Browser - Downloader{% endblock %}
 
 {% block body %}
 <style>
@@ -787,13 +787,14 @@
 </style>
 
 {% embed '_partials/page_header.html.twig' with {
-    title: 'Media Library',
+    title: 'Library Browser',
     subtitle: 'Browse matched and unmatched NAS entries, then rename matched files to the current Jellyfin-friendly convention.',
     icon: 'automation'
 } %}
     {% block actions %}
         <button class="btn btn-secondary" type="button" onclick="startLibraryScan()">Scan now</button>
         <button class="btn btn-secondary" type="button" onclick="startMetadataResolution()" {{ (resolve_requested or not tmdb_configured) ? 'disabled' : '' }} title="{{ tmdb_configured ? '' : 'Configure a TMDB API key in Discover first.' }}">Resolve metadata</button>
+        <button class="btn btn-secondary" type="button" onclick="startTitleRefresh()" {{ (not tmdb_configured or title_refresh.status in ['requested', 'running']) ? 'disabled' : '' }} title="{{ tmdb_configured ? 'Refresh movie titles from TMDB. Then use Rename matched.' : 'Configure a TMDB API key in Discover first.' }}">Refresh English titles</button>
         <button class="btn btn-primary" type="button" onclick="openRenamePreview()">Rename matched</button>
     {% endblock %}
 {% endembed %}
@@ -829,6 +830,20 @@
                 Last run {{ last_resolution.finished_at|default('—') }} · {{ last_resolution.groups_resolved|default(0) }} groups resolved · {{ last_resolution.entries_resolved|default(0) }} entries updated
             {% else %}
                 Resolve series and movies to TMDB.
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="library-scan-state {{ title_refresh.status == 'running' ? '' : 'is-waiting' }}" id="library-title-refresh-state" {% if title_refresh.status not in ['requested', 'running'] %}hidden{% endif %}>
+    <span class="library-scan-spinner" aria-hidden="true"></span>
+    <div>
+        <strong id="library-title-refresh-title">{{ title_refresh.status == 'running' ? 'English title refresh in progress' : 'English title refresh requested' }}</strong>
+        <div class="library-scan-meta" id="library-title-refresh-meta">
+            {% if title_refresh.total > 0 %}
+                {{ title_refresh.processed }} / {{ title_refresh.total }} TMDB movie{{ title_refresh.total == 1 ? '' : 's' }} · {{ title_refresh.updated }} entr{{ title_refresh.updated == 1 ? 'y' : 'ies' }} updated
+            {% else %}
+                Refreshing movie titles to {{ title_refresh.language|default('en-US') }}. Use Rename matched afterwards to preview file moves.
             {% endif %}
         </div>
     </div>
@@ -963,13 +978,13 @@
                                  data-discovery-title="{{ element.title|e('html_attr') }}"
                                  data-discovery-type="{{ element.match_type }}">
                                 <div class="discovery-poster-wrap">
-                                    {% if element.poster %}
+                                    {% if element.poster|default(null) %}
                                         <img class="discovery-poster" src="{{ element.poster }}" alt="" loading="lazy">
                                     {% else %}
                                         <div class="discovery-poster discovery-poster--empty">{{ element.title|slice(0, 1)|upper }}</div>
                                     {% endif %}
                                     <span class="discovery-type-badge">{{ element.media_type|capitalize }}</span>
-                                    {% if element.rating %}<span class="discovery-rating">{{ element.rating }}</span>{% endif %}
+                                    {% if element.rating|default(null) %}<span class="discovery-rating">{{ element.rating }}</span>{% endif %}
                                     {% if element.missing %}<span class="discovery-flag discovery-flag--danger">{{ element.missing }} missing</span>{% endif %}
                                     <div class="discovery-poster-overlay"></div>
                                 </div>
@@ -1182,7 +1197,11 @@
     const automationScanRoute = "{{ path('automation_scan') }}";
     const automationResolveRoute = "{{ path('automation_resolve') }}";
     const automationStatusRoute = "{{ path('automation_status') }}";
+    const titleRefreshRoute = "{{ path('automation_library_title_refresh') }}";
+    const titleRefreshStatusRoute = "{{ path('automation_library_title_refresh_status') }}";
     const libraryCsrfToken = "{{ csrf_token|e('js') }}";
+    const initialTitleRefreshActive = {{ title_refresh.status in ['requested', 'running'] ? 'true' : 'false' }};
+    let titleRefreshWasActive = initialTitleRefreshActive;
     let metadataResolutionRequested = false;
     const initialResolutionRequested = {{ resolve_requested ? 'true' : 'false' }};
     const initialScanRunning = {{ scan_running ? 'true' : 'false' }};
@@ -1365,6 +1384,73 @@
             setTimeout(pollResolutionStatus, 1500);
         } catch (error) {
             setTimeout(pollResolutionStatus, 5000);
+        }
+    }
+
+    function setTitleRefreshState(title, meta, state = '') {
+        const panel = document.getElementById('library-title-refresh-state');
+        if (!panel) return;
+        panel.hidden = false;
+        panel.classList.remove('is-waiting', 'is-stale');
+        if (state) panel.classList.add('is-' + state);
+        const titleElement = document.getElementById('library-title-refresh-title');
+        const metaElement = document.getElementById('library-title-refresh-meta');
+        if (titleElement) titleElement.textContent = title;
+        if (metaElement) metaElement.textContent = meta;
+    }
+
+    async function startTitleRefresh() {
+        try {
+            const response = await fetch(titleRefreshRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: libraryCsrfToken, limit: 1000 })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not start the title refresh.');
+            }
+            if (window.notify) window.notify('success', data.message || 'English title refresh requested.');
+            titleRefreshWasActive = true;
+            setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function pollTitleRefreshStatus() {
+        try {
+            const response = await fetch(titleRefreshStatusRoute);
+            const data = await response.json();
+            const state = data.title_refresh || {};
+            const status = String(state.status || '');
+            if (status === 'requested' || status === 'running') {
+                titleRefreshWasActive = true;
+                const total = Number(state.total || 0);
+                const processed = Number(state.processed || 0);
+                const startedAt = Date.parse(String(state.started_at || '').replace(' ', 'T'));
+                const waited = startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0;
+                if (status === 'requested' && waited >= 120) {
+                    setTitleRefreshState('English title refresh not started', 'Requested ' + waited + 's ago. Check automation_title_refresh.log or retry.', 'stale');
+                    document.querySelectorAll('button[onclick*="startTitleRefresh"]').forEach(button => { button.disabled = false; });
+                    setTimeout(pollTitleRefreshStatus, 5000);
+                    return;
+                }
+                setTitleRefreshState(
+                    status === 'running' ? 'English title refresh in progress' : 'English title refresh requested',
+                    total > 0
+                        ? processed + ' / ' + total + ' TMDB movies · ' + Number(state.updated || 0) + ' entries updated'
+                        : 'Refreshing movie titles to ' + String(state.language || 'en-US') + '. Use Rename matched afterwards to preview file moves.',
+                    status === 'requested' ? 'waiting' : ''
+                );
+                setTimeout(pollTitleRefreshStatus, 1500);
+                return;
+            }
+            if (titleRefreshWasActive) {
+                window.location.reload();
+            }
+        } catch (error) {
+            setTimeout(pollTitleRefreshStatus, 5000);
         }
     }
 
@@ -1890,14 +1976,92 @@
         }
     }
 
+    function createTreeItem(folder, rootKey) {
+        const hasChildren = !!folder.has_children;
+        const item = document.createElement('li');
+        item.className = 'folder-tree-item';
+
+        const row = document.createElement('div');
+        row.className = 'folder-tree-row';
+        if (hasChildren) {
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'folder-tree-toggle';
+            toggle.setAttribute('data-tree-toggle', '');
+            toggle.setAttribute('aria-label', 'Toggle folder');
+            toggle.textContent = '▸';
+            row.appendChild(toggle);
+        } else {
+            const spacer = document.createElement('span');
+            spacer.className = 'folder-tree-spacer';
+            row.appendChild(spacer);
+        }
+
+        const label = document.createElement('button');
+        label.type = 'button';
+        label.className = 'folder-tree-label';
+        label.setAttribute('data-folder-select', '');
+        label.setAttribute('data-root-key', rootKey);
+        label.setAttribute('data-folder-path', folder.path || '');
+        label.title = folder.label || '';
+        label.textContent = folder.label || '';
+        row.appendChild(label);
+
+        const count = document.createElement('span');
+        count.className = 'folder-tree-count';
+        count.textContent = String(folder.files || 0);
+        row.appendChild(count);
+        item.appendChild(row);
+
+        if (hasChildren) {
+            const children = document.createElement('div');
+            children.className = 'folder-tree-children';
+            children.setAttribute('data-tree-children', '');
+            children.setAttribute('data-loaded', '0');
+            item.appendChild(children);
+        }
+
+        return item;
+    }
+
+    async function loadTreeChildren(treeItem) {
+        const container = treeItem.querySelector(':scope > [data-tree-children]');
+        if (!container || container.dataset.loaded === '1' || container.dataset.loaded === 'loading') {
+            return;
+        }
+        const label = treeItem.querySelector(':scope > .folder-tree-row [data-folder-select]');
+        if (!label) return;
+        const rootKey = label.getAttribute('data-root-key') || '';
+        const folderPath = label.getAttribute('data-folder-path') || '';
+
+        container.dataset.loaded = 'loading';
+        container.innerHTML = '<div class="folder-loading">Loading folders…</div>';
+        try {
+            const data = await matchRequest(libraryFolderContentsRoute, {
+                root_key: rootKey,
+                folder_path: folderPath,
+                filters: libraryFilters
+            });
+            const list = document.createElement('ul');
+            list.className = 'folder-tree-list';
+            (data.subfolders || []).forEach(folder => {
+                list.appendChild(createTreeItem(folder, rootKey));
+            });
+            container.innerHTML = '';
+            container.appendChild(list);
+            container.dataset.loaded = '1';
+        } catch (error) {
+            container.innerHTML = '<div class="folder-loading">' + escapeLibraryHtml(error.message) + '</div>';
+            container.dataset.loaded = '0';
+            throw error;
+        }
+    }
+
     function selectFolder(rootKey, folderPath, element) {
         document.querySelectorAll('.folder-tree-item.is-active').forEach(item => item.classList.remove('is-active'));
         const treeItem = element ? element.closest('.folder-tree-item') : null;
         if (treeItem) {
             treeItem.classList.add('is-active');
-            if (treeItem.querySelector('.folder-tree-children')) {
-                treeItem.classList.add('is-open');
-            }
         }
 
         const params = new URLSearchParams(window.location.search);
@@ -1910,16 +2074,46 @@
         loadFolderContents(rootKey, folderPath);
     }
 
-    document.addEventListener('click', function (event) {
+    document.addEventListener('click', async function (event) {
+        const collapsibleHead = event.target.closest('[data-collapsible-head]');
+        if (collapsibleHead) {
+            const section = collapsibleHead.closest('[data-collapsible-section]');
+            if (section) {
+                const collapsed = section.classList.toggle('is-collapsed');
+                const icon = collapsibleHead.querySelector('.collapsible-chevron');
+                if (icon) icon.textContent = collapsed ? '▼' : '▲';
+            }
+            return;
+        }
+
         const treeToggle = event.target.closest('[data-tree-toggle]');
         if (treeToggle) {
             const treeItem = treeToggle.closest('.folder-tree-item');
-            if (treeItem) treeItem.classList.toggle('is-open');
+            if (!treeItem) return;
+            if (treeItem.classList.contains('is-open')) {
+                treeItem.classList.remove('is-open');
+                return;
+            }
+            try {
+                await loadTreeChildren(treeItem);
+                treeItem.classList.add('is-open');
+            } catch (error) {
+                if (window.notify) window.notify('error', error.message);
+            }
             return;
         }
 
         const folderSelect = event.target.closest('[data-folder-select]');
         if (folderSelect) {
+            const treeItem = folderSelect.closest('.folder-tree-item');
+            if (treeItem) {
+                try {
+                    await loadTreeChildren(treeItem);
+                    treeItem.classList.add('is-open');
+                } catch (error) {
+                    if (window.notify) window.notify('error', error.message);
+                }
+            }
             selectFolder(
                 folderSelect.getAttribute('data-root-key') || '',
                 folderSelect.getAttribute('data-folder-path') || '',
@@ -2008,6 +2202,9 @@
     }
     if (initialResolutionRequested) {
         setTimeout(pollResolutionStatus, 1200);
+    }
+    if (initialTitleRefreshActive) {
+        setTimeout(pollTitleRefreshStatus, 1200);
     }
 
 {% include 'automation/_attention_script.html.twig' %}

@@ -10,6 +10,8 @@
         align-items: flex-start;
         justify-content: space-between;
         gap: .8rem;
+        cursor: pointer;
+        user-select: none;
     }
     .config-card-title { margin: 0; font-size: 1rem; letter-spacing: -.02em; }
     .config-card-subtitle {
@@ -35,8 +37,7 @@
         color: var(--text-primary);
         border-color: rgba(56, 189, 248, .45);
     }
-    .config-collapse-btn svg { width: 16px; height: 16px; transition: transform .18s ease; }
-    .config-card.is-collapsed .config-collapse-btn svg { transform: rotate(-90deg); }
+    .config-collapse-icon { font-size: .7rem; line-height: 1; }
     .config-card.is-collapsed .config-card-body { display: none; }
     .config-card-body { margin-top: .2rem; }
     .config-field { display: grid; gap: .35rem; margin-top: .7rem; }
@@ -110,6 +111,7 @@
 <section class="config-grid">
     {% include 'automation/_quality_profile.html.twig' %}
     {% include 'automation/_automation_limits.html.twig' %}
+    {% include 'automation/_metadata_settings.html.twig' %}
     {% include 'automation/_roots_scanner.html.twig' %}
 </section>
 {% endblock %}
@@ -128,6 +130,8 @@
         if (button) {
             button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
             button.title = collapsed ? 'Expand configuration' : 'Collapse configuration';
+            const icon = button.querySelector('.config-collapse-icon');
+            if (icon) icon.textContent = collapsed ? '▼' : '▲';
         }
         const body = card.querySelector('[data-config-body]');
         if (body) body.hidden = collapsed;
@@ -153,10 +157,20 @@
         setConfigCardCollapsed(key, collapsed, false);
     });
 
+    const initialConfigHash = window.location.hash;
+    if (initialConfigHash.startsWith('#config-')) {
+        const key = initialConfigHash.slice('#config-'.length);
+        const card = document.querySelector('[data-config-card="' + key + '"]');
+        if (card) {
+            setConfigCardCollapsed(key, false, false);
+            card.scrollIntoView({ block: 'start' });
+        }
+    }
+
     document.addEventListener('click', function (event) {
-        const button = event.target.closest('[data-config-collapse]');
-        if (!button) return;
-        const card = button.closest('[data-config-card]');
+        const head = event.target.closest('.config-card-head');
+        if (!head) return;
+        const card = head.closest('[data-config-card]');
         if (!card) return;
         const key = card.getAttribute('data-config-card');
         if (!key) return;

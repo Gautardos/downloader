@@ -11,7 +11,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
     name: 'app:release-intents',
-    description: 'Queues missing movie intents and resolves release candidates.',
+    description: 'Queues missing movie or episode intents and resolves release candidates.',
 )]
 class ReleaseIntentsCommand extends Command
 {
@@ -26,6 +26,7 @@ class ReleaseIntentsCommand extends Command
     protected function configure(): void
     {
         $this->addOption('queue', null, InputOption::VALUE_NONE, 'Create intents from missing movie dry-run items.');
+        $this->addOption('episodes', null, InputOption::VALUE_NONE, 'Create intents from missing series episodes.');
         $this->addOption('run', null, InputOption::VALUE_NONE, 'Process due intents.');
         $this->addOption('auto', null, InputOption::VALUE_NONE, 'Queue only sources with auto-download enabled.');
         $this->addOption('max', null, InputOption::VALUE_REQUIRED, 'Maximum intents to process.');
@@ -34,8 +35,9 @@ class ReleaseIntentsCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $queue = (bool) $input->getOption('queue');
+        $episodes = (bool) $input->getOption('episodes');
         $run = (bool) $input->getOption('run');
-        if (!$queue && !$run) {
+        if (!$queue && !$episodes && !$run) {
             $queue = true;
             $run = true;
         }
@@ -43,6 +45,11 @@ class ReleaseIntentsCommand extends Command
         if ($queue) {
             $result = $this->intents->queueMissingMovies((bool) $input->getOption('auto'));
             $output->writeln((string) ($result['message'] ?? 'Intent queueing finished.'));
+        }
+
+        if ($episodes) {
+            $result = $this->intents->queueMissingEpisodes((bool) $input->getOption('auto'));
+            $output->writeln((string) ($result['message'] ?? 'Episode intent queueing finished.'));
         }
 
         if ($run) {

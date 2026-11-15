@@ -23,6 +23,16 @@ class MediaDownloadService
     {
         $infoHash = strtolower(trim((string) ($payload['info_hash'] ?? '')));
         $streamUrl = trim((string) ($payload['url'] ?? ''));
+        $season = isset($payload['season']) && is_numeric($payload['season']) ? (int) $payload['season'] : null;
+        $episode = isset($payload['episode']) && is_numeric($payload['episode']) ? (int) $payload['episode'] : null;
+        $releaseSeason = isset($payload['release_season']) && is_numeric($payload['release_season']) ? (int) $payload['release_season'] : $season;
+        $releaseEpisode = isset($payload['release_episode']) && is_numeric($payload['release_episode']) ? (int) $payload['release_episode'] : $episode;
+        $expectedFilename = trim((string) ($payload['expected_filename'] ?? ''));
+        $episodeHint = trim(implode(' ', array_filter([
+            $expectedFilename,
+            (string) ($payload['filename'] ?? ''),
+            (string) ($payload['title'] ?? ''),
+        ])));
 
         $path = trim((string) ($payload['path'] ?? ''));
         if ($path === '') {
@@ -79,9 +89,14 @@ class MediaDownloadService
             return ['success' => false, 'message' => 'No downloadable file found in this torrent.'];
         }
 
-        $selected = $this->selectFile($files, $fileIdx, $preferredFilename);
+        $selected = $this->selectFile($files, $fileIdx, $preferredFilename, $releaseSeason, $releaseEpisode, $episodeHint);
         if (!$selected) {
-            return ['success' => false, 'message' => 'Could not select a file in this torrent.'];
+            return [
+                'success' => false,
+                'message' => $releaseSeason !== null && $releaseEpisode !== null
+                    ? 'Episode file not found in this torrent; the pack was not downloaded.'
+                    : 'Could not select a file in this torrent.',
+            ];
         }
 
         $unlocked = $this->debrid->unlockLinkFull($selected['link']);
@@ -105,12 +120,16 @@ class MediaDownloadService
             'download_id' => $downloadId,
             'overwrite' => false,
             'date_added' => date('Y-m-d H:i:s'),
-            'size' => $unlocked['filesize'] ?? ($selected['size'] ?? null),
+            'size' => $this->normalizeSize($unlocked['filesize'] ?? ($selected['size'] ?? null)),
             'media_title' => $payload['media_title'] ?? null,
             'media_addon' => $payload['addon'] ?? null,
             'automation_intent_id' => $payload['automation_intent_id'] ?? null,
             'automation_media_key' => $payload['automation_media_key'] ?? null,
             'automation' => $payload['automation'] ?? null,
+            'season' => $season,
+            'episode' => $episode,
+            'release_season' => $releaseSeason,
+            'release_episode' => $releaseEpisode,
         ], 'video');
 
         return [
@@ -119,9 +138,13 @@ class MediaDownloadService
             'download_id' => $downloadId,
             'filename' => $filename,
             'path' => $path,
-            'size' => $unlocked['filesize'] ?? ($selected['size'] ?? null),
+            'size' => $this->normalizeSize($unlocked['filesize'] ?? ($selected['size'] ?? null)),
             'file_index' => $selected['index'],
             'addon' => $payload['addon'] ?? null,
+            'season' => $season,
+            'episode' => $episode,
+            'release_season' => $releaseSeason,
+            'release_episode' => $releaseEpisode,
         ];
     }
 
@@ -129,6 +152,28 @@ class MediaDownloadService
     {
         if (preg_match('/\.(m3u8|mpd)(\?|$)/i', $url)) {
             return ['success' => false, 'message' => 'HLS/DASH streams are not supported yet. Use a direct file source.'];
+        }
+
+        $season = isset($payload['season']) && is_numeric($payload['season']) ? (int) $payload['season'] : null;
+        $episode = isset($payload['episode']) && is_numeric($payload['episode']) ? (int) $payload['episode'] : null;
+        $releaseSeason = isset($payload['release_season']) && is_numeric($payload['release_season']) ? (int) $payload['release_season'] : $season;
+        $releaseEpisode = isset($payload['release_episode']) && is_numeric($payload['release_episode']) ? (int) $payload['release_episode'] : $episode;
+        $directHint = trim(implode(' ', array_filter([
+            (string) ($payload['expected_filename'] ?? ''),
+            (string) ($payload['filename'] ?? ''),
+            (string) ($payload['title'] ?? ''),
+            $url,
+        ])));
+        if ($releaseSeason !== null && $releaseEpisode !== null) {
+            if ($this->isMultiEpisodeText($directHint)) {
+                return ['success' => false, 'message' => 'Multi-episode streams cannot be queued for a single episode.'];
+            }
+            if ($this->hasEpisodeMarker($directHint) && !$this->episodeMatchesText($directHint, $releaseSeason, $releaseEpisode)) {
+                return ['success' => false, 'message' => 'Direct stream does not match the requested episode.'];
+            }
+            if ($this->looksLikeSeasonPack($directHint, $releaseSeason)) {
+                return ['success' => false, 'message' => 'Season packs cannot be queued for a single episode.'];
+            }
         }
 
         $overrideFilename = trim((string) ($payload['override_filename'] ?? ''));
@@ -151,12 +196,16 @@ class MediaDownloadService
             'download_id' => $downloadId,
             'overwrite' => false,
             'date_added' => date('Y-m-d H:i:s'),
-            'size' => $payload['size'] ?? null,
+            'size' => $this->normalizeSize($payload['size'] ?? null),
             'media_title' => $payload['media_title'] ?? null,
             'media_addon' => $payload['addon'] ?? null,
             'automation_intent_id' => $payload['automation_intent_id'] ?? null,
             'automation_media_key' => $payload['automation_media_key'] ?? null,
             'automation' => $payload['automation'] ?? null,
+            'season' => $season,
+            'episode' => $episode,
+            'release_season' => $releaseSeason,
+            'release_episode' => $releaseEpisode,
         ], 'video');
 
         return [
@@ -165,10 +214,14 @@ class MediaDownloadService
             'download_id' => $downloadId,
             'filename' => $filename,
             'path' => $path,
-            'size' => $payload['size'] ?? null,
+            'size' => $this->normalizeSize($payload['size'] ?? null),
             'file_index' => null,
             'kind' => 'direct',
             'addon' => $payload['addon'] ?? null,
+            'season' => $season,
+            'episode' => $episode,
+            'release_season' => $releaseSeason,
+            'release_episode' => $releaseEpisode,
         ];
     }
 
@@ -250,6 +303,32 @@ class MediaDownloadService
         $filename = trim(preg_replace('/\s+/', ' ', $filename));
 
         return $filename !== '' ? $filename : 'download';
+    }
+
+    private function normalizeSize(mixed $size): int
+    {
+        if (is_int($size) || is_float($size)) {
+            return max(0, (int) $size);
+        }
+        if (!is_string($size) || trim($size) === '') {
+            return 0;
+        }
+        if (is_numeric($size)) {
+            return max(0, (int) $size);
+        }
+        if (preg_match('/(\d+(?:[.,]\d+)?)\s*(TB|TO|GB|GO|MB|MO)\b/iu', $size, $matches)) {
+            $value = (float) str_replace(',', '.', $matches[1]);
+            $factor = match (strtoupper($matches[2])) {
+                'TB', 'TO' => 1024 ** 4,
+                'GB', 'GO' => 1024 ** 3,
+                'MB', 'MO' => 1024 ** 2,
+                default => 0,
+            };
+
+            return (int) round($value * $factor);
+        }
+
+        return 0;
     }
 
     private function buildMagnet(string $infoHash, string $displayName, array $sources): string
@@ -351,8 +430,81 @@ class MediaDownloadService
         return $files;
     }
 
-    private function selectFile(array $files, ?int $fileIdx, string $preferredFilename): ?array
-    {
+    private function selectFile(
+        array $files,
+        ?int $fileIdx,
+        string $preferredFilename,
+        ?int $season = null,
+        ?int $episode = null,
+        string $episodeHint = ''
+    ): ?array {
+        $videoExtensions = ['mkv', 'mp4', 'avi', 'm4v', 'webm', 'mov', 'wmv', 'ts'];
+        $videos = array_values(array_filter($files, static function ($file) use ($videoExtensions) {
+            return in_array(strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)), $videoExtensions, true);
+        }));
+
+        if ($season !== null && $episode !== null) {
+            $exact = [];
+            foreach ($videos as $file) {
+                $text = (string) ($file['name'] ?? '') . ' ' . (string) ($file['path'] ?? '');
+                if ($this->isMultiEpisodeText($text)) {
+                    continue;
+                }
+                if ($this->episodeMatchesText($text, $season, $episode)) {
+                    $exact[] = $file;
+                }
+            }
+            if ($exact) {
+                foreach ($exact as $file) {
+                    if ($fileIdx !== null && (int) $file['index'] === $fileIdx) {
+                        return $file;
+                    }
+                }
+
+                return $exact[0];
+            }
+
+            if ($this->isMultiEpisodeText($episodeHint)) {
+                return null;
+            }
+            if ($this->hasEpisodeMarker($episodeHint) && !$this->episodeMatchesText($episodeHint, $season, $episode)) {
+                return null;
+            }
+            if ($this->looksLikeSeasonPack($episodeHint, $season)) {
+                return null;
+            }
+
+            foreach ($videos as $file) {
+                $text = (string) ($file['name'] ?? '') . ' ' . (string) ($file['path'] ?? '');
+                if ($this->hasEpisodeMarker($text) || $this->looksLikeSeasonPack($text, $season)) {
+                    return null;
+                }
+            }
+
+            if ($fileIdx !== null) {
+                foreach ($videos as $file) {
+                    if ((int) $file['index'] !== $fileIdx) {
+                        continue;
+                    }
+                    $text = (string) ($file['name'] ?? '') . ' ' . (string) ($file['path'] ?? '');
+                    if ($this->isMultiEpisodeText($text)) {
+                        return null;
+                    }
+                    if (count($videos) === 1) {
+                        return $file;
+                    }
+
+                    return null;
+                }
+            }
+
+            if (count($videos) === 1 && !$this->isMultiEpisodeText((string) ($videos[0]['name'] ?? ''))) {
+                return $videos[0];
+            }
+
+            return null;
+        }
+
         if ($fileIdx !== null && isset($files[$fileIdx])) {
             return $files[$fileIdx];
         }
@@ -371,14 +523,46 @@ class MediaDownloadService
             }
         }
 
-        $videoExtensions = ['mkv', 'mp4', 'avi', 'm4v', 'webm', 'mov', 'wmv', 'ts'];
-        $videos = array_values(array_filter($files, static function ($file) use ($videoExtensions) {
-            return in_array(strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)), $videoExtensions, true);
-        }));
-
         $candidates = !empty($videos) ? $videos : $files;
         usort($candidates, static fn ($a, $b) => ($b['size'] ?? 0) <=> ($a['size'] ?? 0));
 
         return $candidates[0] ?? null;
+    }
+
+    private function episodeMatchesText(string $text, int $season, int $episode): bool
+    {
+        $seasonPattern = '0*' . max(0, $season);
+        $episodePattern = '0*' . max(1, $episode);
+        if (preg_match('/S' . $seasonPattern . '[\s._-]*E' . $episodePattern . '(?!\d)/i', $text)) {
+            return true;
+        }
+        if (preg_match('/(?<![0-9])' . $seasonPattern . 'x' . $episodePattern . '(?!\d)/i', $text)) {
+            return true;
+        }
+
+        return preg_match('/\bSeason\s*' . $seasonPattern . '\s*Episode\s*' . $episodePattern . '(?!\d)/i', $text) === 1;
+    }
+
+    private function hasEpisodeMarker(string $text): bool
+    {
+        return preg_match('/\bS\d{1,3}[\s._-]*E\d{1,4}\b/i', $text) === 1
+            || preg_match('/(?<![0-9])\d{1,3}x\d{1,4}(?!\d)/i', $text) === 1
+            || preg_match('/\bSeason\s*\d{1,3}\s*Episode\s*\d{1,4}\b/i', $text) === 1;
+    }
+
+    private function isMultiEpisodeText(string $text): bool
+    {
+        return preg_match('/\bS\d{1,3}[\s._-]*E\d{1,4}(?:[\s._-]?E\d{1,4})+\b/i', $text) === 1
+            || preg_match('/\bS\d{1,3}[\s._-]*E\d{1,4}\s*-\s*E?\d{1,4}\b/i', $text) === 1;
+    }
+
+    private function looksLikeSeasonPack(string $text, int $season): bool
+    {
+        $seasonPattern = '0*' . max(0, $season);
+
+        return preg_match('/\bS' . $seasonPattern . '\b(?![\s._-]*E\d)/i', $text) === 1
+            || preg_match('/\bSeason\s*' . $seasonPattern . '\b(?!\s*Episode)/i', $text) === 1
+            || preg_match('/\bComplete\s+(?:Series|Show|Season)\b/i', $text) === 1
+            || preg_match('/\b(?:Integrale|Intégrale|Season\s+Pack)\b/i', $text) === 1;
     }
 }

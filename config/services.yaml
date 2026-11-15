@@ -54,6 +54,10 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\Automation\LibraryTitleRefreshService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
     App\Service\Automation\ReleaseStreamProviderInterface:
         alias: App\Service\Automation\MediaStreamProviderAdapter
 
@@ -62,6 +66,12 @@ services:
 
     App\Service\Automation\MovieIdentityResolverInterface:
         alias: App\Service\Automation\TmdbMovieIdentityResolver
+
+    App\Service\Automation\SeriesIdentityResolverInterface:
+        alias: App\Service\Automation\TmdbSeriesIdentityResolver
+
+    App\Service\Automation\SeriesNumberingProviderInterface:
+        alias: App\Service\Automation\FallbackSeriesNumberingProvider
 
     # Redis Session Configuration
     Redis:

@@ -53,9 +53,9 @@
 </style>
 <nav class="automation-tabs" aria-label="Automation sections">
     <a class="automation-tab {{ current == 'automation' ? 'active' : '' }}" href="{{ path('automation') }}">Overview</a>
-    <a class="automation-tab {{ current in ['automation_lists', 'automation_lists_settings', 'automation_lists_sync', 'automation_lists_ignore'] ? 'active' : '' }}" href="{{ path('automation_lists') }}">Lists</a>
-    <a class="automation-tab {{ current in ['automation_library', 'automation_library_rename_preview', 'automation_library_rename_apply'] ? 'active' : '' }}" href="{{ path('automation_library') }}">Media Library</a>
-    <a class="automation-tab {{ current == 'automation_downloads' ? 'active' : '' }}" href="{{ path('automation_downloads') }}">Downloads</a>
+    <a class="automation-tab {{ current in ['automation_library', 'automation_library_rename_preview', 'automation_library_rename_apply'] ? 'active' : '' }}" href="{{ path('automation_library') }}">Library Browser</a>
+    <a class="automation-tab {{ current in ['automation_lists', 'automation_lists_settings', 'automation_lists_sync', 'automation_lists_ignore'] ? 'active' : '' }}" href="{{ path('automation_lists') }}">Connected Lists</a>
+    <a class="automation-tab {{ current == 'automation_downloads' ? 'active' : '' }}" href="{{ path('automation_downloads') }}">Download Automations</a>
     <a class="automation-tab {{ current in ['automation_config', 'automation_settings', 'automation_downloads_quality', 'automation_downloads_settings'] ? 'active' : '' }}" href="{{ path('automation_config') }}">Configuration</a>
     <a class="automation-tab {{ current == 'automation_activity' ? 'active' : '' }}" href="{{ path('automation_activity') }}">Activity<span class="automation-tab-busy" data-automation-activity hidden aria-hidden="true"></span></a>
 </nav>

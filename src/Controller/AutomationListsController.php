@@ -3,7 +3,9 @@
 namespace App\Controller;
 
 use App\Service\Automation\AutomationStore;
+use App\Service\Automation\EpisodeNumberingService;
 use App\Service\Automation\ListSyncService;
+use App\Service\Automation\ReleaseIntentService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -14,7 +16,7 @@ class AutomationListsController extends AbstractController
     private const PER_PAGE = 60;
 
     #[Route('/automation/lists', name: 'automation_lists', methods: ['GET'])]
-    public function index(Request $request, AutomationStore $store, ListSyncService $listSync): Response
+    public function index(Request $request, AutomationStore $store, ListSyncService $listSync, ReleaseIntentService $intents): Response
     {
         $filters = [
             'status' => (string) $request->query->get('status', 'all'),
@@ -43,6 +45,8 @@ class AutomationListsController extends AbstractController
             $source['can_test'] = $listSync->canTestSource($source);
             $source['last_run'] = $store->getLastListRun($sourceId);
             $source['counts'] = $store->getListStatusCounts($sourceId);
+            $source['episode_counts'] = $store->getListEpisodeCounts($sourceId);
+            $source['dry_run_validated'] = $intents->dryRunValidated($sourceId);
 
             $options = [];
             foreach (is_array($config['available_lists'] ?? null) ? $config['available_lists'] : [] as $list) {
@@ -72,6 +76,9 @@ class AutomationListsController extends AbstractController
         foreach ($items as &$item) {
             $missing = json_decode((string) ($item['missing_json'] ?? '[]'), true);
             $item['missing_episodes'] = is_array($missing) ? array_values($missing) : [];
+            $item['numbering'] = (string) ($item['media_type'] ?? '') === 'series'
+                ? $store->getSeriesNumbering(!empty($item['tmdb_id']) ? (int) $item['tmdb_id'] : null, $item['imdb_id'] ?? null)
+                : null;
         }
         unset($item);
 
@@ -93,6 +100,7 @@ class AutomationListsController extends AbstractController
             'requested_at' => $listSync->getRequestedAt(),
             'running_run' => $store->getRunningListRun(),
             'last_run' => $store->getLastListRun(),
+            'episode_counts' => $store->getListEpisodeCounts(),
             'csrf_token' => $this->getAutomationCsrfToken($request),
         ]);
     }
@@ -158,6 +166,7 @@ class AutomationListsController extends AbstractController
                 'api_key' => $apiKey,
                 'list_ids' => $postedListIds,
                 'auto_download' => !empty($postedConfig['auto_download']),
+                'auto_download_series' => !empty($postedConfig['auto_download_series']),
             ];
             if (is_array($currentConfig['available_lists'] ?? null)) {
                 $config['available_lists'] = $currentConfig['available_lists'];
@@ -211,6 +220,75 @@ class AutomationListsController extends AbstractController
         ]);
 
         $result = $listSync->testSource($source);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    #[Route('/automation/lists/numbering', name: 'automation_lists_numbering', methods: ['POST'])]
+    public function numbering(Request $request, AutomationStore $store, EpisodeNumberingService $numbering): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $item = $store->getListItem((int) ($data['id'] ?? 0));
+        if ($item === null) {
+            return $this->json(['success' => false, 'message' => 'List item not found.'], 404);
+        }
+        if ((string) ($item['media_type'] ?? '') !== 'series') {
+            return $this->json(['success' => false, 'message' => 'Numbering is only available for series.'], 400);
+        }
+
+        $identity = $numbering->identity($item);
+        $action = (string) ($data['action'] ?? 'detect');
+        if ($action === 'confirm') {
+            $profile = $numbering->confirm($identity);
+            if ($profile === null) {
+                return $this->json(['success' => false, 'message' => 'No numbering mapping to confirm.'], 422);
+            }
+
+            return $this->json(['success' => true, 'profile' => $profile, 'message' => 'Numbering mapping confirmed.']);
+        }
+        if ($action === 'modes') {
+            $profile = $store->getSeriesNumbering(!empty($item['tmdb_id']) ? (int) $item['tmdb_id'] : null, $item['imdb_id'] ?? null);
+            if (!$numbering->isUsable($profile)) {
+                return $this->json(['success' => false, 'message' => 'Confirm a valid numbering before changing modes.'], 422);
+            }
+            $profile = $numbering->updateModes(
+                $identity,
+                (string) ($data['target_mode'] ?? $profile['target_mode'] ?? 'local'),
+                (string) ($data['jellyfin_mode'] ?? $profile['jellyfin_mode'] ?? 'local'),
+                null,
+                'manual'
+            );
+
+            return $this->json(['success' => true, 'profile' => $profile]);
+        }
+
+        $profile = $numbering->profileFor($identity, true, true);
+        if ($profile === null) {
+            return $this->json(['success' => false, 'message' => 'Numbering detection failed.'], 422);
+        }
+
+        return $this->json([
+            'success' => true,
+            'profile' => $profile,
+            'message' => (string) ($profile['status'] ?? '') === 'ok'
+                ? 'Series numbering detected.'
+                : 'Series numbering is ambiguous: ' . (string) ($profile['reason'] ?? 'manual review required'),
+        ]);
+    }
+
+    #[Route('/automation/lists/queue-episodes', name: 'automation_lists_queue_episodes', methods: ['POST'])]
+    public function queueEpisodes(Request $request, ReleaseIntentService $intents): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $result = $intents->queueMissingEpisodes(!empty($data['auto']));
 
         return $this->json($result, !empty($result['success']) ? 200 : 422);
     }

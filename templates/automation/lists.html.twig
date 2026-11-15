@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Automation lists - Downloader{% endblock %}
+{% block title %}Connected Lists - Downloader{% endblock %}
 
 {% block body %}
 <style>
@@ -96,14 +96,7 @@
         color: var(--text-primary);
         border-color: rgba(56, 189, 248, .45);
     }
-    .lists-collapse-btn svg {
-        width: 16px;
-        height: 16px;
-        transition: transform .18s ease;
-    }
-    .card.is-collapsed .lists-collapse-btn svg {
-        transform: rotate(-90deg);
-    }
+    .lists-collapse-icon { font-size: .7rem; line-height: 1; }
     .card.is-collapsed .lists-source-body {
         display: none;
     }
@@ -370,12 +363,15 @@
 </style>
 
 {% embed '_partials/page_header.html.twig' with {
-    title: 'Lists and dry-run',
+    title: 'Connected Lists',
     subtitle: 'Ingest Scrob and MDBList lists, then compare every item with the NAS index. Nothing is downloaded or queued.',
     icon: 'automation'
 } %}
     {% block actions %}
-        <span class="badge {{ running ? 'badge-success' : 'badge-neutral' }}">{{ running ? 'Syncing' : 'Idle' }}</span>
+        {% if running %}
+            <span class="badge badge-success">Syncing</span>
+        {% endif %}
+        <button class="btn btn-secondary" type="button" onclick="queueMissingEpisodes()" title="Create pending episode intents from validated missing series. Nothing is resolved or downloaded.">Queue missing episodes</button>
         <button class="btn btn-primary" type="button" onclick="syncListSource(null)">Dry-run all sources</button>
     {% endblock %}
 {% endembed %}
@@ -472,7 +468,7 @@
                             <span class="lists-connection-text">{{ source.can_test ? 'Checking…' : 'Not configured' }}</span>
                         </span>
                         <button class="lists-collapse-btn" type="button" data-list-collapse="{{ source.provider }}" aria-expanded="false" aria-controls="source-body-{{ source.id }}" title="Expand source">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                            <span class="lists-collapse-icon">▼</span>
                         </button>
                     </div>
                 </div>
@@ -521,19 +517,29 @@
                     <input type="checkbox" name="sources[{{ source.provider }}][config][auto_download]" value="1" {{ config.auto_download|default(false) ? 'checked' : '' }}>
                     Auto download missing movies from the selected lists
                 </label>
-                {% if config.auto_download|default(false) and (not lastRun or not lastRun.finished_at or lastRun.status == 'error' or not lastRun.items_seen) %}
+                {% if config.auto_download|default(false) and not source.dry_run_validated|default(false) %}
                     <div class="lists-hint">Auto download is on, but this source has no validated dry-run yet. Intents are skipped until a dry-run succeeds.</div>
+                {% endif %}
+
+                <label class="lists-check">
+                    <input type="checkbox" name="sources[{{ source.provider }}][config][auto_download_series]" value="1" {{ config.auto_download_series|default(false) ? 'checked' : '' }}>
+                    Auto download series episodes from the selected lists
+                </label>
+                {% if config.auto_download_series|default(false) and not source.dry_run_validated|default(false) %}
+                    <div class="lists-hint">Episode auto download is on, but this source has no validated dry-run yet. Episode intents are skipped until a dry-run succeeds.</div>
                 {% endif %}
 
                 <div class="lists-kv">
                     <div class="lists-kv-row"><span>Last dry-run</span><strong>{{ lastRun ? (lastRun.finished_at ?: lastRun.started_at) : 'Never' }}</strong></div>
                     <div class="lists-kv-row"><span>Last result</span><strong>{{ lastRun ? lastRun.status : '—' }}</strong></div>
                     <div class="lists-kv-row"><span>Items</span><strong>{{ source.counts.all }} · {{ source.counts.present }} present · {{ source.counts.missing }} missing</strong></div>
+                    <div class="lists-kv-row"><span>Episodes</span><strong>{{ source.episode_counts.present|default(0) }} present · {{ source.episode_counts.missing|default(0) }} missing</strong></div>
                 </div>
 
                 <div class="lists-actions">
                     <button class="btn btn-primary btn-sm" type="submit">Save this source</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="syncListSource('{{ source.id|e('js') }}')" {{ not source.enabled or not source.configured ? 'disabled' : '' }}>Dry-run this source</button>
+                    <button class="btn btn-ghost btn-sm" type="button" onclick="queueMissingEpisodes()" title="Create pending episode intents only. Nothing is resolved or downloaded.">Queue missing episodes</button>
                 </div>
                 </form>
                 </div>
@@ -641,6 +647,7 @@
                         <th>Identity</th>
                         <th>Status</th>
                         <th>Episodes</th>
+                        <th>Numbering</th>
                         <th class="right">Actions</th>
                     </tr>
                 </thead>
@@ -678,6 +685,39 @@
                                     —
                                 {% endif %}
                             </td>
+                            <td>
+                                {% if item.media_type == 'series' %}
+                                    {% set numbering = item.numbering|default(null) %}
+                                    {% if numbering %}
+                                        {% set numberingOk = numbering.status|default('ambiguous') == 'ok' %}
+                                        {% set numberingUsable = numberingOk and (numbering.source|default('') == 'manual' or numbering.confidence|default(0) >= 0.75) %}
+                                        <span class="badge {{ numberingUsable ? 'badge-success' : 'badge-warning' }}">{{ numberingUsable ? 'Mapped' : (numberingOk ? 'Review' : 'Ambiguous') }}</span>
+                                        <div class="lists-row-sub">{{ numbering.source|default('auto') }}{% if numbering.source_ref %} · {{ numbering.source_ref }}{% endif %}{% if numbering.confidence is defined %} · {{ (numbering.confidence * 100)|round }}%{% endif %}</div>
+                                        {% if numbering.segments|default([]) is not empty %}
+                                            <div class="lists-row-sub">
+                                                {% for segment in numbering.segments %}{% if not loop.first %} · {% endif %}S{{ segment.season }} {{ segment.episodes }}{% endfor %}
+                                            </div>
+                                        {% elseif numbering.reason|default('') is not empty %}
+                                            <div class="lists-row-sub">{{ numbering.reason|replace({'_': ' '}) }}</div>
+                                        {% endif %}
+                                        {% if numberingUsable %}
+                                            <label class="lists-row-sub">Jellyfin
+                                                <select data-list-numbering-mode="{{ item.id }}">
+                                                    <option value="local" {{ numbering.jellyfin_mode|default('local') == 'local' ? 'selected' : '' }}>Local</option>
+                                                    <option value="tmdb" {{ numbering.jellyfin_mode|default('local') == 'tmdb' ? 'selected' : '' }}>TMDB</option>
+                                                </select>
+                                            </label>
+                                        {% elseif numberingOk and numbering.mapping|default([]) is not empty %}
+                                            <button class="btn btn-secondary btn-sm" type="button" data-list-numbering-confirm="{{ item.id }}">Confirm mapping</button>
+                                        {% endif %}
+                                        <button class="btn btn-ghost btn-sm" type="button" data-list-numbering="{{ item.id }}">Re-detect</button>
+                                    {% else %}
+                                        <button class="btn btn-secondary btn-sm" type="button" data-list-numbering="{{ item.id }}">Detect numbering</button>
+                                    {% endif %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
                             <td class="right">
                                 {% set ignored = item.ignored_at is not empty %}
                                 <button class="btn btn-ghost btn-sm" type="button" data-list-ignore="{{ item.id }}" data-list-ignored="{{ ignored ? '1' : '0' }}">{{ ignored ? 'Restore' : 'Ignore' }}</button>
@@ -706,6 +746,8 @@
 {% block javascripts %}
 <script>
     const listSyncRoute = "{{ path('automation_lists_sync') }}";
+    const listQueueEpisodesRoute = "{{ path('automation_lists_queue_episodes') }}";
+    const listNumberingRoute = "{{ path('automation_lists_numbering') }}";
     const listStatusRoute = "{{ path('automation_lists_status') }}";
     const listIgnoreRoute = "{{ path('automation_lists_ignore') }}";
     const listTestRoute = "{{ path('automation_lists_test') }}";
@@ -722,6 +764,8 @@
         if (button) {
             button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
             button.title = collapsed ? 'Expand source' : 'Collapse source';
+            const icon = button.querySelector('.lists-collapse-icon');
+            if (icon) icon.textContent = collapsed ? '▼' : '▲';
         }
         const body = card.querySelector('[data-list-source-body]');
         if (body) body.hidden = collapsed;
@@ -831,6 +875,78 @@
         }
     }
 
+    async function queueMissingEpisodes() {
+        try {
+            const response = await fetch(listQueueEpisodesRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: listCsrfToken })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not queue missing episodes.');
+            }
+            if (window.notify) {
+                window.notify('success', data.message || 'Missing episodes queued.');
+            }
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) {
+                window.notify('error', error.message);
+            }
+        }
+    }
+
+    async function listNumberingAction(id, payload) {
+        const response = await fetch(listNumberingRoute, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csrf: listCsrfToken, id, ...payload })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Numbering action failed.');
+        }
+
+        return data;
+    }
+
+    async function detectListNumbering(id, button) {
+        if (button) button.disabled = true;
+        try {
+            const data = await listNumberingAction(id, { action: 'detect' });
+            if (window.notify) {
+                window.notify((data.profile && data.profile.status === 'ok') ? 'success' : 'warning', data.message || 'Numbering detected.');
+            }
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function confirmListNumbering(id, button) {
+        if (button) button.disabled = true;
+        try {
+            const data = await listNumberingAction(id, { action: 'confirm' });
+            if (window.notify) window.notify('success', data.message || 'Numbering mapping confirmed.');
+            setTimeout(() => window.location.reload(), 700);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function setListNumberingMode(id, mode) {
+        try {
+            const data = await listNumberingAction(id, { action: 'modes', jellyfin_mode: mode });
+            if (window.notify) window.notify('success', 'Jellyfin numbering mode updated.');
+            setTimeout(() => window.location.reload(), 500);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
     function formatListWait(seconds) {
         if (seconds < 60) return seconds + 's';
         const minutes = Math.floor(seconds / 60);
@@ -927,6 +1043,25 @@
             if (window.notify) window.notify('error', error.message);
             button.disabled = false;
         }
+    });
+
+    document.addEventListener('click', async function (event) {
+        const confirmButton = event.target.closest('[data-list-numbering-confirm]');
+        if (confirmButton) {
+            await confirmListNumbering(Number(confirmButton.getAttribute('data-list-numbering-confirm')), confirmButton);
+            return;
+        }
+
+        const numberingButton = event.target.closest('[data-list-numbering]');
+        if (!numberingButton) return;
+        await detectListNumbering(Number(numberingButton.getAttribute('data-list-numbering')), numberingButton);
+    });
+
+    document.addEventListener('change', async function (event) {
+        const modeSelect = event.target.closest('[data-list-numbering-mode]');
+        if (!modeSelect) return;
+        modeSelect.disabled = true;
+        await setListNumberingMode(Number(modeSelect.getAttribute('data-list-numbering-mode')), modeSelect.value);
     });
 
     document.querySelectorAll('[data-list-source-card]').forEach(card => {

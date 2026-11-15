@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Service\AiService;
+use App\Service\Automation\QueueSizeResolver;
 use App\Service\AlldebridService;
 use App\Service\DebridHistoryService;
 use App\Service\DownloadManager;
@@ -147,11 +148,11 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/queue-status', name: 'queue_status', methods: ['GET'])]
-    public function queueStatus(QueueManager $queueManager): Response
+    public function queueStatus(QueueManager $queueManager, QueueSizeResolver $sizeResolver): Response
     {
         return $this->json([
-            'queue' => $queueManager->getQueue(),
-            'active' => $queueManager->getActiveTask()
+            'queue' => $sizeResolver->enrich($queueManager->getQueue()),
+            'active' => ($active = $queueManager->getActiveTask()) ? $sizeResolver->enrichItem($active) : null
         ]);
     }
 
@@ -443,11 +444,11 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/queue', name: 'queue')]
-    public function queue(QueueManager $queueManager): Response
+    public function queue(QueueManager $queueManager, QueueSizeResolver $sizeResolver): Response
     {
         return $this->render('dashboard/queue.html.twig', [
-            'queue' => $queueManager->getQueue(),
-            'active' => $queueManager->getActiveTask()
+            'queue' => $sizeResolver->enrich($queueManager->getQueue()),
+            'active' => ($active = $queueManager->getActiveTask()) ? $sizeResolver->enrichItem($active) : null
         ]);
     }
 

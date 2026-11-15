@@ -102,6 +102,31 @@
                     <input type="password" id="admin_password" name="admin_password" value="{{ config.admin_password|default('admin') }}" required>
                     <small style="color: var(--text-secondary);">Used to secure your dashboard.</small>
                 </div>
+
+                <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Jellyfin API (Nuvio) 🎬</h3>
+                <div style="margin-bottom: 1rem;">
+                    <input type="hidden" name="jellyfin_enabled" value="0">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" name="jellyfin_enabled" value="1" style="width: auto;" {% if config.jellyfin_enabled|default(false) %}checked{% endif %}>
+                        Enable the Jellyfin-compatible API
+                    </label>
+                    <small style="color: var(--text-secondary);">
+                        Add this server in Nuvio with the address <code>http://&lt;your-host&gt;:8000/jellyfin</code>.
+                    </small>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label for="jellyfin_server_name">Server name</label>
+                    <input type="text" id="jellyfin_server_name" name="jellyfin_server_name" value="{{ config.jellyfin_server_name|default('Downloader') }}">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label for="jellyfin_username">Jellyfin username</label>
+                    <input type="text" id="jellyfin_username" name="jellyfin_username" value="{{ config.jellyfin_username|default('jellyfin') }}">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label for="jellyfin_password">Jellyfin password</label>
+                    <input type="password" id="jellyfin_password" name="jellyfin_password" value="{{ config.jellyfin_password|default('') }}">
+                    <small style="color: var(--text-secondary);">Dedicated password required to connect Nuvio. Login stays disabled while this is empty.</small>
+                </div>
             </section>
 
             <!-- Music Settings -->

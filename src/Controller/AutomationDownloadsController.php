@@ -7,6 +7,8 @@ use App\Service\Automation\AutomationStore;
 use App\Service\Automation\ListSyncService;
 use App\Service\Automation\ReleaseDryRunService;
 use App\Service\Automation\ReleaseIntentService;
+use App\Service\Automation\ReleaseResolverService;
+use App\Service\TmdbService;
 use App\Service\Automation\ReleasePreferenceService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -29,10 +31,18 @@ class AutomationDownloadsController extends AbstractController
         $filters = [
             'status' => (string) $request->query->get('status', 'all'),
             'source' => (string) $request->query->get('source', ''),
+            'type' => (string) $request->query->get('type', 'all'),
+            'season' => trim((string) $request->query->get('season', '')),
             'q' => trim((string) $request->query->get('q', '')),
         ];
         if (!in_array($filters['status'], ['all', 'pending', 'resolving', 'queued', 'downloading', 'success', 'error', 'no_source', 'ignored'], true)) {
             $filters['status'] = 'all';
+        }
+        if (!in_array($filters['type'], ['all', 'movie', 'series', 'anime'], true)) {
+            $filters['type'] = 'all';
+        }
+        if ($filters['season'] !== '' && !is_numeric($filters['season'])) {
+            $filters['season'] = '';
         }
 
         $total = $store->countIntents($filters);
@@ -44,6 +54,7 @@ class AutomationDownloadsController extends AbstractController
         $sourceLabels = [];
         $sourceValidation = [];
         $autoSources = 0;
+        $autoSeriesSources = 0;
         foreach ($sources as $source) {
             $sourceId = (string) $source['id'];
             $sourceLabels[$sourceId] = (string) $source['label'];
@@ -51,6 +62,9 @@ class AutomationDownloadsController extends AbstractController
             $config = is_array($source['config'] ?? null) ? $source['config'] : [];
             if (!empty($source['enabled']) && !empty($config['auto_download'])) {
                 $autoSources++;
+            }
+            if (!empty($source['enabled']) && !empty($config['auto_download_series'])) {
+                $autoSeriesSources++;
             }
         }
 
@@ -70,7 +84,10 @@ class AutomationDownloadsController extends AbstractController
             'source_validation' => $sourceValidation,
             'validated_sources' => count(array_filter($sourceValidation)),
             'auto_sources' => $autoSources,
+            'auto_series_sources' => $autoSeriesSources,
             'queue_guard' => (int) ($allSettings['backfill']['queue_guard'] ?? 20),
+            'missing_series' => $store->countListItems(['status' => 'missing', 'type' => 'series']),
+            'missing_series_episodes' => (int) ($store->getListEpisodeCounts()['missing'] ?? 0),
             'last_run' => $store->getLastIntentRun(),
             'running_run' => $store->getRunningIntentRun(),
             'recent_runs' => $store->getRecentIntentRuns(8),
@@ -166,6 +183,51 @@ class AutomationDownloadsController extends AbstractController
         return $this->json($result, !empty($result['success']) ? 200 : 422);
     }
 
+    #[Route('/automation/downloads/queue-episodes', name: 'automation_downloads_queue_episodes', methods: ['POST'])]
+    public function queueEpisodes(Request $request, ReleaseIntentService $intents): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        $token = $request->headers->get('X-Automation-Csrf');
+        $autoOnly = false;
+        if (is_array($data)) {
+            $token = $data['csrf'] ?? $token;
+            $autoOnly = !empty($data['auto']);
+        } else {
+            $token = $request->request->get('_token', $token);
+            $autoOnly = !empty($request->request->get('auto'));
+        }
+
+        if (!$this->isAutomationCsrfValid($request, is_string($token) ? $token : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $result = $intents->queueMissingEpisodes($autoOnly);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    #[Route('/automation/downloads/run-all', name: 'automation_downloads_run_all', methods: ['POST'])]
+    public function runAll(Request $request, ReleaseIntentService $intents): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $queueResult = $intents->queueMissingMovies(false);
+        $episodeResult = $intents->queueMissingEpisodes(false);
+        $runResult = $intents->startBackgroundRun();
+
+        return $this->json([
+            'success' => !empty($runResult['success']),
+            'message' => ($queueResult['message'] ?? 'Missing movies prepared.') . ' '
+                . ($episodeResult['message'] ?? '') . ' ' . ($runResult['message'] ?? ''),
+            'queue' => $queueResult['stats'] ?? [],
+            'episodes' => $episodeResult['stats'] ?? [],
+            'run' => $runResult,
+        ], !empty($runResult['success']) ? 200 : 409);
+    }
+
     #[Route('/automation/downloads/run', name: 'automation_downloads_run', methods: ['POST'])]
     public function run(Request $request, ReleaseIntentService $intents): Response
     {
@@ -205,6 +267,73 @@ class AutomationDownloadsController extends AbstractController
         return $this->json($result, !empty($result['success']) ? 200 : 404);
     }
 
+    #[Route('/automation/downloads/intent/sources', name: 'automation_downloads_intent_sources', methods: ['POST'])]
+    public function intentSources(Request $request, AutomationStore $store, ReleaseResolverService $resolver, TmdbService $tmdb, AutomationSettings $settings): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $intentId = (int) ($data['intent_id'] ?? 0);
+        $intent = $store->getIntent($intentId);
+        if ($intent === null) {
+            return $this->json(['success' => false, 'message' => 'Intent not found.'], 404);
+        }
+
+        $preview = $resolver->previewManualSelection($intent);
+        $tmdbId = !empty($preview['identity']['tmdb_id'])
+            ? (int) $preview['identity']['tmdb_id']
+            : (!empty($intent['tmdb_id']) ? (int) $intent['tmdb_id'] : null);
+        $isSeries = in_array((string) ($intent['media_type'] ?? 'movie'), ['series', 'anime'], true);
+        $metadataSettings = $settings->get('metadata', []);
+        $titleLanguage = trim((string) ($metadataSettings['title_language'] ?? 'en-US')) ?: 'en-US';
+        $details = $tmdbId !== null ? $tmdb->details($isSeries ? 'series' : 'movie', $tmdbId, $titleLanguage) : null;
+
+        return $this->json([
+            'success' => (bool) ($preview['success'] ?? false),
+            'message' => $preview['message'] ?? null,
+            'intent' => [
+                'id' => (int) $intent['id'],
+                'title' => $intent['title'],
+                'year' => $intent['year'],
+                'media_type' => $intent['media_type'] ?? 'movie',
+                'season' => $intent['season'] ?? null,
+                'episode' => $intent['episode'] ?? null,
+                'release_season' => $intent['release_season'] ?? null,
+                'release_episode' => $intent['release_episode'] ?? null,
+                'numbering_source' => $intent['numbering_source'] ?? null,
+                'status' => $intent['status'],
+            ],
+            'identity' => $preview['identity'] ?? [],
+            'details' => $details,
+            'candidates' => $preview['candidates'] ?? [],
+            'streams_count' => $preview['streams_count'] ?? 0,
+        ], !empty($preview['success']) ? 200 : 422);
+    }
+
+    #[Route('/automation/downloads/intent/download', name: 'automation_downloads_intent_download', methods: ['POST'])]
+    public function intentDownload(Request $request, AutomationStore $store, ReleaseResolverService $resolver): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $intentId = (int) ($data['intent_id'] ?? 0);
+        $intent = $store->getIntent($intentId);
+        if ($intent === null) {
+            return $this->json(['success' => false, 'message' => 'Intent not found.'], 404);
+        }
+        if (!is_array($data['candidate'] ?? null)) {
+            return $this->json(['success' => false, 'message' => 'Missing selected source.'], 400);
+        }
+
+        $result = $resolver->queueManualCandidate($intent, $data['candidate']);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
     #[Route('/automation/downloads/dry-run', name: 'automation_downloads_dry_run', methods: ['POST'])]
     public function dryRun(Request $request, ReleaseDryRunService $dryRun): Response
     {
@@ -239,6 +368,7 @@ class AutomationDownloadsController extends AbstractController
             'queue_depth' => $intents->getQueueDepth(),
             'run_requested' => $intents->isRunRequested(),
             'auto_sources' => $intents->hasAutoDownloadSources(),
+            'auto_series_sources' => $intents->hasAutoDownloadSeriesSources(),
         ]);
     }
 

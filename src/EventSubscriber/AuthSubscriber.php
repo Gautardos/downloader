@@ -38,8 +38,13 @@ class AuthSubscriber implements EventSubscriberInterface
         $request = $event->getRequest();
         $route = $request->attributes->get('_route');
 
-        // Allow login route and static assets
-        if ($route === 'login' || str_starts_with($route ?? '', '_')) {
+        // Jellyfin clients authenticate with their own token, not the web session.
+        if (str_starts_with($request->getPathInfo(), '/jellyfin')) {
+            return;
+        }
+
+        // Allow login route, Jellyfin API routes and static assets
+        if ($route === 'login' || str_starts_with($route ?? '', '_') || str_starts_with((string) $route, 'jellyfin_')) {
             return;
         }
 

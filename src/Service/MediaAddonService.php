@@ -14,6 +14,7 @@ class MediaAddonService
     private JsonStorage $storage;
     private CacheInterface $cache;
     private Client $client;
+    private array $metaAddonCache = [];
 
     public function __construct(JsonStorage $storage, CacheInterface $cache)
     {
@@ -96,6 +97,123 @@ class MediaAddonService
         usort($targets, static fn ($a, $b) => ($a['priority'] ?? 100) <=> ($b['priority'] ?? 100));
 
         return ['addons' => $targets, 'errors' => $errors];
+    }
+
+    public function getEnabledMetaAddons(string $type): array
+    {
+        $cached = $this->metaAddonCache[$type] ?? null;
+        if (is_array($cached) && (time() - (int) ($cached['at'] ?? 0)) < 300) {
+            return $cached['result'];
+        }
+
+        $targets = [];
+        $errors = [];
+
+        foreach ($this->getAddons() as $addon) {
+            if (empty($addon['enabled'])) {
+                continue;
+            }
+
+            try {
+                $fetched = $this->fetchJson($addon['manifest_url']);
+                $manifest = $fetched['data'];
+                if (!$this->supportsMeta($manifest, $type)) {
+                    continue;
+                }
+
+                $targets[] = [
+                    ...$addon,
+                    'base_url' => $this->deriveBaseUrl($fetched['url']),
+                    'query' => (string) (parse_url($fetched['url'], PHP_URL_QUERY) ?? ''),
+                    'manifest' => $manifest,
+                ];
+            } catch (\Throwable $e) {
+                $errors[] = [
+                    'addon' => $addon['name'] ?: $addon['manifest_url'],
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        usort($targets, static fn ($a, $b) => ($a['priority'] ?? 100) <=> ($b['priority'] ?? 100));
+        $result = ['addons' => $targets, 'errors' => $errors];
+        $this->metaAddonCache[$type] = ['at' => time(), 'result' => $result];
+
+        return $result;
+    }
+
+    public function getMeta(string $type, string $id, array $preferredAddonIds = []): array
+    {
+        $id = trim($id);
+        if (!in_array($type, ['movie', 'series', 'anime'], true) || $id === '' || !preg_match('/^[a-z0-9_.:-]+$/i', $id)) {
+            return ['success' => false, 'message' => 'Invalid metadata request.', 'meta' => null, 'errors' => []];
+        }
+
+        $resolved = $this->getEnabledMetaAddons($type);
+        $targets = $resolved['addons'];
+        $errors = $resolved['errors'];
+        if ($preferredAddonIds) {
+            usort($targets, static function (array $a, array $b) use ($preferredAddonIds): int {
+                $aPreferred = in_array((string) ($a['manifest']['id'] ?? $a['id'] ?? ''), $preferredAddonIds, true);
+                $bPreferred = in_array((string) ($b['manifest']['id'] ?? $b['id'] ?? ''), $preferredAddonIds, true);
+                if ($aPreferred !== $bPreferred) {
+                    return $aPreferred ? -1 : 1;
+                }
+
+                return ((int) ($a['priority'] ?? 100)) <=> ((int) ($b['priority'] ?? 100));
+            });
+        }
+
+        foreach ($targets as $target) {
+            $url = rtrim($target['base_url'], '/') . '/meta/' . rawurlencode($type) . '/' . $this->encodePathId($id) . '.json';
+            if (!empty($target['query'])) {
+                $url .= '?' . $target['query'];
+            }
+
+            try {
+                $this->assertPublicHttpsUrl($url);
+                $response = $this->client->get($url, [
+                    'timeout' => max(3, min(20, (int) ($target['timeout'] ?? 10))),
+                    'connect_timeout' => 5,
+                    'allow_redirects' => false,
+                    'http_errors' => false,
+                    'headers' => ['Accept' => 'application/json'],
+                ]);
+                if ($response->getStatusCode() !== 200) {
+                    $errors[] = ['addon' => $target['name'], 'error' => 'HTTP ' . $response->getStatusCode()];
+                    continue;
+                }
+                $body = (string) $response->getBody();
+                if (strlen($body) > 8 * 1024 * 1024) {
+                    $errors[] = ['addon' => $target['name'], 'error' => 'Metadata response is too large.'];
+                    continue;
+                }
+                $data = json_decode($body, true);
+                $meta = is_array($data) ? ($data['meta'] ?? null) : null;
+                if (!is_array($meta)) {
+                    $errors[] = ['addon' => $target['name'], 'error' => 'Invalid metadata response.'];
+                    continue;
+                }
+
+                return [
+                    'success' => true,
+                    'message' => null,
+                    'meta' => $meta,
+                    'addon_id' => (string) ($target['manifest']['id'] ?? $target['id'] ?? ''),
+                    'addon_name' => (string) ($target['name'] ?? $target['manifest']['name'] ?? ''),
+                    'errors' => $errors,
+                ];
+            } catch (\Throwable $e) {
+                $errors[] = ['addon' => $target['name'], 'error' => $e->getMessage()];
+            }
+        }
+
+        return [
+            'success' => false,
+            'message' => $errors ? 'No metadata addon returned this title.' : 'No metadata addon is configured.',
+            'meta' => null,
+            'errors' => $errors,
+        ];
     }
 
     public function getEnabledAddon(string $addonId): ?array
@@ -486,6 +604,33 @@ class MediaAddonService
             'runtime' => $item['runtime'] ?? null,
             'behavior_hints' => $item['behaviorHints'] ?? [],
         ];
+    }
+
+    private function supportsMeta(array $manifest, string $type): bool
+    {
+        $manifestTypes = is_array($manifest['types'] ?? null) ? $manifest['types'] : [];
+
+        foreach ($manifest['resources'] ?? [] as $resource) {
+            if (is_string($resource) && $resource === 'meta') {
+                if (in_array($type, $manifestTypes, true) || in_array('all', $manifestTypes, true)) {
+                    return true;
+                }
+                continue;
+            }
+
+            if (!is_array($resource) || ($resource['name'] ?? '') !== 'meta') {
+                continue;
+            }
+
+            $types = $resource['types'] ?? $manifestTypes;
+            if (!in_array($type, $types, true) && !in_array('all', $types, true)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private function supportsStream(array $manifest, string $type): bool

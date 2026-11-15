@@ -2,6 +2,7 @@
 
 namespace App\Command;
 
+use App\Service\Automation\AutomationStore;
 use App\Service\Automation\LibraryIndexService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -16,11 +17,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 class LibraryScanCommand extends Command
 {
     private LibraryIndexService $libraryIndex;
+    private AutomationStore $store;
 
-    public function __construct(LibraryIndexService $libraryIndex)
+    public function __construct(LibraryIndexService $libraryIndex, AutomationStore $store)
     {
         parent::__construct();
         $this->libraryIndex = $libraryIndex;
+        $this->store = $store;
     }
 
     protected function configure(): void
@@ -53,6 +56,12 @@ class LibraryScanCommand extends Command
         $output->writeln('Missing: ' . ($stats['files_missing'] ?? 0));
         $output->writeln('Skipped: ' . ($stats['files_skipped'] ?? 0));
         $output->writeln('Duration: ' . ($stats['duration'] ?? 0) . 's');
+
+        if (!empty($this->store->getUnresolvedGroups(1))) {
+            $this->store->setSetting('library_resolve_requested', true);
+            $this->store->setSetting('library_resolve_requested_at', time());
+            $output->writeln('Unmatched entries found; metadata resolution requested for the automation worker.');
+        }
 
         if (!empty($stats['errors'])) {
             $output->writeln('<comment>Warnings:</comment>');

@@ -52,11 +52,11 @@ class AutomationNotifier
         }
 
         $type = $failed > 0 ? 'error' : ($noSource > 0 ? 'warning' : 'success');
-        $this->notify($type, 'Movie automation: ' . implode(', ', $parts) . '.', 'Automation', $error ?? '', 'movie');
+        $this->notify($type, 'Automation: ' . implode(', ', $parts) . '.', 'Automation', $error ?? '', 'movie');
     }
 
-    public function notifyProblem(string $message, string $item = '', string $type = 'error'): void
+    public function notifyProblem(string $message, string $item = '', string $type = 'error', string $mediaType = 'movie'): void
     {
-        $this->notify($type, $message, 'Automation', $item, 'movie');
+        $this->notify($type, $message, 'Automation', $item, $mediaType);
     }
 }

@@ -1,11 +1,11 @@
-<article class="card config-card is-collapsed" data-config-card="roots">
+<article class="card config-card is-collapsed" id="config-roots" data-config-card="roots">
     <div class="config-card-head">
         <div>
             <h2 class="config-card-title">Library roots and scanner</h2>
             <p class="config-card-subtitle">Paths are internal container paths. The defaults match the standard Compose mounts.</p>
         </div>
         <button class="config-collapse-btn" type="button" data-config-collapse aria-expanded="false" aria-controls="config-roots-body" title="Expand configuration">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            <span class="config-collapse-icon">▼</span>
         </button>
     </div>
     <div class="config-card-body" id="config-roots-body" data-config-body hidden>
@@ -63,6 +63,11 @@
                         <input type="checkbox" name="follow_symlinks" value="1" {{ scanner.follow_symlinks|default(false) ? 'checked' : '' }}>
                         Follow symbolic links
                     </label>
+                    <label class="config-check">
+                        <input type="checkbox" name="full_folder_tree" value="1" {{ scanner.full_folder_tree|default(false) ? 'checked' : '' }}>
+                        Load the full folder tree in one request
+                    </label>
+                    <div class="config-hint">Lazy loading is safer for large libraries. Full tree is fine for a few hundred entries but sends more HTML.</div>
                 </div>
             </div>
             <div class="config-actions">

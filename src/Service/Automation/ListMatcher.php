@@ -9,15 +9,21 @@ class ListMatcher
     private AutomationStore $store;
     private AutomationSettings $settings;
     private TmdbService $tmdb;
+    private ?EpisodeNumberingService $numbering;
     private int $lookupBudget = 0;
     private int $lookups = 0;
     private ?string $lastEpisodeReason = null;
 
-    public function __construct(AutomationStore $store, AutomationSettings $settings, TmdbService $tmdb)
-    {
+    public function __construct(
+        AutomationStore $store,
+        AutomationSettings $settings,
+        TmdbService $tmdb,
+        ?EpisodeNumberingService $numbering = null
+    ) {
         $this->store = $store;
         $this->settings = $settings;
         $this->tmdb = $tmdb;
+        $this->numbering = $numbering;
     }
 
     public function beginRun(?int $maxLookups = null): void
@@ -69,6 +75,9 @@ class ListMatcher
             if (empty($direct) && !empty($titleMatches)) {
                 return $this->result('ambiguous', 'low_confidence_library_match');
             }
+            if ((string) $item['media_type'] === 'series') {
+                return $this->missingSeriesWithoutLibrary($item);
+            }
 
             return $this->result('missing', 'not_in_library');
         }
@@ -85,6 +94,47 @@ class ListMatcher
         $entry = $relevant[0];
 
         return $this->result('present', 'movie_present', $entry);
+    }
+
+    private function missingSeriesWithoutLibrary(array $item): array
+    {
+        $tmdbId = !empty($item['tmdb_id']) ? (int) $item['tmdb_id'] : null;
+        if ($tmdbId === null) {
+            return $this->result('ambiguous', 'identity_unresolved');
+        }
+
+        $seasonScope = $item['season'] !== null ? (int) $item['season'] : null;
+        $episodeScope = $item['episode'] !== null ? (int) $item['episode'] : null;
+        if ($seasonScope !== null && $episodeScope !== null) {
+            $episodes = [[$seasonScope, $episodeScope]];
+        } else {
+            $episodes = $this->airedEpisodes($tmdbId, $seasonScope);
+            if ($episodes === null) {
+                return $this->result('ambiguous', $this->lastEpisodeReason ?: 'episode_list_unavailable', null, [
+                    'matched_tmdb_id' => $tmdbId,
+                ]);
+            }
+        }
+
+        if (empty($episodes)) {
+            return $this->result('present', 'no_aired_episodes', null, [
+                'matched_tmdb_id' => $tmdbId,
+            ]);
+        }
+
+        $missing = [];
+        foreach ($episodes as [$season, $episode]) {
+            $missing[] = 'S' . str_pad((string) $season, 2, '0', STR_PAD_LEFT)
+                . 'E' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT);
+        }
+
+        return $this->result('missing', 'not_in_library', null, [
+            'matched_tmdb_id' => $tmdbId,
+            'episodes_total' => count($episodes),
+            'episodes_present' => 0,
+            'episodes_missing' => count($episodes),
+            'missing_episodes' => array_slice($missing, 0, 50),
+        ]);
     }
 
     private function matchSeries(array $item, array $relevant): array
@@ -115,6 +165,19 @@ class ListMatcher
             }
         }
 
+        $profile = null;
+        if ($this->numbering !== null && $this->seriesNumberingNeeded($episodes, $relevant)) {
+            $identity = $this->numbering->identity($item);
+            $profile = $this->numbering->profileFor($identity, false, true);
+            if (!$this->numbering->isUsable($profile)) {
+                return $this->result('ambiguous', $profile === null ? 'series_numbering_unavailable' : ((string) ($profile['status'] ?? '') === 'ok' ? 'series_numbering_needs_confirmation' : 'series_numbering_ambiguous'), $relevant[0], [
+                    'episodes_total' => count($episodes),
+                    'episodes_present' => 0,
+                    'episodes_missing' => count($episodes),
+                ]);
+            }
+        }
+
         $present = [];
         foreach ($relevant as $entry) {
             if ($entry['season'] === null || $entry['episode'] === null) {
@@ -123,7 +186,17 @@ class ListMatcher
             if ((string) ($entry['parse_source'] ?? '') === 'multi_episode') {
                 continue;
             }
-            $present[(int) $entry['season'] . ':' . (int) $entry['episode']] = true;
+            $season = (int) $entry['season'];
+            $episode = (int) $entry['episode'];
+            if ($profile !== null) {
+                $canonical = $this->numbering->canonicalFor($profile, $season, $episode);
+                if ($canonical === null) {
+                    continue;
+                }
+                $season = $canonical['season'];
+                $episode = $canonical['episode'];
+            }
+            $present[$season . ':' . $episode] = true;
         }
 
         $episodesTotal = count($episodes);
@@ -165,6 +238,45 @@ class ListMatcher
             'episodes_missing' => $episodesMissing,
             'missing_episodes' => array_slice($missing, 0, 50),
         ]);
+    }
+
+    private function seriesNumberingNeeded(array $episodes, array $entries): bool
+    {
+        $canonicalMax = [];
+        $canonicalCount = [];
+        foreach ($episodes as [$season, $episode]) {
+            $season = (int) $season;
+            $canonicalMax[$season] = max($canonicalMax[$season] ?? 0, (int) $episode);
+            $canonicalCount[$season] = ($canonicalCount[$season] ?? 0) + 1;
+        }
+
+        $localMax = [];
+        $localCount = [];
+        foreach ($entries as $entry) {
+            if ($entry['season'] === null || $entry['episode'] === null) {
+                continue;
+            }
+            if ((string) ($entry['parse_source'] ?? '') === 'multi_episode') {
+                continue;
+            }
+            $season = (int) $entry['season'];
+            if ($season <= 0) {
+                continue;
+            }
+            $localMax[$season] = max($localMax[$season] ?? 0, (int) $entry['episode']);
+            $localCount[$season] = ($localCount[$season] ?? 0) + 1;
+        }
+
+        foreach ($localMax as $season => $maxEpisode) {
+            if (!isset($canonicalMax[$season])) {
+                return true;
+            }
+            if ($maxEpisode > $canonicalMax[$season] || $localCount[$season] > $canonicalCount[$season]) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function airedEpisodes(int $tmdbId, ?int $seasonScope): ?array

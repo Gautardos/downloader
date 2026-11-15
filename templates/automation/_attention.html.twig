@@ -30,15 +30,21 @@
     .attention-candidate-main { min-width: 0; }
     .attention-candidate-title { display: block; font-size: .82rem; font-weight: 700; }
     .attention-candidate-meta { display: block; margin-top: .15rem; color: var(--text-secondary); font-size: .72rem; }
+    .collapsible-section-head { cursor: pointer; user-select: none; }
+    .collapsible-section.is-collapsed > :not(.collapsible-section-head) { display: none; }
+    .collapsible-chevron { color: var(--text-secondary); font-size: .7rem; line-height: 1; }
 </style>
 
-<section class="card" style="margin-bottom:1rem;">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+<section class="card collapsible-section" data-collapsible-section style="margin-bottom:1rem;">
+    <div class="collapsible-section-head" data-collapsible-head style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
         <div>
             <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Needs attention</h2>
             <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">Resolve each group with TMDB, or ignore it. Ignored groups are excluded from automatic resolution and deduplication.</p>
         </div>
-        <span class="badge badge-warning">{{ attention_groups|length }} group{{ attention_groups|length == 1 ? '' : 's' }} · {{ stats.ambiguous|default(0) }} entries</span>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+            <span class="badge badge-warning">{{ attention_groups|length }} group{{ attention_groups|length == 1 ? '' : 's' }} · {{ stats.ambiguous|default(0) }} entries</span>
+            <span class="collapsible-chevron" aria-hidden="true">▲</span>
+        </div>
     </div>
 
     {% if attention_groups is empty %}
@@ -84,13 +90,16 @@
 </section>
 
 {% if ignored_groups is not empty %}
-<section class="card" style="margin-bottom:1rem;">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+<section class="card collapsible-section" data-collapsible-section style="margin-bottom:1rem;">
+    <div class="collapsible-section-head" data-collapsible-head style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
         <div>
             <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Ignored</h2>
             <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">Ignored groups are hidden from automation. You can restore them or resolve them to TMDB.</p>
         </div>
-        <span class="badge badge-neutral">{{ ignored_groups|length }} group{{ ignored_groups|length == 1 ? '' : 's' }}</span>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+            <span class="badge badge-neutral">{{ ignored_groups|length }} group{{ ignored_groups|length == 1 ? '' : 's' }}</span>
+            <span class="collapsible-chevron" aria-hidden="true">▲</span>
+        </div>
     </div>
     <div class="library-table-wrap">
         <table class="library-table">

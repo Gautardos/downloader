@@ -44,6 +44,7 @@ class AutomationSettings
                 'follow_symlinks' => false,
                 'min_size_mb' => 20,
                 'scan_interval' => 21600,
+                'full_folder_tree' => false,
             ],
             'quality_profile' => [
                 'resolution_order' => ['2160p', '1080p', '720p'],
@@ -81,6 +82,7 @@ class AutomationSettings
                 'max_lookups_per_run' => 50,
                 'cache_positive_days' => 30,
                 'cache_negative_days' => 2,
+                'title_language' => 'en-US',
             ],
             'lists' => [
                 'max_items_per_run' => 500,

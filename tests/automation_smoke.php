@@ -2,6 +2,7 @@
 
 require __DIR__ . '/../vendor/autoload.php';
 
+use App\Service\Automation\AutomationNotifier;
 use App\Service\Automation\AutomationSettings;
 use App\Service\Automation\AutomationStore;
 use App\Service\Automation\LibraryMetadataResolver;
@@ -11,10 +12,30 @@ use App\Service\Automation\ListSourceClientInterface;
 use App\Service\Automation\ListSourceRegistry;
 use App\Service\Automation\ListSyncService;
 use App\Service\Automation\MdbListClient;
+use App\Service\Automation\EpisodeNumberingService;
+use App\Service\Automation\MovieIdentityResolverInterface;
+use App\Service\Automation\ReleaseDownloaderInterface;
+use App\Service\Automation\ReleaseIntentService;
 use App\Service\Automation\ReleaseMetadataParser;
 use App\Service\Automation\ReleasePreferenceService;
+use App\Service\Automation\ReleaseResolverService;
+use App\Service\Automation\ReleaseStreamProviderInterface;
 use App\Service\Automation\ScrobListClient;
+use App\Service\Automation\SeriesIdentityResolverInterface;
+use App\Service\Automation\SeriesNumberingProviderInterface;
+use App\Service\Automation\TmdbEpisodeCatalog;
+use App\Service\JsonStorage;
+use App\Service\MediaDownloadService;
+use App\Service\AlldebridService;
+use App\Service\MediaTypeHelper;
+use App\Service\QueueManager;
 use App\Service\TmdbService;
+use Symfony\Component\Config\Loader\LoaderInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Bundle\BundleInterface;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 
 final class FakeTmdbService extends TmdbService
@@ -75,6 +96,22 @@ final class FakeTmdbService extends TmdbService
 
     public function season(int $tvId, int $seasonNumber): array
     {
+        if ($tvId === 900001 && $seasonNumber === 1) {
+            return [
+                ['episode_number' => 1, 'name' => 'Episode 1', 'air_date' => '2024-01-01'],
+                ['episode_number' => 2, 'name' => 'Episode 2', 'air_date' => '2024-01-08'],
+                ['episode_number' => 3, 'name' => 'Episode 3', 'air_date' => '2024-01-15'],
+                ['episode_number' => 4, 'name' => 'Episode 4', 'air_date' => '2024-01-22'],
+                ['episode_number' => 5, 'name' => 'Episode 5', 'air_date' => '2024-01-29'],
+            ];
+        }
+        if ($tvId === 900002 && $seasonNumber === 1) {
+            return [
+                ['episode_number' => 1, 'name' => 'Pilot', 'air_date' => '2025-01-01'],
+                ['episode_number' => 2, 'name' => 'Second', 'air_date' => '2025-01-08'],
+                ['episode_number' => 3, 'name' => 'Third', 'air_date' => '2025-01-15'],
+            ];
+        }
         if ($tvId === 1396 && $seasonNumber === 1) {
             return [
                 ['episode_number' => 1, 'name' => 'Pilot', 'air_date' => '1999-01-10'],
@@ -99,6 +136,8 @@ final class FakeTmdbService extends TmdbService
             1311031 => ['id' => 1311031, 'type' => 'movie', 'title' => 'Demon Slayer: Kimetsu no Yaiba Infinity Castle', 'year' => '2025', 'imdb_id' => 'tt1311031'],
             2316 => ['id' => 2316, 'type' => 'series', 'title' => 'The Office', 'year' => '2005', 'imdb_id' => 'tt0386676', 'seasons' => [['season_number' => 1, 'episode_count' => 6]]],
             2996 => ['id' => 2996, 'type' => 'series', 'title' => 'The Office', 'year' => '2001', 'imdb_id' => 'tt0290978', 'seasons' => [['season_number' => 1, 'episode_count' => 6]]],
+            900001 => ['id' => 900001, 'type' => 'series', 'title' => 'Split Show', 'year' => '2024', 'imdb_id' => 'tt9000001', 'seasons' => [['season_number' => 1, 'episode_count' => 5]]],
+            900002 => ['id' => 900002, 'type' => 'series', 'title' => 'Missing Show', 'year' => '2025', 'imdb_id' => 'tt9000002', 'seasons' => [['season_number' => 1, 'episode_count' => 3]]],
             default => null,
         };
     }
@@ -178,6 +217,185 @@ final class FakeListSourceClient implements ListSourceClientInterface
             'warnings' => $this->warnings,
         ];
     }
+}
+
+final class FakeKernel implements KernelInterface
+{
+    public function __construct(private string $projectDir)
+    {
+    }
+
+    public function registerBundles(): iterable
+    {
+        return [];
+    }
+
+    public function registerContainerConfiguration(LoaderInterface $loader)
+    {
+    }
+
+    public function boot()
+    {
+    }
+
+    public function shutdown()
+    {
+    }
+
+    public function getBundles(): array
+    {
+        return [];
+    }
+
+    public function getBundle(string $name): BundleInterface
+    {
+        throw new \RuntimeException('No bundle in fake kernel.');
+    }
+
+    public function locateResource(string $name): string
+    {
+        return $name;
+    }
+
+    public function getEnvironment(): string
+    {
+        return 'test';
+    }
+
+    public function isDebug(): bool
+    {
+        return false;
+    }
+
+    public function getProjectDir(): string
+    {
+        return $this->projectDir;
+    }
+
+    public function getContainer(): ContainerInterface
+    {
+        throw new \RuntimeException('No container in fake kernel.');
+    }
+
+    public function getStartTime(): float
+    {
+        return microtime(true);
+    }
+
+    public function getCacheDir(): string
+    {
+        return $this->projectDir . '/var/cache';
+    }
+
+    public function getBuildDir(): string
+    {
+        return $this->projectDir . '/var/cache';
+    }
+
+    public function getLogDir(): string
+    {
+        return $this->projectDir . '/var/log';
+    }
+
+    public function getCharset(): string
+    {
+        return 'UTF-8';
+    }
+
+    public function handle(Request $request, int $type = self::MAIN_REQUEST, bool $catch = true): Response
+    {
+        return new Response();
+    }
+}
+
+final class FakeReleaseIdentityResolver implements MovieIdentityResolverInterface
+{
+    public array $identity = [];
+
+    public function resolve(array $intent): array
+    {
+        return $this->identity;
+    }
+}
+
+final class FakeSeriesIdentityResolver implements SeriesIdentityResolverInterface
+{
+    public array $identity = [];
+
+    public function resolve(array $intent): array
+    {
+        return $this->identity;
+    }
+}
+
+final class FakeReleaseStreamProvider implements ReleaseStreamProviderInterface
+{
+    public array $streamsByType = [];
+    public array $calls = [];
+
+    public function getStreams(string $type, string $videoId): array
+    {
+        $this->calls[] = $type . '|' . $videoId;
+
+        return ['success' => true, 'streams' => $this->streamsByType[$type] ?? [], 'errors' => []];
+    }
+}
+
+final class FakeEpisodeCatalog extends TmdbEpisodeCatalog
+{
+    public array $episodesData = [];
+
+    public function __construct()
+    {
+    }
+
+    public function episodes(int $tmdbId, ?bool $includeSpecials = null, ?bool $includeUnaired = null): array
+    {
+        return $this->episodesData;
+    }
+}
+
+final class FakeSeriesNumberingProvider implements SeriesNumberingProviderInterface
+{
+    public array $result = [];
+
+    public function fetch(array $identity, bool $refresh = false): array
+    {
+        return $this->result;
+    }
+}
+
+final class FakeReleaseDownloader implements ReleaseDownloaderInterface
+{
+    public array $payloads = [];
+
+    public function addStream(array $payload, ?callable $heartbeat = null): array
+    {
+        $this->payloads[] = $payload;
+
+        return [
+            'success' => true,
+            'message' => 'Added to the download queue.',
+            'download_id' => 'series-dl-' . count($this->payloads),
+            'filename' => $payload['override_filename'] ?? null,
+            'path' => $payload['path'] ?? null,
+            'size' => 0,
+            'file_index' => isset($payload['file_idx']) ? (int) $payload['file_idx'] : 0,
+            'addon' => $payload['addon'] ?? null,
+        ];
+    }
+}
+
+function deleteTree(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+    foreach ($it as $file) {
+        $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+    }
+    rmdir($dir);
 }
 
 $failures = 0;
@@ -308,6 +526,10 @@ $camRelease = [
 ];
 $parsedCam = $releaseParser->parse($camRelease);
 eq('CAM', $parsedCam['source_type'], 'parser CAM source type');
+
+eq(null, $releaseParser->parse(['name' => 'Movie.2024.1080p.WEB-DL.x264', 'title' => 'Movie 2024', 'filename' => 'Movie.mkv'])['cached'], 'parser cache status is unknown without explicit hint');
+eq(true, $releaseParser->parse(['name' => 'Movie.2024.1080p.CACHED.x264', 'title' => 'Movie 2024 cached', 'filename' => 'Movie.mkv'])['cached'], 'parser detects cached hint');
+eq(false, $releaseParser->parse(['name' => 'Movie.2024.1080p.UNCACHED.x264', 'title' => 'Movie 2024 uncached', 'filename' => 'Movie.mkv'])['cached'], 'parser detects uncached hint');
 
 $quality = new ReleasePreferenceService($releaseParser, new FakeQualitySettings());
 $profile = [
@@ -834,6 +1056,23 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     }
     eq(2, $conformCount, 'renamed files are detected as conform');
 
+    $renameRun = $renameStore->getRecentRenameRuns(1)[0] ?? null;
+    check($renameRun !== null && !empty($renameRun['details_json']), 'rename run stores an undo log', $renameRun);
+    $undoPreview = $renameService->undo((int) $renameRun['id'], false);
+    check(!empty($undoPreview['success']) && ($undoPreview['stats']['entries_reverted'] ?? 0) === 2, 'undo preview counts renamed entries', $undoPreview);
+    check(is_file($renameRoot . '/Movies/The Movie (2020)/The Movie (2020).mkv'), 'undo preview leaves files untouched');
+
+    $undo = $renameService->undo((int) $renameRun['id'], true);
+    check(!empty($undo['success']) && ($undo['stats']['entries_reverted'] ?? 0) === 2, 'undo applies reverse moves', $undo);
+    check(is_file($renameRoot . '/Movies/Wrong Folder/Wrong.Movie.2020.mkv'), 'movie file restored');
+    check(is_file($renameRoot . '/Movies/Wrong Folder/movie.nfo'), 'movie.nfo restored');
+    check(is_file($renameRoot . '/Movies/Wrong Folder/Wrong.Movie.2020.en.srt'), 'movie sidecar restored');
+    check(is_file($renameRoot . '/TV Shows/Demo Show/Season 01/Demo.Show.S01E01.mkv'), 'series file restored');
+    check(is_file($renameRoot . '/TV Shows/Demo Show/Season 01/Demo.Show.S01E01.en.srt'), 'series sidecar restored');
+    check(!is_file($renameRoot . '/Movies/The Movie (2020)/The Movie (2020).mkv'), 'renamed movie target removed after undo');
+    $restored = $renameStore->getPdo()->query("SELECT path FROM library_entries WHERE title = 'The Movie'")->fetch();
+    eq($renameRoot . '/Movies/Wrong Folder/Wrong.Movie.2020.mkv', $restored['path'], 'DB path restored after undo');
+
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($renameProject, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($it as $file) {
         $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
@@ -1083,6 +1322,531 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     rmdir($intentProject);
 } else {
     echo "Intent store\n  skip (pdo_sqlite not available)\n";
+}
+
+if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+    echo "Series episode intents and resolution\n";
+    $seriesProject = sys_get_temp_dir() . '/automation-series-' . bin2hex(random_bytes(4));
+    mkdir($seriesProject, 0777, true);
+    $seriesStore = new AutomationStore($seriesProject);
+    $seriesSettings = new AutomationSettings($seriesStore);
+    $seriesStorage = new JsonStorage(new FakeKernel($seriesProject));
+    $seriesRoot = $seriesProject . '/nas/TV Shows';
+    $movieRoot = $seriesProject . '/nas/Movies';
+
+    $source = [
+        'id' => 'scrob',
+        'provider' => 'scrob',
+        'label' => 'Scrob',
+        'enabled' => true,
+        'config' => [
+            'api_key' => 'test',
+            'list_ids' => ['1'],
+            'auto_download' => true,
+            'auto_download_series' => false,
+        ],
+    ];
+    $seriesSettings->save([
+        'roots' => [
+            'movies' => ['label' => 'Movies', 'path' => $movieRoot, 'type' => 'movie', 'enabled' => true],
+            'series' => ['label' => 'TV Shows', 'path' => $seriesRoot, 'type' => 'series', 'enabled' => true],
+            'anime' => ['label' => 'Anime', 'path' => $seriesProject . '/nas/Anime', 'type' => 'anime', 'enabled' => false],
+        ],
+        'sources' => [$source],
+        'metadata' => ['title_language' => 'en-US'],
+        'backfill' => ['max_intents_per_run' => 50, 'queue_guard' => 20, 'exclude_specials' => true],
+    ]);
+
+    $listRunId = $seriesStore->startListRun('scrob', 'scrob');
+    $seriesStore->finishListRun($listRunId, ['items_seen' => 1, 'missing' => 1], 'success');
+    $seriesStore->upsertListItem([
+        'source_id' => 'scrob',
+        'provider' => 'scrob',
+        'list_ref' => '1',
+        'remote_key' => 'series-777',
+        'media_type' => 'series',
+        'tmdb_id' => 777,
+        'imdb_id' => 'tt7777777',
+        'title' => 'Demo Show',
+        'title_normalized' => 'demo show',
+        'year' => 2020,
+        'season' => null,
+        'episode' => null,
+        'raw' => [],
+    ], $listRunId);
+    $listItemId = (int) $seriesStore->getPdo()->query("SELECT id FROM list_items WHERE source_id = 'scrob' AND remote_key = 'series-777' LIMIT 1")->fetchColumn();
+    $seriesStore->updateListItemMatch($listItemId, [
+        'status' => 'missing',
+        'missing_episodes' => ['S01E01', 'S01E02', 'S01E03', 'S01E04'],
+        'episodes_total' => 4,
+        'episodes_present' => 0,
+        'episodes_missing' => 4,
+    ], $listRunId);
+
+    $addSeriesEntry = static function (int $episode, bool $ignored, bool $present = true) use ($seriesStore, $seriesRoot): void {
+        $path = $seriesRoot . '/Demo Show (2020)/Season 01/Demo Show (2020) - S01E' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT) . '.mkv';
+        $seriesStore->upsertLibraryEntry([
+            'root_key' => 'series',
+            'path' => $path,
+            'relative_path' => 'Demo Show (2020)/Season 01/' . basename($path),
+            'filename' => basename($path),
+            'extension' => 'mkv',
+            'media_type' => 'series',
+            'title' => 'Demo Show',
+            'title_normalized' => 'demo show',
+            'year' => 2020,
+            'season' => 1,
+            'episode' => $episode,
+            'quality' => '1080p',
+            'size' => 1000,
+            'mtime' => 100,
+            'media_key' => 'series:tmdb:777:s01e' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT),
+            'tmdb_id' => 777,
+            'imdb_id' => 'tt7777777',
+            'confidence' => 0.99,
+            'parse_source' => 'filename',
+            'parser_version' => LibraryNameParser::VERSION,
+            'scan_id' => 1,
+            'show_folder' => 'Demo Show (2020)',
+        ]);
+        if ($ignored) {
+            $seriesStore->getPdo()->exec("UPDATE library_entries SET ignored_at = '2026-01-01 00:00:00' WHERE path = " . $seriesStore->getPdo()->quote($path));
+        }
+    };
+    $addSeriesEntry(1, false);
+    $addSeriesEntry(2, true);
+
+    $seriesIdentity = new FakeSeriesIdentityResolver();
+    $seriesIdentity->identity = [
+        'success' => true,
+        'tmdb_id' => 777,
+        'imdb_id' => 'tt7777777',
+        'title' => 'Demo Show',
+        'year' => 2020,
+        'reason' => null,
+    ];
+    $movieIdentity = new FakeReleaseIdentityResolver();
+    $movieIdentity->identity = [
+        'success' => true,
+        'tmdb_id' => 888,
+        'imdb_id' => 'tt8888888',
+        'title' => 'Fake Movie',
+        'year' => 2024,
+        'reason' => null,
+    ];
+    $streamProvider = new FakeReleaseStreamProvider();
+    $downloader = new FakeReleaseDownloader();
+    $preferences = new ReleasePreferenceService(new ReleaseMetadataParser(), $seriesSettings);
+    $resolver = new ReleaseResolverService($seriesStore, $seriesSettings, $preferences, $streamProvider, $downloader, $movieIdentity, $seriesIdentity, $seriesStorage);
+    $notifier = new AutomationNotifier($seriesStorage);
+    $seriesIntents = new ReleaseIntentService($seriesStore, $seriesSettings, $resolver, $notifier, $seriesStorage, $seriesProject);
+
+    check($seriesIntents->hasAutoDownloadSources(), 'movie auto-download source is detected');
+    check(!$seriesIntents->hasAutoDownloadSeriesSources(), 'series auto-download stays independent from movie auto-download');
+    $autoOnly = $seriesIntents->queueMissingEpisodes(true);
+    eq(0, $autoOnly['stats']['created'], 'auto episode queueing ignores sources without series auto-download');
+
+    $source['config']['auto_download_series'] = true;
+    $seriesSettings->save(['sources' => [$source]]);
+    check($seriesIntents->hasAutoDownloadSeriesSources(), 'series auto-download source is detected when enabled');
+
+    $queuedEpisodes = $seriesIntents->queueMissingEpisodes(false);
+    eq(2, $queuedEpisodes['stats']['created'], 'episode intents are created from missing_json');
+    eq(2, $queuedEpisodes['stats']['library_present'], 'present and ignored library episodes are not queued');
+    eq(2, $seriesStore->countIntents(['type' => 'series']), 'one intent is stored per missing episode');
+
+    $episodeRows = $seriesStore->getPdo()->query("SELECT season, episode, media_key FROM intents WHERE media_type = 'series' ORDER BY episode")->fetchAll();
+    eq(3, (int) $episodeRows[0]['episode'], 'first episode intent keeps its episode number');
+    eq(1, (int) $episodeRows[0]['season'], 'first episode intent keeps its season number');
+    eq('series:tmdb:777:s01e03', $episodeRows[0]['media_key'], 'episode media key is canonical');
+    eq('series:tmdb:777:s01e04', $episodeRows[1]['media_key'], 'second episode media key is canonical');
+    eq(0, (int) $seriesStore->countIntents(['type' => 'series', 'season' => 2]), 'unaired episode outside missing_json is not queued');
+
+    $duplicateEpisodes = $seriesIntents->queueMissingEpisodes(false);
+    eq(0, $duplicateEpisodes['stats']['created'], 'episode queueing is deduplicated');
+    eq(2, $duplicateEpisodes['stats']['existing'], 'existing episode intents are reported');
+    eq(2, $seriesStore->countIntents(['type' => 'series']), 'no duplicate episode intent is created');
+
+    $seriesStorage->set('server_queue', array_fill(0, 20, ['url' => 'x']));
+    $guardResult = $seriesIntents->queueMissingEpisodes(false);
+    eq(0, $guardResult['stats']['created'], 'queue guard blocks episode intent creation');
+    check(str_contains((string) ($guardResult['message'] ?? ''), 'Queue guard'), 'queue guard reports why episodes were skipped');
+    $seriesStorage->set('server_queue', []);
+
+    $seriesStore->updateListItemMatch($listItemId, [
+        'status' => 'missing',
+        'missing_episodes' => ['S01E01', 'S01E02', 'S01E03', 'S01E04', 'S01E05', 'S01E06', 'S01E07'],
+        'episodes_total' => 7,
+        'episodes_present' => 0,
+        'episodes_missing' => 7,
+    ], $listRunId);
+    $seriesSettings->save(['backfill' => ['max_intents_per_run' => 1]]);
+    $capResult = $seriesIntents->queueMissingEpisodes(false);
+    eq(1, $capResult['stats']['created'], 'episode intent creation respects the per-run cap');
+    eq(3, $seriesStore->countIntents(['type' => 'series']), 'per-run cap stops before extra episode intents');
+    $seriesSettings->save(['backfill' => ['max_intents_per_run' => 50]]);
+
+    $episodeStream = [
+        'addon' => 'Fake Addon',
+        'addon_id' => 'fake',
+        'priority' => 1,
+        'name' => 'Demo.Show.S01E03.1080p.WEB-DL.x265.VOSTFR',
+        'title' => 'Demo.Show.S01E03.1080p.WEB-DL.x265.VOSTFR',
+        'info_hash' => str_repeat('a', 40),
+        'file_idx' => null,
+        'url' => null,
+        'kind' => 'torrent',
+        'filename' => 'Demo.Show.S01E03.1080p.WEB-DL.x265.VOSTFR.mkv',
+        'sources' => [],
+        'size' => '1.2 GB',
+        'seeders' => 50,
+    ];
+    $streamProvider->streamsByType['series'] = [$episodeStream];
+    $e03 = $seriesStore->getPdo()->query("SELECT * FROM intents WHERE media_key = 'series:tmdb:777:s01e03' LIMIT 1")->fetch();
+    $resolved = $resolver->processIntent($e03);
+    eq('queued', $resolved['status'], 'series intent is resolved and queued');
+    eq('series|tt7777777:1:3', end($streamProvider->calls), 'series addons receive the IMDb id plus season and episode');
+    $seriesPayload = end($downloader->payloads);
+    eq($seriesRoot . '/Demo Show (2020)/Season 01', $seriesPayload['path'], 'episode destination follows the season folder convention');
+    eq('Demo Show (2020) - S01E03.mkv', $seriesPayload['override_filename'], 'episode filename contains no episode title');
+    eq(1, (int) $seriesPayload['season'], 'episode season is propagated to the downloader');
+    eq(3, (int) $seriesPayload['episode'], 'episode number is propagated to the downloader');
+    eq('series:tmdb:777:s01e03', $seriesPayload['automation_media_key'], 'episode media key is propagated to the queue payload');
+    check($seriesStore->getIntent((int) $e03['id'])['status'] === 'queued', 'intent is marked queued after enqueue');
+
+    $movieStream = [
+        'addon' => 'Fake Addon',
+        'addon_id' => 'fake',
+        'priority' => 1,
+        'name' => 'Fake.Movie.2024.1080p.WEB-DL.x265.VOSTFR',
+        'title' => 'Fake.Movie.2024.1080p.WEB-DL.x265.VOSTFR',
+        'info_hash' => str_repeat('b', 40),
+        'file_idx' => null,
+        'url' => null,
+        'kind' => 'torrent',
+        'filename' => 'Fake.Movie.2024.1080p.WEB-DL.x265.VOSTFR.mkv',
+        'sources' => [],
+        'size' => '2 GB',
+        'seeders' => 50,
+    ];
+    $streamProvider->streamsByType['movie'] = [$movieStream];
+    $movieIntent = $seriesStore->createIntent([
+        'source_id' => 'scrob',
+        'source_list_id' => '1',
+        'media_key' => 'movie:tmdb:888',
+        'media_type' => 'movie',
+        'tmdb_id' => 888,
+        'imdb_id' => 'tt8888888',
+        'title' => 'Fake Movie',
+        'year' => 2024,
+    ]);
+    $movieResolved = $resolver->processIntent($movieIntent['intent']);
+    eq('queued', $movieResolved['status'], 'movie resolution still works after the series changes');
+    $moviePayload = end($downloader->payloads);
+    eq($movieRoot . '/Fake Movie (2024)', $moviePayload['path'], 'movie destination is unchanged');
+    eq('Fake Movie (2024).mkv', $moviePayload['override_filename'], 'movie filename is unchanged');
+
+    $multiStream = $episodeStream;
+    $multiStream['name'] = 'Demo.Show.S01E03E04.1080p.WEB-DL.x265.VOSTFR';
+    $multiStream['title'] = $multiStream['name'];
+    $multiStream['filename'] = 'Demo.Show.S01E03E04.1080p.WEB-DL.x265.VOSTFR.mkv';
+    $streamProvider->streamsByType['series'] = [$multiStream];
+    $e04 = $seriesStore->getPdo()->query("SELECT * FROM intents WHERE media_key = 'series:tmdb:777:s01e04' LIMIT 1")->fetch();
+    $payloadCountBeforeMulti = count($downloader->payloads);
+    $multiResult = $resolver->processIntent($e04);
+    eq('error', $multiResult['status'], 'multi-episode releases are not queued for a single episode');
+    eq($payloadCountBeforeMulti, count($downloader->payloads), 'multi-episode release is never sent to the downloader');
+
+    $selector = new MediaDownloadService(
+        new AlldebridService($seriesStorage),
+        new QueueManager($seriesStorage, $seriesProject, new MediaTypeHelper()),
+        $seriesStorage
+    );
+    $selectFile = new ReflectionMethod(MediaDownloadService::class, 'selectFile');
+    $selectFile->setAccessible(true);
+    $packFiles = [
+        ['index' => 0, 'name' => 'Demo.Show.S01E05.1080p.mkv', 'path' => 'Demo.Show.S01E05.1080p.mkv', 'size' => 9000000000, 'link' => 'a'],
+        ['index' => 1, 'name' => 'Demo.Show.S01E03.1080p.mkv', 'path' => 'Demo.Show.S01E03.1080p.mkv', 'size' => 1000000000, 'link' => 'b'],
+    ];
+    $exactPick = $selectFile->invoke($selector, $packFiles, null, '', 1, 3, 'Demo.Show.S01E03');
+    eq(1, $exactPick['index'], 'pack selection picks the exact SxxExx file instead of the largest file');
+    $missingPick = $selectFile->invoke($selector, [$packFiles[0]], null, '', 1, 3, 'Demo.Show.S01E03');
+    eq(null, $missingPick, 'pack without the exact episode is refused');
+    $fallbackPick = $selectFile->invoke($selector, $packFiles, 0, '', 1, 3, 'Demo.Show.S01E03');
+    eq(1, $fallbackPick['index'], 'file_idx pointing to another episode falls back to the exact SxxExx file');
+    $multiFiles = [
+        ['index' => 0, 'name' => 'Demo.Show.S01E03E04.1080p.mkv', 'path' => 'Demo.Show.S01E03E04.1080p.mkv', 'size' => 2000000000, 'link' => 'c'],
+    ];
+    eq(null, $selectFile->invoke($selector, $multiFiles, null, '', 1, 3, 'Demo.Show.S01E03E04'), 'multi-episode file is refused for a single episode');
+    $seasonPackFiles = [
+        ['index' => 0, 'name' => 'Demo.Show.S01.1080p.mkv', 'path' => 'Demo.Show.S01.1080p.mkv', 'size' => 12000000000, 'link' => 'd'],
+    ];
+    eq(null, $selectFile->invoke($selector, $seasonPackFiles, null, '', 1, 3, 'Demo.Show.S01.1080p'), 'season pack without an episode file is refused');
+
+    $e03Fresh = $seriesStore->getIntent((int) $e03['id']);
+    $seriesIntents->onDownloadFinished([
+        'automation_intent_id' => (int) $e03Fresh['id'],
+        'download_id' => 'series-dl-test',
+        'filename' => 'Demo Show (2020) - S01E03.mkv',
+    ], 'success');
+    $e03Done = $seriesStore->getIntent((int) $e03Fresh['id']);
+    eq('success', $e03Done['status'], 'episode intent becomes success after download');
+    eq('series', $seriesStore->getSetting('library_scan_requested_root'), 'episode success requests a series scan');
+    check((bool) $seriesStore->getSetting('library_resolve_requested', false), 'episode success requests a targeted resolution');
+    $notifications = $seriesStorage->get('server_notifications', []);
+    $hasEpisodeNotification = false;
+    foreach (is_array($notifications) ? $notifications : [] as $notification) {
+        if (str_contains((string) ($notification['message'] ?? ''), 'Episode downloaded')) {
+            $hasEpisodeNotification = true;
+        }
+    }
+    check($hasEpisodeNotification, 'episode success sends a light in-app notification');
+
+    $e04Fresh = $seriesStore->getIntent((int) $e04['id']);
+    $seriesIntents->onDownloadFinished([
+        'automation_intent_id' => (int) $e04Fresh['id'],
+        'download_id' => 'series-dl-failed',
+        'filename' => 'Demo Show (2020) - S01E04.mkv',
+    ], 'error', 'Download interrupted');
+    $e04Done = $seriesStore->getIntent((int) $e04Fresh['id']);
+    eq('error', $e04Done['status'], 'episode download failure marks the intent as error');
+    check(!empty($e04Done['next_attempt_at']), 'episode download failure schedules a retry');
+
+    deleteTree($seriesProject);
+} else {
+    echo "Series episode intents and resolution\n  skip (pdo_sqlite not available)\n";
+}
+
+if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+    echo "Series numbering mapping\n";
+    $numberProject = sys_get_temp_dir() . '/automation-numbering-' . bin2hex(random_bytes(4));
+    mkdir($numberProject, 0777, true);
+    $numberStore = new AutomationStore($numberProject);
+    $numberSettings = new AutomationSettings($numberStore);
+    $numberStorage = new JsonStorage(new FakeKernel($numberProject));
+    $numberSeriesRoot = $numberProject . '/nas/TV Shows';
+    $numberSettings->save([
+        'roots' => [
+            'movies' => ['label' => 'Movies', 'path' => $numberProject . '/nas/Movies', 'type' => 'movie', 'enabled' => true],
+            'series' => ['label' => 'TV Shows', 'path' => $numberSeriesRoot, 'type' => 'series', 'enabled' => true],
+            'anime' => ['label' => 'Anime', 'path' => $numberProject . '/nas/Anime', 'type' => 'anime', 'enabled' => false],
+        ],
+        'sources' => [[
+            'id' => 'scrob',
+            'provider' => 'scrob',
+            'label' => 'Scrob',
+            'enabled' => true,
+            'config' => ['api_key' => 'test', 'list_ids' => ['1'], 'auto_download_series' => true],
+        ]],
+        'metadata' => ['title_language' => 'en-US'],
+        'backfill' => ['max_intents_per_run' => 50, 'queue_guard' => 20, 'exclude_specials' => true],
+    ]);
+
+    $catalog = new FakeEpisodeCatalog();
+    $catalog->episodesData = [
+        ['season' => 1, 'episode' => 1, 'title' => 'One', 'air_date' => '2024-01-01', 'ordinal' => 1],
+        ['season' => 1, 'episode' => 2, 'title' => 'Two', 'air_date' => '2024-01-08', 'ordinal' => 2],
+        ['season' => 1, 'episode' => 3, 'title' => 'Three', 'air_date' => '2024-01-15', 'ordinal' => 3],
+        ['season' => 1, 'episode' => 4, 'title' => 'Four', 'air_date' => '2024-01-22', 'ordinal' => 4],
+        ['season' => 1, 'episode' => 5, 'title' => 'Five', 'air_date' => '2024-01-29', 'ordinal' => 5],
+    ];
+    $numberProvider = new FakeSeriesNumberingProvider();
+    $numberProvider->result = [
+        'success' => true,
+        'provider' => 'tvdb',
+        'provider_label' => 'AIOMetadata',
+        'source_ref' => 'tvdb:999',
+        'videos' => [
+            ['season' => 1, 'episode' => 1, 'title' => 'One', 'released' => '2023-12-31', 'id' => 'tt9000001:1:1'],
+            ['season' => 1, 'episode' => 2, 'title' => 'Two', 'released' => '2024-01-07', 'id' => 'tt9000001:1:2'],
+            ['season' => 1, 'episode' => 3, 'title' => 'Three', 'released' => '2024-01-14', 'id' => 'tt9000001:1:3'],
+            ['season' => 2, 'episode' => 1, 'title' => 'Four', 'released' => '2024-01-21', 'id' => 'tt9000001:2:1'],
+            ['season' => 2, 'episode' => 2, 'title' => 'Five', 'released' => '2024-01-28', 'id' => 'tt9000001:2:2'],
+        ],
+    ];
+    $numbering = new EpisodeNumberingService($numberStore, $numberSettings, $catalog, $numberProvider);
+
+    $splitEntry = static function (int $season, int $episode) use ($numberStore, $numberSeriesRoot): void {
+        $path = $numberSeriesRoot . '/Split Show (2024)/Season ' . str_pad((string) $season, 2, '0', STR_PAD_LEFT)
+            . '/Split Show (2024) - S' . str_pad((string) $season, 2, '0', STR_PAD_LEFT) . 'E' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT) . '.mkv';
+        $numberStore->upsertLibraryEntry([
+            'root_key' => 'series',
+            'path' => $path,
+            'relative_path' => substr($path, strlen($numberSeriesRoot) + 1),
+            'filename' => basename($path),
+            'extension' => 'mkv',
+            'media_type' => 'series',
+            'title' => 'Split Show',
+            'title_normalized' => 'split show',
+            'year' => 2024,
+            'season' => $season,
+            'episode' => $episode,
+            'quality' => '1080p',
+            'size' => 1000,
+            'mtime' => 100,
+            'media_key' => 'series:tmdb:900001:s' . str_pad((string) $season, 2, '0', STR_PAD_LEFT) . 'e' . str_pad((string) $episode, 2, '0', STR_PAD_LEFT),
+            'tmdb_id' => 900001,
+            'imdb_id' => 'tt9000001',
+            'confidence' => 0.99,
+            'parse_source' => 'filename',
+            'parser_version' => LibraryNameParser::VERSION,
+            'scan_id' => 1,
+            'show_folder' => 'Split Show (2024)',
+        ]);
+    };
+    $splitEntry(2, 1);
+
+    $numberRunId = $numberStore->startListRun('scrob', 'scrob');
+    $numberStore->finishListRun($numberRunId, ['items_seen' => 1, 'missing' => 1], 'success');
+    $numberStore->upsertListItem([
+        'source_id' => 'scrob',
+        'provider' => 'scrob',
+        'list_ref' => '1',
+        'remote_key' => 'split-show',
+        'media_type' => 'series',
+        'tmdb_id' => 900001,
+        'imdb_id' => 'tt9000001',
+        'title' => 'Split Show',
+        'title_normalized' => 'split show',
+        'year' => 2024,
+        'raw' => [],
+    ], $numberRunId);
+    $numberItemId = (int) $numberStore->getPdo()->query("SELECT id FROM list_items WHERE remote_key = 'split-show' LIMIT 1")->fetchColumn();
+    $numberStore->updateListItemMatch($numberItemId, [
+        'status' => 'missing',
+        'missing_episodes' => ['S01E01', 'S01E02', 'S01E03', 'S01E04', 'S01E05'],
+        'episodes_total' => 5,
+        'episodes_present' => 0,
+        'episodes_missing' => 5,
+    ], $numberRunId);
+
+    $identity = [
+        'tmdb_id' => 900001,
+        'imdb_id' => 'tt9000001',
+        'title' => 'Split Show',
+        'year' => 2024,
+        'title_normalized' => 'split show',
+    ];
+    $profile = $numbering->profileFor($identity, true, true);
+    eq('ok', $profile['status'], 'series numbering profile is resolved');
+    eq(5, count($profile['mapping']), 'series numbering mapping covers every TMDB episode');
+    eq([['season' => 1, 'episodes' => 3], ['season' => 2, 'episodes' => 2]], $profile['segments'], 'series numbering segments follow the release seasons');
+    eq(['season' => 2, 'episode' => 1, 'numbering_source' => 'tvdb'], $numbering->acquisitionFor($profile, 1, 4), 'TMDB episode maps to the split release episode');
+    eq(['season' => 1, 'episode' => 4], $numbering->canonicalFor($profile, 2, 1), 'release episode maps back to the TMDB episode');
+
+    $numberMatcher = new App\Service\Automation\ListMatcher($numberStore, $numberSettings, $fake, $numbering);
+    $numberMatcher->beginRun(10);
+    $numberItem = $numberStore->getListItem($numberItemId);
+    $numberMatch = $numberMatcher->match($numberItem);
+    eq('missing', $numberMatch['status'], 'series with split numbering still reports missing canonical episodes');
+    eq(1, $numberMatch['episodes_present'], 'split release episode is counted as a canonical present episode');
+    eq(4, $numberMatch['episodes_missing'], 'split numbering keeps four canonical episodes missing');
+
+    $numberStore->upsertListItem([
+        'source_id' => 'scrob',
+        'provider' => 'scrob',
+        'list_ref' => '20',
+        'remote_key' => 'missing-show',
+        'media_type' => 'series',
+        'tmdb_id' => 900002,
+        'imdb_id' => 'tt9000002',
+        'title' => 'Missing Show',
+        'title_normalized' => 'missing show',
+        'year' => 2025,
+        'raw' => [],
+    ], $numberRunId);
+    $missingItemId = (int) $numberStore->getPdo()->query("SELECT id FROM list_items WHERE remote_key = 'missing-show' LIMIT 1")->fetchColumn();
+    $numberMatcher->beginRun(10);
+    $missingMatch = $numberMatcher->match($numberStore->getListItem($missingItemId));
+    eq('missing', $missingMatch['status'], 'series absent from the library is reported missing');
+    eq(3, $missingMatch['episodes_total'], 'missing series enumerates every aired TMDB episode');
+    eq(3, $missingMatch['episodes_missing'], 'missing series counts every aired episode as missing');
+    eq(['S01E01', 'S01E02', 'S01E03'], $missingMatch['missing_episodes'], 'missing series stores canonical missing episode codes');
+
+    $numberIdentity = new FakeSeriesIdentityResolver();
+    $numberIdentity->identity = ['success' => true, 'tmdb_id' => 900001, 'imdb_id' => 'tt9000001', 'title' => 'Split Show', 'year' => 2024, 'reason' => null];
+    $numberMovieIdentity = new FakeReleaseIdentityResolver();
+    $numberMovieIdentity->identity = ['success' => false, 'reason' => 'missing_identity'];
+    $numberStreams = new FakeReleaseStreamProvider();
+    $numberDownloader = new FakeReleaseDownloader();
+    $numberPreferences = new ReleasePreferenceService(new ReleaseMetadataParser(), $numberSettings);
+    $numberResolver = new ReleaseResolverService(
+        $numberStore,
+        $numberSettings,
+        $numberPreferences,
+        $numberStreams,
+        $numberDownloader,
+        $numberMovieIdentity,
+        $numberIdentity,
+        $numberStorage,
+        $numbering
+    );
+    $numberNotifier = new AutomationNotifier($numberStorage);
+    $numberIntents = new ReleaseIntentService($numberStore, $numberSettings, $numberResolver, $numberNotifier, $numberStorage, $numberProject, $numbering);
+
+    $queuedNumbering = $numberIntents->queueMissingEpisodes(false);
+    eq(4, $queuedNumbering['stats']['created'], 'queueing creates intents for canonical missing episodes');
+    eq(1, $queuedNumbering['stats']['library_present'], 'split local episode is not queued again');
+    $numberIntent = $numberStore->getPdo()->query("SELECT * FROM intents WHERE media_key = 'series:tmdb:900001:s01e05' LIMIT 1")->fetch();
+    check($numberIntent !== false && (int) $numberIntent['release_season'] === 2 && (int) $numberIntent['release_episode'] === 2, 'episode intent stores release coordinates', $numberIntent);
+
+    $numberStreams->streamsByType['series'] = [[
+        'addon' => 'Fake Addon',
+        'addon_id' => 'fake',
+        'priority' => 1,
+        'name' => 'Split.Show.S02E02.1080p.WEB-DL.x265.VOSTFR',
+        'title' => 'Split.Show.S02E02.1080p.WEB-DL.x265.VOSTFR',
+        'info_hash' => str_repeat('e', 40),
+        'file_idx' => null,
+        'url' => null,
+        'kind' => 'torrent',
+        'filename' => 'Split.Show.S02E02.1080p.WEB-DL.x265.VOSTFR.mkv',
+        'sources' => [],
+        'size' => '1.2 GB',
+        'seeders' => 50,
+    ]];
+    $resolvedNumbering = $numberResolver->processIntent($numberIntent);
+    eq('queued', $resolvedNumbering['status'], 'split-numbered intent is resolved and queued');
+    eq('series|tt9000001:2:2', end($numberStreams->calls), 'addon lookup uses the release season and episode');
+    $numberPayload = end($numberDownloader->payloads);
+    eq($numberSeriesRoot . '/Split Show (2024)/Season 02', $numberPayload['path'], 'split download target keeps the local season folder');
+    eq('Split Show (2024) - S02E02.mkv', $numberPayload['override_filename'], 'split download filename uses the release episode code');
+    eq(1, (int) $numberPayload['season'], 'intent payload keeps the canonical TMDB season');
+    eq(5, (int) $numberPayload['episode'], 'intent payload keeps the canonical TMDB episode');
+    eq(2, (int) $numberPayload['release_season'], 'intent payload carries the release season');
+    eq(2, (int) $numberPayload['release_episode'], 'intent payload carries the release episode');
+
+    $numbering->updateModes($identity, 'local', 'tmdb', null, 'manual');
+    $storedModes = $numberStore->getSeriesNumbering(900001, 'tt9000001');
+    eq('tmdb', $storedModes['jellyfin_mode'], 'jellyfin numbering mode is stored per series');
+    eq('local', $storedModes['target_mode'], 'target naming mode is stored per series');
+
+    $numberStore->saveSeriesNumbering([
+        'tmdb_id' => 900003,
+        'imdb_id' => 'tt9000003',
+        'title' => 'Low Confidence Show',
+        'source' => 'tvdb',
+        'status' => 'ok',
+        'confidence' => 0.55,
+        'mapping' => [[
+            'tmdb_season' => 1,
+            'tmdb_episode' => 1,
+            'release_season' => 1,
+            'release_episode' => 1,
+            'title' => 'Episode 1',
+            'air_date' => '2024-01-01',
+        ]],
+        'segments' => [['season' => 1, 'episodes' => 1]],
+    ]);
+    $lowProfile = $numberStore->getSeriesNumbering(900003, 'tt9000003');
+    check(!$numbering->isUsable($lowProfile), 'low-confidence ordinal mapping requires confirmation');
+    $confirmed = $numbering->confirm(['tmdb_id' => 900003, 'imdb_id' => 'tt9000003', 'title' => 'Low Confidence Show', 'year' => 2024]);
+    check($numbering->isUsable($confirmed), 'confirmed low-confidence mapping becomes usable');
+    eq('manual', $confirmed['source'], 'confirmed mapping is marked manual');
+
+    deleteTree($numberProject);
+} else {
+    echo "Series numbering mapping\n  skip (pdo_sqlite not available)\n";
 }
 
 echo "\n$passes passed, $failures failed.\n";

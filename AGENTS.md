@@ -1015,7 +1015,9 @@ python3 -m py_compile cli/*.py
 Cette section décrit le socle de la synchronisation automatique de listes
 externes (Scrob / MDBList) vers le NAS. L'ingestion des listes, le matching
 dry-run avec l'index et la résolution/téléchargement automatique des **films**
-sont branchés. Les séries et le backfill épisodique restent au lot suivant.
+sont branchés. La résolution et le téléchargement automatique des **épisodes
+de séries** (backfill par épisode, packs refusés, multi-épisodes parqués) sont
+également disponibles.
 
 ### Stockage
 
@@ -1024,7 +1026,7 @@ sont branchés. Les séries et le backfill épisodique restent au lot suivant.
   `synchronous=NORMAL`, `PRAGMA user_version` et ajout de colonnes idempotent).
 - Tables actuelles : `settings`, `scan_runs`, `resolution_runs`,
   `rename_runs`, `metadata_cache`, `library_entries`, `list_runs`,
-  `list_items`, `intents`, `intent_runs`.
+  `list_items`, `intents`, `intent_runs`, `series_numbering`.
 - Les écritures SQLite passent par `withRetry()` (SQLITE_BUSY/LOCKED, backoff
   exponentiel) pour éviter les warnings `database is locked` pendant un scan
   concurrent avec une résolution.
@@ -1045,7 +1047,10 @@ sont branchés. Les séries et le backfill épisodique restent au lot suivant.
 | `src/Service/Automation/LibraryRenameService.php` | Preview/apply du renommage Jellyfin |
 | `src/Controller/AutomationLibraryController.php` | Page Library index + endpoints renommage |
 | `src/Command/LibraryScanCommand.php` | `app:library-scan [--root=movies]` |
+| `src/Command/LibraryReconcileMissingCommand.php` | `app:library-reconcile-missing --root=anime [--dry-run]` |
 | `src/Command/LibraryResolveCommand.php` | `app:library-resolve [--limit=50]` |
+| `src/Service/Automation/LibraryTitleRefreshService.php` | Rafraîchit les titres films TMDB dans `metadata.title_language` |
+| `src/Command/LibraryTitleRefreshCommand.php` | `app:library-title-refresh [--limit=] [--language=] [--dry-run]` |
 | `src/Command/AutomationWorkerCommand.php` | `app:automation-worker [--once] [--force-scan]` |
 | `src/Service/Automation/ScrobListClient.php` | Client API Scrob (`/api/proxy/lists/{id}`) |
 | `src/Service/Automation/MdbListClient.php` | Client API MDBList (pagination `unified=true`) |
@@ -1055,13 +1060,21 @@ sont branchés. Les séries et le backfill épisodique restent au lot suivant.
 | `src/Controller/AutomationListsController.php` | Page Lists, configuration, dry-run, ignore |
 | `src/Service/Automation/ReleaseMetadataParser.php` | Parsing résolution/codec/HDR/audio/groupe/taille/seeders |
 | `src/Service/Automation/ReleasePreferenceService.php` | Filtres durs + score pondéré + explication lisible |
-| `src/Service/Automation/ReleaseResolverService.php` | Identité film, streams, sélection, enqueue Alldebrid |
+| `src/Service/Automation/ReleaseResolverService.php` | Identité film/série, streams, sélection, enqueue Alldebrid |
 | `src/Service/Automation/ReleaseIntentService.php` | Intents, déduplication, plafond/queue guard, lifecycle |
 | `src/Service/Automation/MediaStreamProviderAdapter.php` | Adaptateur `MediaAddonService` → provider de streams |
 | `src/Service/Automation/MediaDownloaderAdapter.php` | Adaptateur `MediaDownloadService` → downloader |
 | `src/Service/Automation/TmdbMovieIdentityResolver.php` | IMDb/TMDB → identité film canonique |
+| `src/Service/Automation/TmdbSeriesIdentityResolver.php` | IMDb/TMDB → identité série canonique |
+| `src/Service/Automation/TmdbEpisodeCatalog.php` | Liste ordonnée des épisodes TMDB (titres, dates) |
+| `src/Service/Automation/EpisodeNumberingService.php` | Mapping TMDB ↔ numérotation d'acquisition (TVDB/Cinemeta/TVmaze/local) |
+| `src/Service/Automation/AiometadataSeriesNumberingProvider.php` | Récupère les `videos` via AIOMetadata |
+| `src/Service/Automation/CinemetaSeriesNumberingProvider.php` | Fallback Cinemeta |
+| `src/Service/Automation/TvmazeSeriesNumberingProvider.php` | Fallback TVmaze |
+| `src/Service/Automation/FallbackSeriesNumberingProvider.php` | Chaîne AIOMetadata → Cinemeta → TVmaze |
+| `src/Command/SeriesNumberingCommand.php` | `app:series-numbering [--tmdb=] [--imdb=] [--refresh] [--limit=]` |
 | `src/Service/Automation/AutomationNotifier.php` | Notifications in-app groupées |
-| `src/Command/ReleaseIntentsCommand.php` | `app:release-intents [--queue] [--run] [--auto] [--max=]` |
+| `src/Command/ReleaseIntentsCommand.php` | `app:release-intents [--queue] [--episodes] [--run] [--auto] [--max=]` |
 | `src/Service/Automation/ReleaseDryRunService.php` | Preview des releases/sources sans queue ni download |
 | `src/Command/ReleaseDryRunCommand.php` | `app:release-dry-run [--limit=] [--source=]` |
 | `src/Controller/AutomationDownloadsController.php` | Page Downloads : intents, runs, actions |
@@ -1089,6 +1102,9 @@ Le worker vérifie le heartbeat et déclenche les scans planifiés.
 | POST | `/automation/library/match/details` | `automation_library_match_details` | Détails du match TMDB courant |
 | POST | `/automation/library/rename/preview` | `automation_library_rename_preview` | Preview du renommage en masse |
 | POST | `/automation/library/rename/apply` | `automation_library_rename_apply` | Applique le renommage |
+| POST | `/automation/library/title-refresh` | `automation_library_title_refresh` | Rafraîchit les titres films en anglais |
+| GET | `/automation/library/title-refresh/status` | `automation_library_title_refresh_status` | Statut JSON du refresh des titres |
+| POST | `/automation/config/metadata` | `automation_config_metadata` | Sauvegarde la langue des titres |
 | GET | `/automation/activity` | `automation_activity` | Historique scans/résolutions et état courant |
 | GET | `/automation/status` | `automation_status` | Statut JSON (worker, scan, résolution, stats) |
 | POST | `/automation/settings` | `automation_settings` | Sauvegarde racines et scanner |
@@ -1097,15 +1113,20 @@ Le worker vérifie le heartbeat et déclenche les scans planifiés.
 | POST | `/automation/lists/settings` | `automation_lists_settings` | Sauvegarde URL, clés et listes |
 | POST | `/automation/lists/test` | `automation_lists_test` | Teste la connexion et liste les listes disponibles |
 | POST | `/automation/lists/ignore` | `automation_lists_ignore` | Ignore/restaure un item de liste |
+| POST | `/automation/lists/queue-episodes` | `automation_lists_queue_episodes` | Crée les intents épisodes des sources validées |
+| POST | `/automation/lists/numbering` | `automation_lists_numbering` | Détecte/rafraîchit la numérotation d'une série |
 | GET | `/automation/lists/status` | `automation_lists_status` | Statut JSON du dry-run |
-| GET | `/automation/downloads` | `automation_downloads` | Intents films, profil qualité, limites |
+| GET | `/automation/downloads` | `automation_downloads` | Intents films et épisodes, profil qualité, limites |
 | GET | `/automation/config` | `automation_config` | Configuration globale de l’automation |
 | POST | `/automation/downloads/quality` | `automation_downloads_quality` | Sauvegarde du profil qualité (redirige vers Configuration) |
 | POST | `/automation/downloads/settings` | `automation_downloads_settings` | Sauvegarde plafonds/retries/queue guard (redirige vers Configuration) |
 | POST | `/automation/downloads/queue` | `automation_downloads_queue` | Crée les intents des films missing |
+| POST | `/automation/downloads/queue-episodes` | `automation_downloads_queue_episodes` | Crée les intents des épisodes missing |
 | POST | `/automation/downloads/run` | `automation_downloads_run` | Lance `app:release-intents --run` |
 | POST | `/automation/downloads/dry-run` | `automation_downloads_dry_run` | Lance un preview des releases sans téléchargement |
 | GET | `/automation/downloads/dry-run/status` | `automation_downloads_dry_run_status` | Statut JSON du dry-run de releases |
+| POST | `/automation/downloads/intent/sources` | `automation_downloads_intent_sources` | Liste les sources/addons pour un intent |
+| POST | `/automation/downloads/intent/download` | `automation_downloads_intent_download` | Queue manuellement une source choisie |
 | POST | `/automation/downloads/intent/retry` | `automation_downloads_intent_retry` | Réessaie un intent |
 | POST | `/automation/downloads/intent/ignore` | `automation_downloads_intent_ignore` | Ignore/restaure un intent |
 | GET | `/automation/downloads/status` | `automation_downloads_status` | Statut JSON des intents |
@@ -1177,13 +1198,24 @@ pendant le polling.
   stocké dans `metadata_cache`; budget de lookups via
   `lists.max_show_lookups_per_run`.
 
-### Résolution et téléchargement des films
+### Résolution et téléchargement des films et séries
 
-- Activable par source de liste via `config.auto_download` (case “Auto download
-  missing movies” sur la page Lists). Un intent ne peut être créé que pour un
-  item `list_items` de type `movie`, `match_status = missing`, non ignoré, et
-  après un dry-run terminé avec au moins un item. Les séries ne sont jamais
-  téléchargées dans ce lot.
+- Films : activables par source via `config.auto_download` (case “Auto download
+  missing movies”). Épisodes : activables séparément via
+  `config.auto_download_series` (défaut `false`, case “Auto download series
+  episodes”). Un intent ne peut être créé que pour un item `list_items`
+  `match_status = missing`, non ignoré, après un dry-run terminé avec au moins
+  un item. Les deux flags sont indépendants.
+- Épisodes : `queueMissingEpisodes()` lit `missing_json` (liste de `SxxExx`
+  déjà diffusés), ignore les spéciaux si `backfill.exclude_specials`, vérifie
+  les entrées `library_entries` actives/ignorées de la même série et les
+  intents existants, puis crée un intent par épisode avec
+  `media_key = series:tmdb:<id>:sXXeYY` et les colonnes `season`/`episode`.
+  Le plafond `backfill.max_intents_per_run` et le queue guard s'appliquent.
+- Tables : `intents` (identité, saison/épisode, statut, tentatives, prochaine
+  tentative, download, hash, file index, release choisie, score, explication,
+  erreur) et `intent_runs` (historique des runs). Index dédiés par type/statut
+  et par `(tmdb_id, season, episode)`.
 - Tables : `intents` (identité, statut, tentatives, prochaine tentative,
   download, hash, file index, release choisie, score, explication, erreur) et
   `intent_runs` (historique des runs).
@@ -1191,12 +1223,13 @@ pendant le polling.
   `error`, `no_source`, `ignored`. Les statuts `pending`, `no_source` et `error`
   sont repris quand `next_attempt_at` est dû et que le plafond de tentatives
   n'est pas atteint.
-- Déduplication : `library_entries` actif non ignoré (via TMDB/IMDb ou titre +
-  année), intent existant pour le même `media_key`/TMDB/IMDb/titre, item déjà
-  présent dans `server_queue`/`active_worker_task` (par `automation_media_key`
-  ou `media_title`), puis `next_attempt_at` pour les échecs récents. Après
-  succès, l'intent reste `success` et une indexation ciblée de la racine films
-  est demandée.
+- Déduplication : `library_entries` actif (avec `ignored_at` pour les épisodes),
+  intent existant pour le même `media_key`/TMDB/IMDb (et saison/épisode pour
+  une série), item déjà présent dans `server_queue`/`active_worker_task` (par
+  `automation_intent_id`/`automation_media_key`, ou `media_title` pour les
+  films), puis `next_attempt_at` pour les échecs récents. Après succès,
+  l'intent reste `success` et une indexation ciblée de la racine films ou
+  séries est demandée.
 - Profil qualité stocké sous `settings.quality_profile` : résolution min/max et
   ordre, codecs autorisés, HDR (`ignore`/`prefer`/`require`), langues audio,
   seeders minimum, **taille max film** (`max_movie_size_gb`), **taille max
@@ -1206,28 +1239,76 @@ pendant le polling.
   non vérifiable est refusée. Aucun fallback hors profil n'est téléchargé.
   Le score combine résolution, codec, HDR, audio, seeders, adéquation de taille
   et priorité addon.
-- `ReleaseResolverService` résout l'identité (IMDb direct, sinon TMDB
-  `details`/`findByImdb`/recherche titre+année), appelle
-  `MediaAddonService::getStreams('movie', 'tt...')`, trie les candidats, essaie
-  les 5 meilleurs, puis délègue à `MediaDownloadService` (magnet Alldebrid,
-  fichiers, unlock, `QueueManager`). Le fichier est écrit directement dans la
-  convention Jellyfin du renommage : `<root>/<Title> (<Year>)/<Title> (<Year>).<ext>`
-  (titre assaini comme `LibraryRenameService`). Un scan ultérieur le voit donc
-  déjà `Conform` et aucun renommage IA n'est nécessaire.
-- Les métadonnées `automation_intent_id`, `automation_media_key` et
-  `automation` sont propagées dans l'item de queue. Le worker de téléchargement
-  passe l'intent en `downloading`, puis `success` ou `error` (avec backoff).
+- `ReleaseResolverService` résout l'identité film ou série (IMDb direct, sinon
+  TMDB `details`/`findByImdb`/recherche titre+année via
+  `TmdbMovieIdentityResolver` ou `TmdbSeriesIdentityResolver`). Films :
+  `MediaAddonService::getStreams('movie', 'tt...')`. Séries :
+  `getStreams('series', 'tt...:<season>:<episode>')`, scoring avec
+  `max_episode_size_gb`. Les candidats multi-épisodes sont refusés. Le fichier
+  est écrit directement dans la convention Jellyfin :
+  - films `<root>/<Title> (<Year>)/<Title> (<Year>).<ext>` ;
+  - épisodes `<root>/<Series> (<Year>)/Season XX/<Series> (<Year>) - SxxExx.<ext>`
+    (racine `series` ou `anime`, jamais de titre d'épisode).
+  Un scan ultérieur les voit donc déjà `Conform`.
+- Les métadonnées `automation_intent_id`, `automation_media_key`, `automation`,
+  `season` et `episode` sont propagées dans l'item de queue. Le worker de
+  téléchargement passe l'intent en `downloading`, puis `success` ou `error`
+  (avec backoff). La sélection du fichier dans un torrent est stricte : `file_idx`
+  s'il pointe vers un fichier vidéo de l'épisode, sinon recherche exacte de
+  `SxxExx`. Un pack sans fichier correspondant, un multi-épisode ou un pack de
+  saison single-file est refusé ; le plus gros fichier vidéo n'est jamais pris
+  pour un épisode.
 - `intent_runs` est mis à jour en cours de run. Un `queue guard`
   (`backfill.queue_guard`, défaut 20) suspend le traitement si la file contient
   déjà trop de téléchargements et efface la demande de run pour éviter un
   bandeau bloqué. Plafond par run : `backfill.max_intents_per_run` (défaut 50,
   éditable). La page Downloads suit le run par polling et ne se recharge
   qu'à la fin, pas périodiquement.
-- Le worker automation crée les intents auto (throttle 300 s), réinitialise les
-  intents `resolving` bloqués, puis traite les intents dus après les scans et
-  les dry-runs. Commande manuelle : `app:release-intents`.
+- Le worker automation crée les intents auto films et épisodes (throttle
+  300 s), réinitialise les intents `resolving` bloqués, puis traite les intents
+  dus après les scans et les dry-runs. Commande manuelle :
+  `app:release-intents [--queue] [--episodes] [--run]`.
 - Notifications in-app groupées par run : succès léger, no source, échec
   Alldebrid/téléchargement, disque plein, téléchargement interrompu.
+- Chaque intent expose une action **Sources** : dialogue avec fiche TMDB et
+  tous les streams addons évalués (acceptés et filtrés). L’utilisateur peut
+  queue manuellement une autre source ; ce choix contourne volontairement le
+  profil qualité et met à jour l’intent avec le nouveau `download_id`.
+
+### Numérotation des séries (backfill)
+
+- Le découpage d'acquisition peut différer de TMDB. Exemple : TMDB expose
+  `Rurouni Kenshin 2023` en `1×47`, tandis que TVDB/Cinemeta/TVmaze et les
+  releases utilisent `S01 24 + S02 23`.
+- `series_numbering` stocke par série : `tmdb_id`, `imdb_id`, `source`,
+  `source_ref`, `segments_json`, `mapping_json`, confiance, statut, snapshot
+  TMDB, `target_mode` (`local`/`tmdb`) et `jellyfin_mode` (`local`/`tmdb`).
+- `EpisodeNumberingService` aligne les épisodes TMDB et les `videos`
+  d'AIOMetadata par titre normalisé + date à ±3 jours, avec fallback ordinal
+  uniquement si les deux listes sont complètes. Les fichiers locaux servent de
+  validation, jamais de base de calcul.
+- Providers : AIOMetadata en priorité (réutilise la config Nuvio/TVDB), puis
+  Cinemeta et TVmaze. Aucun ne nécessite de clé API. Les réponses sont mises en
+  cache dans `metadata_cache`.
+- Si le mapping est absent ou ambigu : la série passe en `ambiguous`, aucun
+  intent épisode n'est créé automatiquement, et l'UI propose une re-détection.
+- Un mapping de confiance < 0,75 (souvent un alignement ordinal) est affiché
+  `Review` et doit être confirmé via **Confirm mapping** avant d'être utilisé
+  par le matching, la queue ou le resolver. La confirmation passe la source en
+  `manual`.
+- `ListMatcher` utilise le mapping pour compter un fichier local `S02E01` comme
+  l'épisode TMDB `S01E25` ; `missing_json` reste canonique TMDB.
+- Les intents stockent `season`/`episode` canoniques **et**
+  `release_season`/`release_episode` pour les addons et le nommage. Le resolver
+  interroge `tt...:<release_season>:<release_episode>`.
+- `target_mode=local` écrit `<Series> (<Year>) - SxxExx.ext` avec la
+  numérotation d'acquisition ; `target_mode=tmdb` aplatit sur TMDB.
+- La passerelle Jellyfin peut exposer les épisodes en mode `local` ou `tmdb`
+  sans déplacer les fichiers : l'ID reste `ep_<entry_id>` et le stream pointe
+  toujours vers le fichier local.
+- Commande utile après un changement de provider : `app:series-numbering
+  --refresh` (ou `--tmdb=<id>` pour une seule série). L'UI Connected Lists
+  expose aussi **Detect numbering** / **Re-detect** et le mode Jellyfin.
 
 ### Dry-run de sélection des releases
 
@@ -1246,11 +1327,45 @@ pendant le polling.
   écrit dans `var/storage/automation_release_dry_run.log`. Une demande bloquée
   en `requested` depuis plus de 60 s est considérée comme stale et peut être
   relancée.
-- Le dry-run affiche aussi l'état `Cached`/`Uncached` du candidat chez
-  Alldebrid. Un torrent non caché est envoyé à Alldebrid qui le met en cache à
-  la demande : l'attente est portée à 60 s (au lieu de 15 s pour un candidat
-  annoncé cached), puis l'intent repasse en erreur avec retry différé si le
-  torrent n'est pas prêt.
+- Le dry-run affiche l'état de cache uniquement s'il est connu : `Cached`,
+  `Uncached`, sinon `Cache status unknown` (ou `Direct` pour un stream direct).
+  Un torrent non caché est envoyé à Alldebrid qui le met en cache à la demande :
+  l'attente est portée à 60 s (au lieu de 15 s pour un candidat annoncé cached),
+  puis l'intent repasse en erreur avec retry différé si le torrent n'est pas prêt.
+- `DownloadManager` rejette les téléchargements manifestement invalides : page
+  HTML, fichier < 1 Mo, contenu plus court que `Content-Length`, ou taille
+  inférieure à 90 % de la taille attendue. Le fichier partiel est supprimé et
+  l'intent passe en erreur/retry au lieu d'être marqué `success`.
+- `app:release-verify-downloads [--apply] [--quarantine]` vérifie les intents
+  `success` contre l'historique et la taille attendue. `--quarantine` renomme le
+  fichier invalide en `.invalid-<date>` (aucune suppression), remet l'intent en
+  `pending` et marque l'entrée d'index `missing` pour permettre un nouveau
+  téléchargement.
+
+### Taille des téléchargements automation
+
+- `QueueSizeResolver` enrichit les items de `queue-status` avec une taille
+  estimée quand `size` est absent : l'intent lié fournit la taille dans
+  `release_explanation` (ex. « 8.5 Go »). Cela permet au tracker de calculer un
+  pourcentage même pour les anciens items de queue.
+- Les nouveaux téléchargements stockent aussi la taille exacte Alldebrid dans
+  l'item de queue ; `DownloadManager` utilise en plus `Content-Length` quand il
+  est présent. Si aucune taille n'est connue, le tracker affiche une barre
+  indéterminée et les octets téléchargés.
+
+### Langue des titres et rattrapage
+
+- `settings.metadata.title_language` (défaut `en-US`) est utilisé par
+  `TmdbMovieIdentityResolver` pour les nouveaux téléchargements et par
+  `LibraryTitleRefreshService` pour les entrées existantes.
+- La résolution continue de chercher avec la langue TMDB configurée, mais les
+  détails finaux (titre/année) sont récupérés dans `title_language`.
+- Bouton **Refresh English titles** sur Media Library ou commande
+  `app:library-title-refresh` : met à jour `library_entries.title` pour les
+  films ayant un `tmdb_id`. `--dry-run` permet de prévisualiser.
+- Le refresh ne déplace pas les fichiers : utiliser ensuite **Rename matched**
+  pour prévisualiser/appliquer le renommage Jellyfin avec les titres anglais.
+- Les films sans `tmdb_id` doivent d'abord passer par Resolve metadata.
 
 ### Racines et parsing
 
@@ -1289,8 +1404,12 @@ pendant le polling.
   - `Flat` : tableau global paginé (ancienne vue) ;
   - `Folders` : vrai navigateur de fichiers avec arbre de dossiers à gauche
     (`root_key + folder_path`), breadcrumb et contenu du dossier à droite.
-    Les sous-dossiers et fichiers sont chargés en AJAX via
-    `folder/contents` ; films et séries utilisent le même arbre.
+    L’arbre initial ne contient que les racines, repliées ; chaque niveau est
+    chargé à la demande via `folder/contents` (`subfolders[].has_children`).
+    L’option `scanner.full_folder_tree` permet de rendre l’arbre complet
+    d’un coup si la bibliothèque est petite. Cliquer sur le libellé d’un
+    dossier le sélectionne et déplie son niveau. Films et séries utilisent le
+    même arbre.
   - `Discovery` : navigation Type > Élément > fiche TMDB light > fichiers.
     Les séries/anime sont groupées par `show_folder`, les films par
     `tmdb_id` ou `title_normalized + year`. Les cartes visibles sont enrichies
@@ -1303,7 +1422,9 @@ pendant le polling.
   entrées.
 - Une colonne **Naming** indique `Conform`, `To rename`, `Conflict`,
   `Unmatched`, `Ignored`, `Missing` ou `Skipped`. Le résumé global compte les
-  conformes / à renommer / conflits / ignorés.
+  conformes / à renommer / conflits / ignorés. Le résumé et les badges utilisent
+  un calcul “light” sans accès NAS ni TMDB (`lightPreview`) pour garder la page
+  rapide ; le preview/apply réel du renommage reste complet.
 - Chaque ligne matched dispose d’une action **Fix** (ou **Match** si non
   matché) : dialogue avec le match TMDB courant, recherche libre et
   application manuelle. L’application utilise les endpoints
@@ -1322,6 +1443,11 @@ pendant le polling.
   - Les conflits de cible, fichiers sources absents, racines non inscriptibles
     et spéciaux (saison 0) sont marqués `skip`/`conflict` dans le preview.
   - `rename_runs` conserve l’historique ; la page Activity l’affiche.
+  - Chaque run stocke un journal complet des déplacements (fichier principal +
+    sidecars, source → cible). La commande
+    `app:library-rename-undo [--run=ID] [--apply]` permet de prévisualiser puis
+    d’annuler un run (les chemins DB sont restaurés ; les dossiers vides peuvent
+    rester).
 - Chaque scan possède un `scan_id`. Les fichiers vus sont marqués avec ce
   `scan_id`, puis les entrées actives de la racine qui n'ont pas ce `scan_id`
   passent en `missing`. Une racine absente ou sans candidat vidéo ne marque
@@ -1344,13 +1470,17 @@ pendant le polling.
   max épisode série 5 Go.
 - Backfill : activé, spéciaux exclus, surveillance des futurs épisodes,
   max 50 intents par run, pause à 20 téléchargements automatiques.
-- Intents films : backoff 60 min (×2 par tentative, plafond 24 h), 5 tentatives
+- Intents films/séries : backoff 60 min (×2 par tentative, plafond 24 h), 5 tentatives
   max, `resolving` stale remis en pending après 30 min, intervalle minimum de
   run 60 s.
 - Scanner : extensions vidéo courantes, skip samples, lecture NFO,
   intervalle 6 h.
 - Métadonnées : `metadata.max_lookups_per_run` (50), cache positif 30 jours,
   cache négatif 2 jours.
+- Numérotation séries : provider AIOMetadata → Cinemeta → TVmaze → local,
+  cache 6–12 h, re-détection des profils auto après 7 jours, mapping ambigu
+  retenté après 6 h, modes par défaut `target_mode=local` et
+  `jellyfin_mode=local`.
 - Listes : `lists.max_items_per_run` (500),
   `lists.max_show_lookups_per_run` (150), cache épisodes positif 7 jours /
   négatif 1 jour, `lists.include_unaired` désactivé. Le dry-run est le seul
@@ -1372,7 +1502,12 @@ pendant le polling.
   normalisation Scrob/MDBList et dry-run d'ingestion
   (présent/manquant/ambigu/ignoré, épisodes diffusés, suppressions),
   parsing de releases (résolution/codec/HDR/audio/source/groupe/taille),
-  scoring et filtres durs, et persistance/déduplication des intents.
+  scoring et filtres durs, persistance/déduplication des intents films et
+  épisodes, création depuis `missing_json`, plafond/queue guard, résolution
+  série avec fakes, nommage sans titre d'épisode, refus des packs/multi-épisodes
+  et lifecycle succès/échec, ainsi que le mapping TMDB ↔ TVDB/Cinemeta
+  (segments, intents release, résolution sur la saison release et affichage
+  Jellyfin virtuel).
 - Lancement : `composer test:automation` ou `php tests/automation_smoke.php`.
 - Les tests de stockage nécessitent `pdo_sqlite` ; utiliser l'image Docker si
   le PHP local ne l'a pas.
@@ -1382,8 +1517,14 @@ pendant le polling.
 - Le dry-run n'enregistre aucune intention de téléchargement. Les intents sont
   créés séparément depuis la page Downloads (ou automatiquement si une source a
   `auto_download` et un dry-run validé).
-- Seuls les films sont résolus/téléchargés automatiquement dans ce lot. Les
-  séries `missing` restent parquées pour le lot backfill épisodique.
+- Les épisodes multi-épisodes (`S01E01E02`) ne sont jamais queue/téléchargés
+  automatiquement. Les packs de saison ne sont téléchargés que si un fichier
+  correspond exactement à l'épisode ; sinon l'intent est parqué en
+  `no_source`/`error` avec backoff.
+- La numérotation multi-saisons des animes est gérée par `series_numbering`
+  quand les providers exposent un découpage cohérent. Les packs de saison
+  complets restent hors périmètre, et un mapping ambigu doit être validé
+  manuellement.
 - Les téléchargements automatiques utilisent le premier chemin racine films
   activé, sinon `default_path`, et écrivent directement
   `<Title> (<Year>)/<Title> (<Year>).<ext>` pour être conformes au renommage
@@ -1413,6 +1554,11 @@ pendant le polling.
 - Les chemins sont des chemins internes au conteneur.
 - Le scan ne supprime jamais de fichier du NAS ; il marque seulement les
   entrées absentes comme `missing`.
+- Une racine vide ou absente ne marque rien `missing` pour éviter les faux
+  positifs d'un montage NAS démonté. Après un déplacement manuel de fichiers
+  entre racines, utiliser `app:library-reconcile-missing --root=<racine>
+  [--dry-run]` : la commande vérifie l'existence réelle des fichiers actifs et
+  marque les entrées déplacées comme `missing` sans toucher aux fichiers.
 - Une racine absente ou sans candidat vidéo ne marque rien `missing` ; elle
   produit un warning et conserve l'index précédent.
 - Les fichiers multi-épisodes (`S01E01E02`) sont détectés et volontairement
@@ -1424,3 +1570,115 @@ pendant le polling.
   ambigus.
 - L'installation locale PHP doit disposer de `pdo_sqlite` et `simplexml` ;
   l'image Docker officielle `php:8.3-apache` les inclut.
+
+---
+
+## 20. Passerelle Jellyfin / Nuvio
+
+L'application expose un sous-ensemble **lecture seule** de l'API Jellyfin pour
+que Nuvio puisse se connecter via son intégration Jellyfin native. La source de
+vérité reste `library_entries` dans `var/db/automation.db`.
+
+### Activation
+
+- Réglages dans `/config` : `jellyfin_enabled`, `jellyfin_username`,
+  `jellyfin_password`, `jellyfin_server_name`.
+- L'API est disponible sous `/jellyfin`. Dans Nuvio, utiliser l'adresse
+  `http://<hôte>:<port>/jellyfin` (le port par défaut est `8000`).
+- L'adresse racine `http://<hôte>:<port>` fonctionne aussi : Nuvio appelle
+  `/System/Info/Public`, qui est redirigé en 302 vers
+  `/jellyfin/System/Info/Public`. Le client adopte ensuite le préfixe
+  `/jellyfin` pour les appels suivants.
+- Le compte Jellyfin est séparé du compte admin. Tant que
+  `jellyfin_password` est vide, l'authentification échoue.
+- Les tokens sont persistés dans `var/storage/jellyfin_auth.json` (hash
+  SHA-256, TTL d'un an, maximum 50 tokens). Les serverId/userId sont générés
+  une fois puis conservés.
+
+### Routes
+
+| Méthode | Route | Rôle |
+| --- | --- | --- |
+| GET | `/jellyfin/System/Info/Public` | découverte, version `10.9.0` |
+| GET | `/jellyfin/System/Info` | même information côté authentifié |
+| POST | `/jellyfin/Users/AuthenticateByName` | login et émission du token |
+| GET | `/jellyfin/Users/{userId}` | profil utilisateur |
+| POST | `/jellyfin/Sessions/Logout` | révocation du token |
+| GET | `/jellyfin/UserViews` | bibliothèques issues des racines Automation |
+| GET | `/jellyfin/Items` | listage, recherche, pagination |
+| GET | `/jellyfin/Items/{itemId}` | fiche film/série/épisode |
+| GET | `/jellyfin/Shows/{seriesId}/Episodes` | épisodes d'une série |
+| GET | `/jellyfin/UserItems/Resume` | reprise de lecture |
+| POST/DELETE | `/jellyfin/UserPlayedItems/{itemId}` | marquer vu/non vu |
+| POST | `/jellyfin/Items/{itemId}/PlaybackInfo` | sources de lecture |
+| GET/HEAD | `/jellyfin/Videos/{itemId}/stream` | flux direct avec HTTP Range |
+| GET | `/jellyfin/Videos/{itemId}/{mediaSourceId}/Subtitles/{index}/Stream.{format}` | sous-titres externes |
+| GET | `/jellyfin/Items/{itemId}/Images/{imageType}/{index?}` | affiches/backdrops TMDB |
+| GET | `/jellyfin/Genres` | réponse vide (pas de filtre par genre) |
+| POST | `/jellyfin/Sessions/Playing[/Progress,/Stopped]` | progression de lecture |
+
+### Mapping
+
+- Une racine Automation activée et non vide devient une vue
+  `CollectionFolder` (`movies`, `tvshows` ou `mixed`).
+- Films : regroupés par `tmdb_id`, sinon `imdb_id`, sinon
+  `title_normalized + year`. Chaque fichier du groupe devient une
+  `MediaSource`.
+- Séries/anime : regroupés par `show_folder` (fallback titre + année), chaque
+  fichier devient un `Episode` avec `ParentIndexNumber` (saison) et
+  `IndexNumber` (épisode).
+- Les entrées `status = missing` sont exclues ; les entrées `active` sont
+  exposées, y compris les groupes `ignored_at`.
+- Les IDs Jellyfin sont encodés en base64url et préfixés (`lib_`, `mov_`,
+  `ser_`, `ep_`) par `App\Service\Jellyfin\JellyfinIds`.
+- `ProviderIds` expose `Tmdb` et `Imdb` pour le matching Nuvio/Trakt.
+- Les métadonnées et affiches sont enrichies via `TmdbService` uniquement si
+  `fields` contient `Overview`/`Genres`/`People`/`Studios` ou si les images
+  sont demandées. Les appels restent soumis au cache TMDB existant.
+
+### Lecture
+
+- `PlaybackInfo` renvoie les `MediaSources` avec `SupportsDirectPlay` et
+  `SupportsDirectStream`, sans `TranscodingUrl` : la v1 est **direct play
+  uniquement**.
+- `/jellyfin/Videos/.../stream` utilise `BinaryFileResponse` et le support
+  natif de `Range`/`If-Range`.
+- `JellyfinMediaService` vérifie que le fichier réel est sous une racine
+  activée (`realpath`) avant toute lecture.
+- `ffprobe` alimente les pistes vidéo/audio/sous-titres et la durée, avec un
+  cache de 7 jours et un cache d'échec de 5 minutes. Les sous-titres externes
+  `.srt/.ass/.ssa/.vtt/.sub` du même dossier sont exposés en `External`.
+- La progression et le statut vu sont stockés dans
+  `var/storage/jellyfin_playback_state.json`.
+
+### Sécurité et intégration Symfony
+
+- `JellyfinAuthSubscriber` valide le token pour toutes les routes
+  `/jellyfin/*`, sauf `System/Info/Public`, `Users/AuthenticateByName` et les
+  images. Il lit `Authorization: MediaBrowser ... Token="..."`,
+  `X-Emby-Token`, `X-MediaBrowser-Token` ou `?api_key=`.
+- `AuthSubscriber` ignore les chemins `/jellyfin` pour ne jamais rediriger un
+  client Jellyfin vers `/login`.
+- `SessionIdleSubscriber` ferme la session web si elle a été démarrée sur une
+  route `jellyfin_*`.
+- Les images sont publiques car le chargeur d'images de Nuvio n'envoie pas le
+  token ; elles ne contiennent que des affiches TMDB.
+
+### Tests
+
+- `composer test:jellyfin` ou `php tests/jellyfin_smoke.php`.
+- Le test couvre : IDs, authentification/tokens, vues, regroupement
+  films/séries, `MediaSources`, résolution du fichier, `PlaybackInfo`,
+  épisodes, état vu/reprise et URL d'image.
+- Les tests de bibliothèque nécessitent `pdo_sqlite` ; utiliser l'image Docker
+  si le PHP local ne l'a pas.
+
+### Limites
+
+- Vidéo uniquement (pas de musique).
+- Direct play uniquement ; pas de transcodage HLS. Un client qui refuse le
+  direct play ne pourra pas lire les fichiers non compatibles.
+- Pas de collections/boxsets Jellyfin.
+- La bibliothèque doit avoir été scannée par Automation au préalable.
+- Les gros fichiers mobilisent un worker Apache pendant la lecture ; un
+  `X-Sendfile` ou un reverse proxy pourra être ajouté ultérieurement.

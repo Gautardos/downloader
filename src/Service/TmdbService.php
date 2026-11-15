@@ -170,7 +170,7 @@ class TmdbService
         return $result;
     }
 
-    public function findByImdb(string $imdbId): ?array
+    public function findByImdb(string $imdbId, ?string $language = null): ?array
     {
         $imdbId = trim($imdbId);
         if (!$this->isConfigured() || !preg_match('/^tt\d+$/', $imdbId)) {
@@ -187,12 +187,12 @@ class TmdbService
 
         $movie = $data['movie_results'][0] ?? null;
         if (is_array($movie) && !empty($movie['id'])) {
-            return $this->details('movie', (int) $movie['id']);
+            return $this->details('movie', (int) $movie['id'], $language);
         }
 
         $series = $data['tv_results'][0] ?? null;
         if (is_array($series) && !empty($series['id'])) {
-            return $this->details('series', (int) $series['id']);
+            return $this->details('series', (int) $series['id'], $language);
         }
 
         return null;

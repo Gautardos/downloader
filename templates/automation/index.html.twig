@@ -195,7 +195,7 @@
     <article class="card">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem;">
             <div>
-                <h2 class="overview-card-title">Lists</h2>
+                <h2 class="overview-card-title">Connected Lists</h2>
                 <p class="overview-card-subtitle">Scrob and MDBList sources, dry-run matching, and auto-download eligibility.</p>
             </div>
             <span class="badge {{ list_busy ? 'badge-info' : 'badge-neutral' }}">{{ list_busy ? 'Running' : 'Idle' }}</span>
@@ -209,7 +209,7 @@
             <div class="overview-progress"><div class="overview-progress-bar"></div></div>
         {% endif %}
         <div class="overview-actions">
-            <a class="btn btn-secondary btn-sm" href="{{ path('automation_lists') }}">Open lists</a>
+            <a class="btn btn-secondary btn-sm" href="{{ path('automation_lists') }}">Open connected lists</a>
         </div>
     </article>
 
@@ -238,7 +238,7 @@
     <article class="card">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem;">
             <div>
-                <h2 class="overview-card-title">Downloads</h2>
+                <h2 class="overview-card-title">Download Automations</h2>
                 <p class="overview-card-subtitle">Missing movie intents, release resolution, queue depth, and errors.</p>
             </div>
             <span class="badge {{ intent_busy ? 'badge-info' : 'badge-neutral' }}">{{ intent_busy ? 'Running' : 'Idle' }}</span>
@@ -253,7 +253,7 @@
             <div class="overview-progress"><div class="overview-progress-bar"></div></div>
         {% endif %}
         <div class="overview-actions">
-            <a class="btn btn-secondary btn-sm" href="{{ path('automation_downloads') }}">Open downloads</a>
+            <a class="btn btn-secondary btn-sm" href="{{ path('automation_downloads') }}">Open download automations</a>
         </div>
     </article>
 </section>

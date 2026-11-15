@@ -8,11 +8,13 @@ class TmdbMovieIdentityResolver implements MovieIdentityResolverInterface
 {
     private TmdbService $tmdb;
     private AutomationStore $store;
+    private AutomationSettings $settings;
 
-    public function __construct(TmdbService $tmdb, AutomationStore $store)
+    public function __construct(TmdbService $tmdb, AutomationStore $store, AutomationSettings $settings)
     {
         $this->tmdb = $tmdb;
         $this->store = $store;
+        $this->settings = $settings;
     }
 
     public function resolve(array $intent): array
@@ -58,7 +60,7 @@ class TmdbMovieIdentityResolver implements MovieIdentityResolverInterface
             return ['success' => false, 'tmdb_id' => null, 'imdb_id' => null, 'title' => $title, 'year' => $year, 'reason' => 'missing_identity'];
         }
 
-        $cacheKey = 'release_identity|movie|' . $this->normalizeTitle($title) . '|' . ($year ?? 'unknown');
+        $cacheKey = 'release_identity|movie|' . $this->titleLanguage() . '|' . $this->normalizeTitle($title) . '|' . ($year ?? 'unknown');
         $cached = $this->store->getMetadataCache($cacheKey);
         if (is_array($cached)) {
             return $cached;
@@ -95,7 +97,7 @@ class TmdbMovieIdentityResolver implements MovieIdentityResolverInterface
 
     private function fromImdb(string $imdbId, string $fallbackTitle, ?int $fallbackYear): ?array
     {
-        $details = $this->tmdb->findByImdb($imdbId);
+        $details = $this->tmdb->findByImdb($imdbId, $this->titleLanguage());
         if ($details === null) {
             return null;
         }
@@ -112,7 +114,7 @@ class TmdbMovieIdentityResolver implements MovieIdentityResolverInterface
 
     private function fromTmdb(int $tmdbId, string $fallbackTitle, ?int $fallbackYear): ?array
     {
-        $details = $this->tmdb->details('movie', $tmdbId);
+        $details = $this->tmdb->details('movie', $tmdbId, $this->titleLanguage());
         if ($details === null) {
             return null;
         }
@@ -129,6 +131,14 @@ class TmdbMovieIdentityResolver implements MovieIdentityResolverInterface
             'year' => !empty($details['year']) ? (int) $details['year'] : $fallbackYear,
             'reason' => null,
         ];
+    }
+
+    private function titleLanguage(): string
+    {
+        $metadata = $this->settings->get('metadata', []);
+        $language = trim((string) ($metadata['title_language'] ?? 'en-US'));
+
+        return $language !== '' ? $language : 'en-US';
     }
 
     private function normalizeTitle(string $title): string

@@ -334,6 +334,7 @@ class AutomationController extends AbstractController
         $scanner['follow_symlinks'] = isset($payload['follow_symlinks']);
         $scanner['min_size_mb'] = max(0, (int) ($payload['min_size_mb'] ?? 20));
         $scanner['scan_interval'] = max(300, (int) ($payload['scan_interval'] ?? 21600));
+        $scanner['full_folder_tree'] = isset($payload['full_folder_tree']);
 
         $schedule = is_array($current['schedule'] ?? null) ? $current['schedule'] : [];
         $schedule['library'] = $scanner['scan_interval'];

@@ -38,6 +38,7 @@ class SessionIdleSubscriber implements EventSubscriberInterface
         'automation_lists_status',
         'automation_downloads_status',
         'automation_downloads_dry_run_status',
+        'automation_library_title_refresh_status',
         'automation_lists_test',
         'check_files',
         'debug_storage',
@@ -54,7 +55,7 @@ class SessionIdleSubscriber implements EventSubscriberInterface
         $request = $event->getRequest();
         $route = $request->attributes->get('_route');
 
-        if (in_array($route, self::READ_ONLY_ROUTES, true)) {
+        if (in_array($route, self::READ_ONLY_ROUTES, true) || str_starts_with((string) $route, 'jellyfin_')) {
             if ($request->hasSession() && $request->getSession()->isStarted()) {
                 $request->getSession()->save(); // Writes and closes the session lock
             }

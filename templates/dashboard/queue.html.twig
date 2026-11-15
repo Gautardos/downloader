@@ -97,15 +97,21 @@ async function removeTask(index) {
     }
 }
 
+let refreshInFlight = false;
+
 async function refreshUI() {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
     try {
         const res = await fetch("{{ path('queue_status') }}");
         const data = await res.json();
         
-        renderActive(data.active);
+        await renderActive(data.active);
         renderQueueTable(data.queue || []);
     } catch (e) {
         console.warn("Refresh failed", e);
+    } finally {
+        refreshInFlight = false;
     }
 }
 
@@ -124,6 +130,25 @@ async function renderActive(active) {
         const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
         const typeIcon = getMediaIcon(active.type);
         const typeLabel = (active.type || 'torrent').toUpperCase();
+        const downloaded = Number(progress.downloaded || 0);
+        const total = Number(progress.total || 0) > 0
+            ? Number(progress.total)
+            : (typeof parseHumanSizeBytes === 'function' ? parseHumanSizeBytes(active.size) : 0);
+        const hasTotal = total > 0;
+        const percentage = hasTotal ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+        const percentLabel = hasTotal ? percentage + '%' : '—';
+        const formatBytes = bytes => {
+            if (bytes >= 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+            if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+            if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return bytes + ' B';
+        };
+        const sizeLabel = hasTotal
+            ? formatBytes(downloaded) + ' / ' + formatBytes(total)
+            : (downloaded > 0 ? formatBytes(downloaded) : '');
+        const statusLabel = progress.status === 'downloading'
+            ? 'Transferring data...' + (sizeLabel ? ' ' + sizeLabel : '')
+            : 'Contacting providers...';
 
         container.innerHTML = `
             <div class="active-task-wrapper">
@@ -141,11 +166,11 @@ async function renderActive(active) {
                         <span class="active-task-speed">${progress.speed || '...'}</span>
                     </div>
                     <div style="height: 14px; background: rgba(255,255,255,0.05); border-radius: 7px; overflow: hidden; margin-bottom: 0.5rem; border: 1px solid rgba(255,255,255,0.03);">
-                        <div style="width: ${progress.percentage || 0}%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+                        <div style="width: ${percentage}%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);"></div>
                     </div>
                     <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
-                        <span style="color: var(--text-secondary); font-style: italic;">${progress.status === 'downloading' ? 'Transferring data...' : 'Contacting providers...'}</span>
-                        <span style="font-weight: 800; color: var(--text-primary);">${progress.percentage || 0}%</span>
+                        <span style="color: var(--text-secondary); font-style: italic;">${statusLabel}</span>
+                        <span style="font-weight: 800; color: var(--text-primary);">${percentLabel}</span>
                     </div>
                 </div>
             </div>
