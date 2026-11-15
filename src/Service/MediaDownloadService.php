@@ -10,13 +10,15 @@ class MediaDownloadService
     private QueueManager $queueManager;
     private JsonStorage $storage;
     private Client $client;
+    private SafeUrlGuard $urlGuard;
 
-    public function __construct(AlldebridService $debrid, QueueManager $queueManager, JsonStorage $storage)
+    public function __construct(AlldebridService $debrid, QueueManager $queueManager, JsonStorage $storage, ?SafeUrlGuard $urlGuard = null)
     {
         $this->debrid = $debrid;
         $this->queueManager = $queueManager;
         $this->storage = $storage;
         $this->client = new Client();
+        $this->urlGuard = $urlGuard ?? new SafeUrlGuard();
     }
 
     public function addStream(array $payload, ?callable $heartbeat = null): array
@@ -150,6 +152,11 @@ class MediaDownloadService
 
     private function queueDirectStream(array $payload, string $url, string $path): array
     {
+        $urlCheck = $this->urlGuard->validate($url);
+        if (empty($urlCheck['allowed'])) {
+            return ['success' => false, 'message' => 'Direct stream URL rejected: ' . (string) ($urlCheck['reason'] ?? 'invalid URL')];
+        }
+
         if (preg_match('/\.(m3u8|mpd)(\?|$)/i', $url)) {
             return ['success' => false, 'message' => 'HLS/DASH streams are not supported yet. Use a direct file source.'];
         }

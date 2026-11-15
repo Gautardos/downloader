@@ -14,13 +14,15 @@ class MediaAddonService
     private JsonStorage $storage;
     private CacheInterface $cache;
     private Client $client;
+    private SafeUrlGuard $urlGuard;
     private array $metaAddonCache = [];
 
-    public function __construct(JsonStorage $storage, CacheInterface $cache)
+    public function __construct(JsonStorage $storage, CacheInterface $cache, ?SafeUrlGuard $urlGuard = null)
     {
         $this->storage = $storage;
         $this->cache = $cache;
         $this->client = new Client();
+        $this->urlGuard = $urlGuard ?? new SafeUrlGuard();
     }
 
     public function getAddons(): array
@@ -388,7 +390,18 @@ class MediaAddonService
                 $infoHash = strtolower((string) ($stream['infoHash'] ?? $stream['info_hash'] ?? ''));
                 $hasTorrent = preg_match('/^[a-f0-9]{40}$/', $infoHash) === 1;
                 $streamUrl = isset($stream['url']) && is_string($stream['url']) ? trim($stream['url']) : '';
-                $hasUrl = preg_match('#^https?://#i', $streamUrl) === 1;
+                $hasUrl = false;
+                if ($streamUrl !== '') {
+                    $urlCheck = $this->urlGuard->validate($streamUrl);
+                    $hasUrl = (bool) ($urlCheck['allowed'] ?? false);
+                    if (!$hasUrl && !$hasTorrent) {
+                        $errors[] = [
+                            'addon' => $target['name'],
+                            'error' => 'Direct stream rejected: ' . (string) ($urlCheck['reason'] ?? 'invalid URL'),
+                        ];
+                        continue;
+                    }
+                }
 
                 if (!$hasTorrent && !$hasUrl) {
                     continue;
@@ -718,40 +731,9 @@ class MediaAddonService
 
     private function assertPublicHttpsUrl(string $url): void
     {
-        $parts = parse_url($url);
-        if (($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
-            throw new \RuntimeException('Only public HTTPS addon URLs are allowed.');
-        }
-
-        $host = strtolower(trim((string) $parts['host'], '[]'));
-        if ($host === 'localhost' || str_ends_with($host, '.local')) {
-            throw new \RuntimeException('Local addon URLs are not allowed.');
-        }
-
-        $ips = [];
-        if (filter_var($host, FILTER_VALIDATE_IP)) {
-            $ips[] = $host;
-        } else {
-            foreach (gethostbynamel($host) ?: [] as $ip) {
-                $ips[] = $ip;
-            }
-            if (function_exists('dns_get_record')) {
-                foreach (dns_get_record($host, DNS_AAAA) ?: [] as $record) {
-                    if (!empty($record['ipv6'])) {
-                        $ips[] = $record['ipv6'];
-                    }
-                }
-            }
-        }
-
-        if (empty($ips)) {
-            throw new \RuntimeException('Could not resolve addon host.');
-        }
-
-        foreach (array_unique($ips) as $ip) {
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-                throw new \RuntimeException('Private or reserved addon addresses are not allowed.');
-            }
+        $result = $this->urlGuard->validateHttps($url);
+        if (empty($result['allowed'])) {
+            throw new \RuntimeException((string) ($result['reason'] ?? 'Addon URL is not allowed.'));
         }
     }
 

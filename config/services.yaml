@@ -73,6 +73,9 @@ services:
     App\Service\Automation\SeriesNumberingProviderInterface:
         alias: App\Service\Automation\FallbackSeriesNumberingProvider
 
+    App\Service\HostResolverInterface:
+        alias: App\Service\DnsHostResolver
+
     # Redis Session Configuration
     Redis:
         class: Redis

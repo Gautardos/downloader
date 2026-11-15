@@ -3,22 +3,29 @@
 namespace App\Service;
 
 use GuzzleHttp\Client;
-// Guzzle is kept for constructor compatibility if needed, but we use native streams
-use GuzzleHttp\RequestOptions;
+use GuzzleHttp\Psr7\Uri;
+use GuzzleHttp\Psr7\UriResolver;
 
 class DownloadManager
 {
     private JsonStorage $storage;
-    private Client $client; // Kept for structure but unused in downloadFile
+    private Client $client;
+    private SafeUrlGuard $urlGuard;
 
-    public function __construct(JsonStorage $storage)
+    public function __construct(JsonStorage $storage, ?SafeUrlGuard $urlGuard = null)
     {
         $this->storage = $storage;
-        $this->client = new Client(); // Dummy client
+        $this->client = new Client();
+        $this->urlGuard = $urlGuard ?? new SafeUrlGuard();
     }
 
     public function downloadFile(string $url, string $filename, string $destinationPath, string $downloadId, bool $overwrite = false, ?callable $heartbeatCallback = null, int $expectedSize = 0): array
     {
+        $urlCheck = $this->urlGuard->validate($url);
+        if (empty($urlCheck['allowed'])) {
+            return ['success' => false, 'message' => 'URL rejected: ' . (string) ($urlCheck['reason'] ?? 'invalid URL')];
+        }
+
         // 1. Background survival
         ignore_user_abort(true);
         set_time_limit(0);
@@ -69,56 +76,98 @@ class DownloadManager
             ]);
 
             $knownTotal = max(0, $expectedSize);
-            $contextOptions = [
-                'http' => [
-                    'method' => 'GET',
-                    'header' => "User-Agent: AlldebridDL/1.0\r\n",
-                    'follow_location' => 1,
-                    'max_redirects' => 20,
-                    'ignore_errors' => true
-                ]
-            ];
+            $currentUrl = $url;
+            $redirects = 0;
+            $visited = [$url => true];
+            $source = null;
+            $headers = [];
 
-            $ctx = stream_context_create($contextOptions);
-            stream_context_set_params($ctx, [
-                'notification' => function ($code, $severity, $msg, $msg_code, $transferred, $max) use ($downloadId, $filename, &$lastTime, &$lastDownloaded, &$lastHeartbeatTime, &$knownTotal, $heartbeatCallback) {
-                    if ($code === STREAM_NOTIFY_PROGRESS) {
-                        $now = microtime(true);
+            while (true) {
+                $contextOptions = [
+                    'http' => [
+                        'method' => 'GET',
+                        'header' => "User-Agent: AlldebridDL/1.0\r\n",
+                        'follow_location' => 0,
+                        'max_redirects' => 0,
+                        'ignore_errors' => true,
+                        'timeout' => 60,
+                    ],
+                    'ssl' => [
+                        'verify_peer' => true,
+                        'verify_peer_name' => true,
+                    ],
+                ];
 
-                        // Heartbeat for Worker
-                        if ($heartbeatCallback && ($now - $lastHeartbeatTime >= 5.0)) {
-                            $heartbeatCallback();
-                            $lastHeartbeatTime = $now;
+                $ctx = stream_context_create($contextOptions);
+                stream_context_set_params($ctx, [
+                    'notification' => function ($code, $severity, $msg, $msg_code, $transferred, $max) use ($downloadId, $filename, &$lastTime, &$lastDownloaded, &$lastHeartbeatTime, &$knownTotal, $heartbeatCallback) {
+                        if ($code === STREAM_NOTIFY_PROGRESS) {
+                            $now = microtime(true);
+
+                            if ($heartbeatCallback && ($now - $lastHeartbeatTime >= 5.0)) {
+                                $heartbeatCallback();
+                                $lastHeartbeatTime = $now;
+                            }
+
+                            if ($transferred > 0 && ($now - $lastTime >= 0.5 || $transferred === $max)) {
+                                $speed = ($now > $lastTime) ? ($transferred - $lastDownloaded) / ($now - $lastTime) : 0;
+                                $speedStr = $this->formatSpeed($speed);
+                                $total = $max > 0 ? $max : $knownTotal;
+                                $pct = $total > 0 ? round(($transferred / $total) * 100) : 0;
+
+                                $this->updateProgress($downloadId, [
+                                    'status' => 'downloading',
+                                    'filename' => $filename,
+                                    'percentage' => $pct,
+                                    'speed' => $speedStr,
+                                    'downloaded' => $transferred,
+                                    'total' => $total,
+                                ]);
+
+                                $lastTime = $now;
+                                $lastDownloaded = $transferred;
+                            }
                         }
+                    },
+                ]);
 
-                        if ($transferred > 0 && ($now - $lastTime >= 0.5 || $transferred === $max)) {
-                            $speed = ($now > $lastTime) ? ($transferred - $lastDownloaded) / ($now - $lastTime) : 0;
-                            $speedStr = $this->formatSpeed($speed);
-                            $total = $max > 0 ? $max : $knownTotal;
-                            $pct = $total > 0 ? round(($transferred / $total) * 100) : 0;
-
-                            $this->updateProgress($downloadId, [
-                                'status' => 'downloading',
-                                'filename' => $filename,
-                                'percentage' => $pct,
-                                'speed' => $speedStr,
-                                'downloaded' => $transferred,
-                                'total' => $total
-                            ]);
-
-                            $lastTime = $now;
-                            $lastDownloaded = $transferred;
-                        }
-                    }
+                $source = @fopen($currentUrl, 'r', false, $ctx);
+                if (!$source) {
+                    throw new \Exception('Could not open source URL (' . $this->urlHost($currentUrl) . ').');
                 }
-            ]);
 
-            $source = @fopen($url, 'r', false, $ctx);
-            if (!$source) {
-                $error = error_get_last();
-                throw new \Exception("Could not open source URL: " . ($error['message'] ?? 'Unknown error'));
+                $headers = $http_response_header ?? [];
+                $status = $this->parseStatusCode($headers);
+
+                if ($status >= 300 && $status < 400) {
+                    $location = $this->parseLocation($headers);
+                    fclose($source);
+                    $source = null;
+                    if ($location === '') {
+                        throw new \Exception('Redirect response without a Location header.');
+                    }
+
+                    $nextUrl = (string) UriResolver::resolve(new Uri($currentUrl), new Uri($location));
+                    $redirects++;
+                    $nextCheck = $this->urlGuard->validateRedirect($nextUrl, $redirects, array_keys($visited));
+                    if (empty($nextCheck['allowed'])) {
+                        throw new \Exception('Redirect rejected: ' . (string) ($nextCheck['reason'] ?? 'invalid URL'));
+                    }
+                    $visited[$nextUrl] = true;
+                    $currentUrl = $nextUrl;
+                    continue;
+                }
+
+                if ($status === 0 || $status >= 400) {
+                    fclose($source);
+                    $source = null;
+                    throw new \Exception('Source returned HTTP ' . ($status > 0 ? $status : 'unknown') . '.');
+                }
+
+                break;
             }
-            $headerTotal = $this->parseContentLength($http_response_header ?? []);
+
+            $headerTotal = $this->parseContentLength($headers);
             if ($headerTotal > 0) {
                 $knownTotal = $headerTotal;
             }
@@ -188,6 +237,35 @@ class DownloadManager
             ]);
             return ['success' => false, 'message' => $e->getMessage()];
         }
+    }
+
+    private function parseStatusCode(array $headers): int
+    {
+        foreach ($headers as $header) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#i', trim((string) $header), $matches)) {
+                return (int) $matches[1];
+            }
+        }
+
+        return 0;
+    }
+
+    private function parseLocation(array $headers): string
+    {
+        foreach ($headers as $header) {
+            if (preg_match('/^location:\s*(.+)$/i', trim((string) $header), $matches)) {
+                return trim($matches[1]);
+            }
+        }
+
+        return '';
+    }
+
+    private function urlHost(string $url): string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? $host : 'unknown host';
     }
 
     private function getStatusFile(string $downloadId): string

@@ -1511,6 +1511,9 @@ pendant le polling.
 - Lancement : `composer test:automation` ou `php tests/automation_smoke.php`.
 - `composer test:security` ou `php tests/session_secrets_smoke.php` : hashing
   legacy, idle timeout, redaction des logs, permissions et secrets config.
+- `composer test:ssrf` ou `php tests/ssrf_smoke.php` : URLs privées/réservées,
+  résolution DNS simulée, politique de redirection et filtrage des streams
+  directs d'addons, sans réseau.
 - Les tests de stockage nécessitent `pdo_sqlite` ; utiliser l'image Docker si
   le PHP local ne l'a pas.
 
@@ -1538,6 +1541,13 @@ pendant le polling.
 - Les anciens journaux `var/storage/logs/history_*.log` peuvent contenir des
   secrets historiques. Ils sont redacted à la lecture par les endpoints, mais
   restent sensibles au repos : les purger ou les roter manuellement.
+- Les URLs directes des addons passent par `SafeUrlGuard` : HTTP/HTTPS, refus
+  des userinfo, ports de services internes, localhost/`.local`, IP loopback,
+  privées, réservées, link-local et multicast, résolution DNS A/AAAA contrôlée.
+  Les redirections sont suivies manuellement (maximum 5) et chaque cible est
+  revalidée. Risque résiduel : **DNS rebinding** entre la résolution et la
+  connexion, car l'IP n'est pas pinnée ; un résolveur contrôlé ou un proxy
+  sortant serait nécessaire pour le réduire complètement.
 - Le matching d'un item de liste ne résout pas automatiquement son identité
   TMDB : il s'appuie sur les IDs fournis par Scrob/MDBList ou sur le fallback
   titre/année de l'index.
