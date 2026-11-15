@@ -12,9 +12,9 @@ class JsonStorage
     {
         $this->storageDir = $kernel->getProjectDir() . '/var/storage';
         if (!is_dir($this->storageDir)) {
-            mkdir($this->storageDir, 0700, true);
+            mkdir($this->storageDir, 0710, true);
         }
-        @chmod($this->storageDir, 0700);
+        @chmod($this->storageDir, 0710);
     }
 
     public function get(string $key, $default = [])

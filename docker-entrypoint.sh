@@ -16,28 +16,57 @@ for dir in /var/www/html/var /var/www/html/vendor; do
 done
 
 # 2. Tighten sensitive application files, but never break dev bind mounts.
-for dir in /var/www/html/var/storage /var/www/html/var/db; do
-    if [ ! -d "$dir" ]; then
-        continue
-    fi
-    owner=$(stat -c '%U' "$dir")
+# Never change groups here: the host chooses the group on bind mounts.
+storage_dir=/var/www/html/var/storage
+db_dir=/var/www/html/var/db
+
+if [ -d "$db_dir" ]; then
+    owner=$(stat -c '%U' "$db_dir")
     if [ "$owner" = "www-data" ]; then
-        echo "[Entrypoint] Tightening permissions for $dir"
-        chmod 700 "$dir" 2>/dev/null || echo "[Entrypoint] WARNING: could not chmod $dir, continuing"
+        echo "[Entrypoint] Tightening permissions for $db_dir"
+        chmod 700 "$db_dir" 2>/dev/null || echo "[Entrypoint] WARNING: could not chmod $db_dir, continuing"
         while IFS= read -r -d '' subdir; do
             if [ "$(stat -c '%U' "$subdir")" = "www-data" ]; then
                 chmod 700 "$subdir" 2>/dev/null || true
             fi
-        done < <(find "$dir" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null)
+        done < <(find "$db_dir" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null)
         while IFS= read -r -d '' file; do
             if [ "$(stat -c '%U' "$file")" = "www-data" ]; then
                 chmod 600 "$file" 2>/dev/null || true
             fi
-        done < <(find "$dir" -maxdepth 2 -type f \( -name '*.json' -o -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' -o -name '*.log' -o -name '*.lock' \) -print0 2>/dev/null)
+        done < <(find "$db_dir" -maxdepth 2 -type f -print0 2>/dev/null)
     else
-        echo "[Entrypoint] $dir owned by $owner: skipping strict chmod (dev bind mount / non-app owner)"
+        echo "[Entrypoint] $db_dir owned by $owner: skipping strict chmod (dev bind mount / non-app owner)"
     fi
-done
+fi
+
+if [ -d "$storage_dir" ]; then
+    owner=$(stat -c '%U' "$storage_dir")
+    if [ "$owner" = "www-data" ]; then
+        echo "[Entrypoint] Tightening permissions for $storage_dir"
+        chmod 710 "$storage_dir" 2>/dev/null || echo "[Entrypoint] WARNING: could not chmod $storage_dir, continuing"
+        while IFS= read -r -d '' subdir; do
+            if [ "$(stat -c '%U' "$subdir")" = "www-data" ]; then
+                chmod 700 "$subdir" 2>/dev/null || true
+            fi
+        done < <(find "$storage_dir" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null)
+        if [ -d "$storage_dir/logs" ] && [ "$(stat -c '%U' "$storage_dir/logs")" = "www-data" ]; then
+            chmod 2750 "$storage_dir/logs" 2>/dev/null || true
+        fi
+        while IFS= read -r -d '' file; do
+            if [ "$(stat -c '%U' "$file")" = "www-data" ]; then
+                chmod 600 "$file" 2>/dev/null || true
+            fi
+        done < <(find "$storage_dir" -maxdepth 2 -type f \( -name '*.json' -o -name '*.lock' -o -name '*.db*' \) -print0 2>/dev/null)
+        while IFS= read -r -d '' file; do
+            if [ "$(stat -c '%U' "$file")" = "www-data" ]; then
+                chmod 640 "$file" 2>/dev/null || true
+            fi
+        done < <(find "$storage_dir" -type f -name '*.log' -print0 2>/dev/null)
+    else
+        echo "[Entrypoint] $storage_dir owned by $owner: skipping strict chmod (dev bind mount / non-app owner)"
+    fi
+fi
 
 # 3. User mounts (/nas, /downloads, /music...): top-level folder only, never recursive.
 # A recursive chown on a large network share (NFS/SMB) can take hours and is often refused:
