@@ -432,7 +432,8 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 | GET ★ | `/queue-active-log` | `queue_active_log` | 100 dernières lignes du log actif si tâche musique |
 | GET | `/history-log/{downloadId}` | `history_log` | Log texte d'un dl |
 | GET | `/history` | `history` | Historique paginé (50/page) |
-| GET ★ | `/notifications-poll` | `notifications_poll` | Lit puis vide `server_notifications` |
+| GET | `/notifications-poll` | `notifications_poll` | Lit `server_notifications` sans le vider |
+| POST | `/notifications-ack` | `notifications_ack` | Acquitte les notifications affichées (CSRF) |
 | GET | `/logs` | `logs` | Liste des fichiers de logs |
 
 ### Discover (films / séries)
@@ -1284,7 +1285,8 @@ pendant le polling.
   300 s), réinitialise les intents `resolving` bloqués, puis traite les intents
   dus après les scans et les dry-runs. Commande manuelle :
   `app:release-intents [--queue] [--episodes] [--run]`.
-- Notifications in-app groupées par run : succès léger, no source, échec
+- Notifications in-app groupées par run/fenêtre : résumé succès/erreurs des
+  téléchargements, no source, échec
   Alldebrid/téléchargement, disque plein, téléchargement interrompu.
 - Chaque intent expose une action **Sources** : dialogue avec fiche TMDB et
   tous les streams addons évalués (acceptés et filtrés). L’utilisateur peut

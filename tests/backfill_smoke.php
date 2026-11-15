@@ -2,6 +2,7 @@
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+use App\Service\Automation\AutomationNotifier;
 use App\Service\Automation\AutomationSettings;
 use App\Service\Automation\AutomationStore;
 use App\Service\Automation\ListMatcher;
@@ -549,6 +550,27 @@ $pick = $selectFile->invoke($selector, [
     ['index' => 1, 'name' => 'Extra.mkv', 'path' => 'Extra.mkv', 'size' => 200, 'link' => 'b'],
 ], 0, '', null, null, '');
 eq(null, $pick, 'ambiguous movie index without metadata is refused');
+
+echo "Grouped download notifications\n";
+$notifyProject = tempProject('backfill-notify-smoke');
+$notifyStorage = storageAt($notifyProject . '/var/storage');
+$notifier = new AutomationNotifier($notifyStorage);
+for ($i = 1; $i <= 10; $i++) {
+    $notifier->queueDownloadSummary('series', 'success', 'Show S01E' . str_pad((string) $i, 2, '0', STR_PAD_LEFT));
+}
+$notifier->queueDownloadSummary('series', 'error', 'Show S01E11', 'Source unavailable');
+$notifier->queueDownloadSummary('movie', 'success', 'Some Movie (2020)');
+check($notifier->flushDownloadSummary(false) === false, 'summary flush is debounced while downloads are recent');
+check($notifier->flushDownloadSummary(true) === true, 'forced summary flush succeeds');
+$notifications = $notifyStorage->get('server_notifications', []);
+eq(1, count($notifications), 'multiple downloads produce one grouped notification');
+$message = (string) ($notifications[0]['message'] ?? '');
+check(str_contains($message, '11 success'), 'grouped notification counts successes');
+check(str_contains($message, '1 error'), 'grouped notification counts errors');
+check(str_contains($message, 'Series: 11'), 'grouped notification counts series');
+check(str_contains($message, 'Movies: 1'), 'grouped notification counts movies');
+check(str_contains($message, 'Source unavailable'), 'grouped notification keeps a grouped error sample');
+removeTree($notifyProject);
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);

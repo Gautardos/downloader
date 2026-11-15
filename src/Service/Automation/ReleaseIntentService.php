@@ -736,13 +736,7 @@ class ReleaseIntentService
             $this->store->setSetting('library_resolve_requested', true);
             $this->store->setSetting('library_resolve_requested_at', time());
             $this->log('Intent #' . $id . ' download succeeded.');
-            $this->notifier->notify(
-                'success',
-                ($isSeries ? 'Episode downloaded: ' : 'Movie downloaded: ') . $label,
-                'Downloaded',
-                $label,
-                $isSeries ? 'series' : 'movie'
-            );
+            $this->notifier->queueDownloadSummary($isSeries ? 'series' : 'movie', 'success', $label);
 
             return;
         }
@@ -773,7 +767,12 @@ class ReleaseIntentService
         } else {
             $alarm = 'Download failed for ' . $label . ': ' . $message;
         }
-        $this->notifier->notifyProblem($alarm, $label, 'error', $isSeries ? 'series' : 'movie');
+        $this->notifier->queueDownloadSummary($isSeries ? 'series' : 'movie', 'error', $label, $alarm);
+    }
+
+    public function flushDownloadSummary(bool $force = false): void
+    {
+        $this->notifier->flushDownloadSummary($force);
     }
 
     public function retryIntent(int $id): array

@@ -114,6 +114,12 @@ class AutomationWorkerCommand extends Command
                 $log('Stale intent recovery failed: ' . $e->getMessage());
             }
 
+            try {
+                $this->releaseIntents->flushDownloadSummary();
+            } catch (\Throwable $e) {
+                $log('Download summary flush failed: ' . $e->getMessage());
+            }
+
             $lockError = $this->libraryIndex->getLockError();
             if ($lockError !== null && $lockError !== $lastLockError) {
                 $log('Scanner lock error: ' . $lockError);

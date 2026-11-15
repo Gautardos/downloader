@@ -148,6 +148,7 @@ class DownloadWorkerCommand extends Command
             }
 
             $this->queueManager->setActiveTask(null);
+            $this->releaseIntents->flushDownloadSummary();
             usleep(100000);
         }
 

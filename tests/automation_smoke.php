@@ -1593,14 +1593,16 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     eq('success', $e03Done['status'], 'episode intent becomes success after download');
     eq('series', $seriesStore->getSetting('library_scan_requested_root'), 'episode success requests a series scan');
     check((bool) $seriesStore->getSetting('library_resolve_requested', false), 'episode success requests a targeted resolution');
+    $seriesIntents->flushDownloadSummary(true);
     $notifications = $seriesStorage->get('server_notifications', []);
     $hasEpisodeNotification = false;
     foreach (is_array($notifications) ? $notifications : [] as $notification) {
-        if (str_contains((string) ($notification['message'] ?? ''), 'Episode downloaded')) {
+        $message = (string) ($notification['message'] ?? '');
+        if (str_contains($message, 'Downloads:') && str_contains($message, '1 success') && str_contains($message, 'Series: 1')) {
             $hasEpisodeNotification = true;
         }
     }
-    check($hasEpisodeNotification, 'episode success sends a light in-app notification');
+    check($hasEpisodeNotification, 'episode success sends a grouped in-app summary');
 
     $e04Fresh = $seriesStore->getIntent((int) $e04['id']);
     $seriesIntents->onDownloadFinished([
