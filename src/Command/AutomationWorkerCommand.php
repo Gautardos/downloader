@@ -105,6 +105,15 @@ class AutomationWorkerCommand extends Command
         do {
             $this->store->setWorkerHeartbeat();
 
+            try {
+                $recovered = $this->releaseIntents->recoverStaleDownloads(2);
+                if (($recovered['recovered'] ?? 0) > 0) {
+                    $log('Recovered ' . $recovered['recovered'] . ' stale queued/downloading intent(s).');
+                }
+            } catch (\Throwable $e) {
+                $log('Stale intent recovery failed: ' . $e->getMessage());
+            }
+
             $lockError = $this->libraryIndex->getLockError();
             if ($lockError !== null && $lockError !== $lastLockError) {
                 $log('Scanner lock error: ' . $lockError);

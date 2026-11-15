@@ -2,7 +2,9 @@
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+use App\Service\Automation\AutomationSettings;
 use App\Service\Automation\AutomationStore;
+use App\Service\Automation\ReleaseIntentService;
 use App\Service\Automation\ReleaseIntegrityService;
 use App\Service\JsonStorage;
 
@@ -307,6 +309,53 @@ $orphanStore->updateIntent($episodeId, ['status' => 'success', 'download_id' => 
 $episodePresent = $orphanStore->createIntent($episodeData, true);
 eq('existing', $episodePresent['status'], 'active split episode prevents reactivation');
 removeTree($orphanProject);
+
+echo "Stale queued/downloading recovery\n";
+$staleProject = tempProject('backfill-stale-smoke');
+$staleStorage = storageAt($staleProject . '/var/storage');
+$staleStore = new AutomationStore($staleProject);
+$staleSettings = new AutomationSettings($staleStore);
+$staleSettings->save(['intents' => ['retry_backoff_minutes' => 60, 'max_attempts' => 5]]);
+$staleService = (new ReflectionClass(ReleaseIntentService::class))->newInstanceWithoutConstructor();
+foreach (['store' => $staleStore, 'settings' => $staleSettings, 'storage' => $staleStorage] as $property => $value) {
+    $ref = new ReflectionProperty(ReleaseIntentService::class, $property);
+    $ref->setAccessible(true);
+    $ref->setValue($staleService, $value);
+}
+$makeStaleIntent = static function (string $key, string $status, ?string $downloadId, int $attempts) use ($staleStore): int {
+    $result = $staleStore->createIntent([
+        'media_key' => $key,
+        'media_type' => 'movie',
+        'tmdb_id' => abs(crc32($key)),
+        'title' => $key,
+        'year' => 2020,
+    ]);
+    $id = (int) $result['intent']['id'];
+    $staleStore->updateIntent($id, [
+        'status' => $status,
+        'download_id' => $downloadId,
+        'attempts' => $attempts,
+    ]);
+    $staleStore->getPdo()->exec("UPDATE intents SET updated_at = '2020-01-01 00:00:00' WHERE id = " . $id);
+
+    return $id;
+};
+$orphanQueuedId = $makeStaleIntent('movie:tmdb:4001', 'queued', 'orphan-queued', 2);
+$activeDownloadingId = $makeStaleIntent('movie:tmdb:4002', 'downloading', 'active-download', 1);
+$historyQueuedId = $makeStaleIntent('movie:tmdb:4003', 'queued', 'history-download', 1);
+$noIdDownloadingId = $makeStaleIntent('movie:tmdb:4004', 'downloading', null, 1);
+$staleStorage->set('active_worker_task', ['download_id' => 'active-download']);
+$staleStorage->set('history', [['download_id' => 'history-download', 'status' => 'success', 'date' => date('Y-m-d H:i:s')]]);
+$recovery = $staleService->recoverStaleDownloads(2, false);
+eq(2, $recovery['recovered'], 'orphan queued and downloadless stale intents are recovered');
+eq(2, $recovery['skipped'], 'active and historical downloads are preserved');
+eq('pending', $staleStore->getIntent($orphanQueuedId)['status'] ?? null, 'orphan queued intent is pending');
+eq(null, $staleStore->getIntent($orphanQueuedId)['download_id'] ?? null, 'orphan queued download id is cleared');
+check(!empty($staleStore->getIntent($orphanQueuedId)['next_attempt_at']), 'orphan queued intent has a backoff date');
+eq('pending', $staleStore->getIntent($noIdDownloadingId)['status'] ?? null, 'downloadless stale downloading intent is pending');
+eq('downloading', $staleStore->getIntent($activeDownloadingId)['status'] ?? null, 'active downloading intent is preserved');
+eq('queued', $staleStore->getIntent($historyQueuedId)['status'] ?? null, 'historical queued intent is preserved');
+removeTree($staleProject);
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);

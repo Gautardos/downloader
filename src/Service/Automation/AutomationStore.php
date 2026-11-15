@@ -2778,6 +2778,20 @@ class AutomationStore
         $this->withRetry(fn () => $stmt->execute($params));
     }
 
+    public function getStaleQueuedOrDownloadingIntents(string $threshold): array
+    {
+        $this->initialize();
+        $stmt = $this->getPdo()->prepare(
+            "SELECT * FROM intents
+             WHERE status IN ('queued', 'downloading')
+               AND updated_at < :threshold
+             ORDER BY updated_at, id"
+        );
+        $stmt->execute([':threshold' => $threshold]);
+
+        return $stmt->fetchAll();
+    }
+
     public function getPendingIntents(int $limit = 10): array
     {
         $this->initialize();

@@ -474,6 +474,87 @@ class ReleaseIntentService
         return $depth;
     }
 
+    public function recoverStaleDownloads(int $hours = 2, bool $throttle = true): array
+    {
+        if ($throttle) {
+            $last = (int) $this->store->getSetting('intents_stale_check_last_at', 0);
+            if ($last > 0 && (time() - $last) < 300) {
+                return ['success' => true, 'recovered' => 0, 'skipped' => 0, 'throttled' => true];
+            }
+            $this->store->setSetting('intents_stale_check_last_at', time());
+        }
+
+        $lock = $this->tryAcquireLock();
+        if ($lock['error'] !== null) {
+            return ['success' => false, 'message' => $lock['error'], 'recovered' => 0, 'skipped' => 0];
+        }
+        if ($lock['busy']) {
+            return ['success' => true, 'recovered' => 0, 'skipped' => 0, 'busy' => true];
+        }
+
+        try {
+            return $this->recoverStaleDownloadsLocked($hours);
+        } finally {
+            $this->releaseLock($lock['handle']);
+        }
+    }
+
+    private function recoverStaleDownloadsLocked(int $hours = 2): array
+    {
+        $hours = max(1, $hours);
+        $threshold = (new \DateTimeImmutable('-' . $hours . ' hours'))->format('Y-m-d H:i:s');
+        $intents = $this->store->getStaleQueuedOrDownloadingIntents($threshold);
+        if ($intents === []) {
+            return ['success' => true, 'recovered' => 0, 'skipped' => 0];
+        }
+
+        $activeIds = [];
+        $queue = $this->storage->get('server_queue', []);
+        foreach (is_array($queue) ? $queue : [] as $item) {
+            if (is_array($item) && !empty($item['download_id'])) {
+                $activeIds[(string) $item['download_id']] = true;
+            }
+        }
+        $active = $this->storage->get('active_worker_task', null);
+        if (is_array($active) && !empty($active['download_id'])) {
+            $activeIds[(string) $active['download_id']] = true;
+        }
+        $history = $this->storage->get('history', []);
+        foreach (is_array($history) ? $history : [] as $entry) {
+            if (is_array($entry) && !empty($entry['download_id'])) {
+                $activeIds[(string) $entry['download_id']] = true;
+            }
+        }
+
+        $intentSettings = $this->settings->getIntentSettings();
+        $backoff = max(1, (int) ($intentSettings['retry_backoff_minutes'] ?? 60));
+        $recovered = 0;
+        $skipped = 0;
+        foreach ($intents as $intent) {
+            $downloadId = trim((string) ($intent['download_id'] ?? ''));
+            if ($downloadId !== '' && isset($activeIds[$downloadId])) {
+                $skipped++;
+                continue;
+            }
+
+            $attempts = max(1, (int) ($intent['attempts'] ?? 0));
+            $minutes = min(1440, $backoff * (2 ** max(0, $attempts - 1)));
+            $nextAttempt = (new \DateTimeImmutable())->modify('+' . $minutes . ' minutes')->format('Y-m-d H:i:s');
+            $this->store->updateIntent((int) $intent['id'], [
+                'status' => 'pending',
+                'next_attempt_at' => $nextAttempt,
+                'download_id' => null,
+                'info_hash' => null,
+                'file_idx' => null,
+                'error_message' => 'Stale queued/downloading task recovered; retry scheduled.',
+            ]);
+            $recovered++;
+            $this->log('Intent #' . (int) $intent['id'] . ' (' . (string) ($intent['title'] ?? '') . ') recovered from stale ' . (string) ($intent['status'] ?? '') . '.');
+        }
+
+        return ['success' => true, 'recovered' => $recovered, 'skipped' => $skipped];
+    }
+
     public function processDueIntents(?int $max = null, ?callable $heartbeat = null): array
     {
         $lock = $this->tryAcquireLock();
@@ -492,6 +573,7 @@ class ReleaseIntentService
         $queueGuard = max(1, (int) ($backfill['queue_guard'] ?? 20));
         $maxAttempts = max(1, (int) ($intentSettings['max_attempts'] ?? 5));
 
+        $this->recoverStaleDownloadsLocked(2);
         $this->store->markStaleResolvingIntents((int) ($intentSettings['stale_resolving_minutes'] ?? 30));
         $queueDepth = $this->getQueueDepth();
         if ($queueDepth >= $queueGuard) {

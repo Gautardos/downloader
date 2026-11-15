@@ -1227,7 +1227,9 @@ pendant le polling.
 - Statuts d'intent : `pending`, `resolving`, `queued`, `downloading`, `success`,
   `error`, `no_source`, `ignored`. Les statuts `pending`, `no_source` et `error`
   sont repris quand `next_attempt_at` est dû et que le plafond de tentatives
-  n'est pas atteint.
+  n'est pas atteint. Le worker récupère aussi les intents `queued`/`downloading`
+  stale (> 2 h, download absent de la queue, de la tâche active et de
+  l'historique) en les remettant `pending` avec backoff.
 - Déduplication : `library_entries` actif (avec `ignored_at` pour les épisodes),
   intent existant pour le même `media_key`/TMDB/IMDb (et saison/épisode pour
   une série), item déjà présent dans `server_queue`/`active_worker_task` (par
