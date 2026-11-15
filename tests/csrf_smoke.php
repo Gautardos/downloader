@@ -94,8 +94,9 @@ check($process->isSuccessful(), 'router inventory command succeeds');
 $routes = json_decode($process->getOutput(), true);
 check(is_array($routes) && $routes !== [], 'router inventory is readable');
 $stateChanging = 0;
+$covered = [];
 $exempt = [];
-$uncovered = [];
+$allowedExemptPrefixes = ['/jellyfin'];
 foreach (is_array($routes) ? $routes : [] as $name => $route) {
     $method = strtoupper((string) ($route['method'] ?? ''));
     if (!preg_match('/\b(POST|PUT|PATCH|DELETE)\b/', $method)) {
@@ -104,16 +105,26 @@ foreach (is_array($routes) ? $routes : [] as $name => $route) {
     $stateChanging++;
     $path = (string) ($route['path'] ?? '');
     if (CsrfSubscriber::isExemptPath($path)) {
-        $exempt[] = $name;
+        $exempt[] = $name . ' ' . $path;
+        $allowed = false;
+        foreach ($allowedExemptPrefixes as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                $allowed = true;
+                break;
+            }
+        }
+        check($allowed, 'exemption is explicitly allowed: ' . $name . ' ' . $path);
         continue;
     }
-    if (!str_starts_with($path, '/jellyfin')) {
-        continue;
-    }
-    $uncovered[] = $name . ' ' . $path;
+    $covered[] = $name . ' ' . $path;
 }
 check($stateChanging > 0, 'at least one state-changing route is inventoried');
-check($uncovered === [], 'all Jellyfin state-changing routes are exempt');
+check(count($covered) + count($exempt) === $stateChanging, 'every state-changing route is covered or explicitly exempted');
+check(count($exempt) === 7, 'only the seven Jellyfin routes are exempted');
+$coveredJellyfin = array_values(array_filter($covered, static fn (string $route): bool => str_contains($route, ' /jellyfin/')));
+$unexpectedExempt = array_values(array_filter($exempt, static fn (string $route): bool => !str_contains($route, ' /jellyfin/')));
+check($coveredJellyfin === [], 'no covered state-changing route targets Jellyfin');
+check($unexpectedExempt === [], 'no unexpected non-Jellyfin exemption is registered');
 check(CsrfSubscriber::isExemptPath('/jellyfin/System/Info'), 'Jellyfin path is exempt');
 check(!CsrfSubscriber::isExemptPath('/login'), 'login path is not exempt');
 check(!CsrfSubscriber::isExemptPath('/config'), 'config path is not exempt');
