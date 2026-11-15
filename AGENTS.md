@@ -1091,8 +1091,9 @@ de séries** (backfill par épisode, packs refusés, multi-épisodes parqués) s
 | `src/Command/LibraryScanCommand.php` | `app:library-scan [--root=movies]` |
 | `src/Command/LibraryReconcileMissingCommand.php` | `app:library-reconcile-missing --root=anime [--dry-run]` |
 | `src/Command/LibraryResolveCommand.php` | `app:library-resolve [--limit=50]` |
-| `src/Service/Automation/LibraryTitleRefreshService.php` | Rafraîchit les titres films TMDB dans `metadata.title_language` |
+| `src/Service/Automation/LibraryTitleRefreshService.php` | Rafraîchit les titres films et séries TMDB dans `metadata.title_language` |
 | `src/Command/LibraryTitleRefreshCommand.php` | `app:library-title-refresh [--limit=] [--language=] [--dry-run]` |
+| `src/Command/LibraryPruneEmptyDirsCommand.php` | `app:library-prune-empty-dirs [--root=] [--dry-run]` |
 | `src/Command/AutomationWorkerCommand.php` | `app:automation-worker [--once] [--force-scan]` |
 | `src/Service/Automation/ScrobListClient.php` | Client API Scrob (`/api/proxy/lists/{id}`) |
 | `src/Service/Automation/MdbListClient.php` | Client API MDBList (pagination `unified=true`) |
@@ -1447,12 +1448,17 @@ pendant le polling.
   `LibraryTitleRefreshService` pour les entrées existantes.
 - La résolution continue de chercher avec la langue TMDB configurée, mais les
   détails finaux (titre/année) sont récupérés dans `title_language`.
-- Bouton **Refresh English titles** sur Media Library ou commande
+- Bouton **Refresh titles** sur Media Library ou commande
   `app:library-title-refresh` : met à jour `library_entries.title` pour les
-  films ayant un `tmdb_id`. `--dry-run` permet de prévisualiser.
+  films et les séries ayant un `tmdb_id`. Pour les séries, `show_folder` est
+  également aligné sur `Titre (Année)`. `--dry-run` permet de prévisualiser.
 - Le refresh ne déplace pas les fichiers : utiliser ensuite **Rename matched**
   pour prévisualiser/appliquer le renommage Jellyfin avec les titres anglais.
-- Les films sans `tmdb_id` doivent d'abord passer par Resolve metadata.
+- Les entrées sans `tmdb_id` doivent d'abord passer par Resolve metadata.
+- Après un renommage, **Clean empty folders** ou
+  `app:library-prune-empty-dirs [--root=movies] [--dry-run]` supprime les
+  dossiers vides laissés derrière, sans toucher aux fichiers, aux racines, aux
+  dossiers non vides ni aux dossiers cachés.
 
 ### Racines et parsing
 

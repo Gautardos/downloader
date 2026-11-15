@@ -673,12 +673,16 @@ class AutomationStore
         if ($contentSame) {
             $update = $pdo->prepare(
                 'UPDATE library_entries
-                 SET status = :status, scan_id = :scan_id, last_seen_at = :last_seen_at
+                 SET status = :status,
+                     scan_id = :scan_id,
+                     folder_path = :folder_path,
+                     last_seen_at = :last_seen_at
                  WHERE path = :path'
             );
             $update->execute([
                 ':status' => 'active',
                 ':scan_id' => $scanId,
+                ':folder_path' => $this->folderPathForEntry($entry),
                 ':last_seen_at' => $now,
                 ':path' => $entry['path'],
             ]);
@@ -1606,31 +1610,43 @@ class AutomationStore
 
     public function getMoviesForTitleRefresh(int $limit = 5000): array
     {
+        return $this->getEntriesForTitleRefresh('movie', $limit);
+    }
+
+    public function getSeriesForTitleRefresh(int $limit = 5000): array
+    {
+        return $this->getEntriesForTitleRefresh('series', $limit);
+    }
+
+    private function getEntriesForTitleRefresh(string $mediaType, int $limit): array
+    {
         $this->initialize();
         $stmt = $this->getPdo()->prepare(
-            "SELECT id, tmdb_id, title, title_normalized, year, path
+            "SELECT id, tmdb_id, title, title_normalized, year, path, show_folder
              FROM library_entries
              WHERE status IN ('active', 'missing')
-               AND media_type = 'movie'
+               AND media_type = :media_type
                AND tmdb_id IS NOT NULL
                AND ignored_at IS NULL
              ORDER BY id
              LIMIT :limit"
         );
+        $stmt->bindValue(':media_type', $mediaType);
         $stmt->bindValue(':limit', max(1, min(10000, $limit)), PDO::PARAM_INT);
         $stmt->execute();
 
         return $stmt->fetchAll();
     }
 
-    public function updateEntryTitle(int $id, string $title, string $titleNormalized, ?int $year = null): void
+    public function updateEntryTitle(int $id, string $title, string $titleNormalized, ?int $year = null, ?string $showFolder = null): void
     {
-        $this->withRetry(function () use ($id, $title, $titleNormalized, $year) {
+        $this->withRetry(function () use ($id, $title, $titleNormalized, $year, $showFolder) {
             $stmt = $this->getPdo()->prepare(
                 'UPDATE library_entries
                  SET title = :title,
                      title_normalized = :title_normalized,
                      year = COALESCE(:year, year),
+                     show_folder = COALESCE(:show_folder, show_folder),
                      last_seen_at = :last_seen_at
                  WHERE id = :id'
             );
@@ -1639,6 +1655,7 @@ class AutomationStore
                 ':title' => $title,
                 ':title_normalized' => $titleNormalized,
                 ':year' => $year,
+                ':show_folder' => $showFolder,
                 ':last_seen_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
             ]);
         });
@@ -1646,11 +1663,14 @@ class AutomationStore
 
     public function updateEntryPath(int $id, string $path, string $relativePath, string $filename, ?string $showFolder = null, ?string $title = null, ?int $year = null): void
     {
-        $this->withRetry(function () use ($id, $path, $relativePath, $filename, $showFolder, $title, $year) {
+        $folderPath = dirname(str_replace('\\', '/', $relativePath));
+        $folderPath = $folderPath === '.' ? '' : trim($folderPath, '/');
+        $this->withRetry(function () use ($id, $path, $relativePath, $filename, $folderPath, $showFolder, $title, $year) {
             $stmt = $this->getPdo()->prepare(
                 'UPDATE library_entries
                  SET path = :path,
                      relative_path = :relative_path,
+                     folder_path = :folder_path,
                      filename = :filename,
                      show_folder = :show_folder,
                      title = COALESCE(:title, title),
@@ -1662,6 +1682,7 @@ class AutomationStore
                 ':id' => $id,
                 ':path' => $path,
                 ':relative_path' => $relativePath,
+                ':folder_path' => $folderPath,
                 ':filename' => $filename,
                 ':show_folder' => $showFolder,
                 ':title' => $title,

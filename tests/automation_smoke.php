@@ -1040,9 +1040,12 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     check(is_file($renameRoot . '/TV Shows/Demo Show (2020)/Season 01/Demo Show (2020) - S01E01.mkv'), 'series file moved');
     check(is_file($renameRoot . '/TV Shows/Demo Show (2020)/Season 01/Demo Show (2020) - S01E01.en.srt'), 'series sidecar renamed');
 
-    $moved = $renameStore->getPdo()->query("SELECT path, show_folder FROM library_entries WHERE title = 'Demo Show'")->fetch();
+    $moved = $renameStore->getPdo()->query("SELECT path, show_folder, folder_path FROM library_entries WHERE title = 'Demo Show'")->fetch();
     eq($renameRoot . '/TV Shows/Demo Show (2020)/Season 01/Demo Show (2020) - S01E01.mkv', $moved['path'], 'DB path updated after rename');
     eq('Demo Show (2020)', $moved['show_folder'], 'DB show folder updated after rename');
+    eq('Demo Show (2020)/Season 01', $moved['folder_path'], 'DB series folder path updated after rename');
+    $movedMovie = $renameStore->getPdo()->query("SELECT folder_path FROM library_entries WHERE title = 'The Movie'")->fetch();
+    eq('The Movie (2020)', $movedMovie['folder_path'], 'DB movie folder path updated after rename');
 
     $renameHistory = $renameStore->getRecentRenameRuns(5);
     check(!empty($renameHistory) && (int) $renameHistory[0]['entries_renamed'] === 2, 'rename run history recorded', $renameHistory);
@@ -1070,8 +1073,18 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     check(is_file($renameRoot . '/TV Shows/Demo Show/Season 01/Demo.Show.S01E01.mkv'), 'series file restored');
     check(is_file($renameRoot . '/TV Shows/Demo Show/Season 01/Demo.Show.S01E01.en.srt'), 'series sidecar restored');
     check(!is_file($renameRoot . '/Movies/The Movie (2020)/The Movie (2020).mkv'), 'renamed movie target removed after undo');
-    $restored = $renameStore->getPdo()->query("SELECT path FROM library_entries WHERE title = 'The Movie'")->fetch();
+    $restored = $renameStore->getPdo()->query("SELECT id, path, folder_path FROM library_entries WHERE title = 'The Movie'")->fetch();
     eq($renameRoot . '/Movies/Wrong Folder/Wrong.Movie.2020.mkv', $restored['path'], 'DB path restored after undo');
+    eq('Wrong Folder', $restored['folder_path'], 'DB movie folder path restored after undo');
+    $restoredSeries = $renameStore->getPdo()->query("SELECT folder_path FROM library_entries WHERE title = 'Demo Show'")->fetch();
+    eq('Demo Show/Season 01', $restoredSeries['folder_path'], 'DB series folder path restored after undo');
+
+    $renameStore->getPdo()->exec("UPDATE library_entries SET folder_path = 'Stale Folder' WHERE id = " . (int) $restored['id']);
+    $reconciledEntry = $renameStore->getEntryById((int) $restored['id']);
+    $reconciledEntry['folder_path'] = 'Wrong Folder';
+    $renameStore->upsertLibraryEntry($reconciledEntry);
+    $reconciledRow = $renameStore->getEntryById((int) $restored['id']);
+    eq('Wrong Folder', $reconciledRow['folder_path'], 'unchanged scan refreshes a stale folder_path');
 
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($renameProject, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($it as $file) {

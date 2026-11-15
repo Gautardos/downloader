@@ -262,6 +262,20 @@ class AutomationLibraryController extends AbstractController
         ]);
     }
 
+    #[Route('/automation/library/prune-empty-dirs', name: 'automation_library_prune_empty_dirs', methods: ['POST'])]
+    public function pruneEmptyDirs(Request $request, LibraryRenameService $renameService): Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data) || !$this->isAutomationCsrfValid($request, is_string($data['csrf'] ?? null) ? $data['csrf'] : null)) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
+        }
+
+        $dryRun = !empty($data['dry_run']);
+        $result = $renameService->pruneEmptyFolders(null, $dryRun);
+
+        return $this->json($result);
+    }
+
     #[Route('/automation/library/title-refresh', name: 'automation_library_title_refresh', methods: ['POST'])]
     public function titleRefresh(Request $request, LibraryTitleRefreshService $titleRefresh): Response
     {

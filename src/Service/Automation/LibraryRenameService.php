@@ -145,6 +145,113 @@ class LibraryRenameService
         }
     }
 
+    public function pruneEmptyFolders(?array $rootKeys = null, bool $dryRun = true): array
+    {
+        $roots = $this->settings->getRoots();
+        $stats = [
+            'roots_seen' => 0,
+            'dirs_seen' => 0,
+            'candidates' => 0,
+            'deleted' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+            'warnings' => [],
+        ];
+        $items = [];
+        $skipNames = ['@eadir', '#recycle', '$recycle.bin', 'lost+found', 'system volume information'];
+
+        foreach ($roots as $rootKey => $root) {
+            if ($rootKeys !== null && !in_array((string) $rootKey, $rootKeys, true)) {
+                continue;
+            }
+            if (!is_array($root) || empty($root['enabled']) || empty($root['path'])) {
+                $stats['skipped']++;
+                continue;
+            }
+            $rootPath = rtrim((string) $root['path'], '/\\');
+            if (!is_dir($rootPath)) {
+                $stats['skipped']++;
+                $stats['warnings'][] = $rootKey . ': path does not exist (' . $rootPath . ').';
+                continue;
+            }
+            $stats['roots_seen']++;
+
+            $directories = [];
+            try {
+                $iterator = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($rootPath, \FilesystemIterator::SKIP_DOTS),
+                    \RecursiveIteratorIterator::SELF_FIRST
+                );
+                foreach ($iterator as $file) {
+                    if (!$file instanceof \SplFileInfo || !$file->isDir() || $file->isLink()) {
+                        continue;
+                    }
+                    $name = strtolower($file->getFilename());
+                    if ($name === '' || str_starts_with($name, '.') || in_array($name, $skipNames, true)) {
+                        continue;
+                    }
+                    $path = rtrim(str_replace('\\', '/', $file->getPathname()), '/');
+                    $directories[] = $path;
+                    $stats['dirs_seen']++;
+                }
+            } catch (\Throwable $e) {
+                $stats['warnings'][] = $rootKey . ': could not browse (' . $e->getMessage() . ').';
+                continue;
+            }
+
+            usort($directories, static fn (string $a, string $b): int => substr_count($b, '/') <=> substr_count($a, '/'));
+            $candidateMap = [];
+            $rootCandidates = [];
+            foreach ($directories as $path) {
+                if (is_link($path) || !is_dir($path)) {
+                    continue;
+                }
+                $children = @scandir($path);
+                if ($children === false) {
+                    $stats['failed']++;
+                    continue;
+                }
+                $removable = true;
+                foreach ($children as $child) {
+                    if ($child === '.' || $child === '..') {
+                        continue;
+                    }
+                    $childPath = $path . '/' . $child;
+                    if (!isset($candidateMap[$childPath])) {
+                        $removable = false;
+                        break;
+                    }
+                }
+                if ($removable) {
+                    $candidateMap[$path] = true;
+                    $rootCandidates[] = $path;
+                }
+            }
+
+            $stats['candidates'] += count($rootCandidates);
+            foreach ($rootCandidates as $path) {
+                $items[] = ['root_key' => (string) $rootKey, 'path' => $path];
+            }
+
+            if (!$dryRun) {
+                foreach ($rootCandidates as $path) {
+                    if (@rmdir($path)) {
+                        $stats['deleted']++;
+                    } else {
+                        $stats['failed']++;
+                    }
+                }
+            }
+        }
+
+        return [
+            'success' => true,
+            'dry_run' => $dryRun,
+            'stats' => $stats,
+            'items' => $items,
+        ];
+    }
+
     public function undo(int $runId, bool $apply = true): array
     {
         $run = $this->store->getRenameRun($runId);
