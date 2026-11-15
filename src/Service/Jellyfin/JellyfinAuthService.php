@@ -3,6 +3,7 @@
 namespace App\Service\Jellyfin;
 
 use App\Service\JsonStorage;
+use App\Service\PasswordService;
 use Symfony\Component\HttpFoundation\Request;
 
 class JellyfinAuthService
@@ -11,10 +12,12 @@ class JellyfinAuthService
     private const TOKEN_TTL = 31536000;
 
     private JsonStorage $storage;
+    private PasswordService $passwords;
 
-    public function __construct(JsonStorage $storage)
+    public function __construct(JsonStorage $storage, ?PasswordService $passwords = null)
     {
         $this->storage = $storage;
+        $this->passwords = $passwords ?? new PasswordService();
     }
 
     public function isEnabled(): bool
@@ -62,12 +65,19 @@ class JellyfinAuthService
     public function authenticate(string $username, string $password): ?array
     {
         $credentials = $this->credentials();
-        if ($credentials['password'] === '') {
+        $storedPassword = (string) $credentials['password'];
+        if ($storedPassword === '') {
             return null;
         }
 
-        if (!hash_equals($credentials['username'], $username) || !hash_equals($credentials['password'], $password)) {
+        if (!hash_equals($credentials['username'], $username) || !$this->passwords->verify($password, $storedPassword)) {
             return null;
+        }
+
+        if (!$this->passwords->isHash($storedPassword)) {
+            $config = $this->config();
+            $config['jellyfin_password'] = $this->passwords->hash($password);
+            $this->storage->set('config', $config);
         }
 
         $state = $this->state();

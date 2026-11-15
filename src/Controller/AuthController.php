@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Service\AuthService;
+use App\Service\CsrfTokenService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -34,10 +35,15 @@ class AuthController extends AbstractController
         ]);
     }
 
-    #[Route('/logout', name: 'logout')]
-    public function logout(AuthService $auth): Response
+    #[Route('/logout', name: 'logout', methods: ['POST'])]
+    public function logout(Request $request, AuthService $auth, CsrfTokenService $csrf): Response
     {
+        if (!$csrf->isValid($request, $csrf->fromRequest($request))) {
+            return new Response('Invalid security token.', 403);
+        }
+
         $auth->logout();
+
         return $this->redirectToRoute('login');
     }
 }

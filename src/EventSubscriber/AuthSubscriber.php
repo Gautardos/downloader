@@ -11,6 +11,13 @@ use Symfony\Component\Routing\RouterInterface;
 
 class AuthSubscriber implements EventSubscriberInterface
 {
+    private const POLLING_ROUTES = [
+        'notifications_poll',
+        'queue_status',
+        'queue_active_log',
+        'progress',
+    ];
+
     public function __construct(
         private AuthService $auth,
         private RouterInterface $router
@@ -36,7 +43,8 @@ class AuthSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if (!$this->auth->isAuthenticated()) {
+        $touchActivity = !in_array($route, self::POLLING_ROUTES, true);
+        if (!$this->auth->isAuthenticated($touchActivity)) {
             $response = new RedirectResponse($this->router->generate('login'));
             $event->setResponse($response);
         }

@@ -10,6 +10,7 @@ use App\Service\DebridHistoryService;
 use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
+use App\Service\LogRedactor;
 use App\Service\QueueManager;
 use App\Service\ServerNotificationService;
 use App\Service\SpotifyService;
@@ -531,7 +532,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/queue-active-log', name: 'queue_active_log', methods: ['GET'])]
-    public function queueActiveLog(QueueManager $queueManager, JsonStorage $storage): Response
+    public function queueActiveLog(QueueManager $queueManager, JsonStorage $storage, LogRedactor $redactor): Response
     {
         $active = $queueManager->getActiveTask();
         if (!$active || ($active['type'] ?? '') !== 'music') {
@@ -546,18 +547,18 @@ class DashboardController extends AbstractController
         // Return last 100 lines
         $lines = file($logFile);
         $lastLines = array_slice($lines, -100);
-        return $this->json(['log' => implode("", $lastLines)]);
+        return $this->json(['log' => $redactor->redact(implode("", $lastLines))]);
     }
 
     #[Route('/history-log/{downloadId}', name: 'history_log', methods: ['GET'])]
-    public function historyLog(string $downloadId, JsonStorage $storage): Response
+    public function historyLog(string $downloadId, JsonStorage $storage, LogRedactor $redactor): Response
     {
         $logFile = $storage->getStorageDir() . '/logs/history_' . $downloadId . '.log';
         if (!file_exists($logFile)) {
             return new Response('Log file not found.', 404);
         }
 
-        return new Response(file_get_contents($logFile), 200, [
+        return new Response($redactor->redact((string) file_get_contents($logFile)), 200, [
             'Content-Type' => 'text/plain'
         ]);
     }

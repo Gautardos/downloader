@@ -21,6 +21,12 @@
 </div>
 {% endmacro %}
 
+{% macro clearSecret(key) %}
+<label style="display:inline-flex; align-items:center; gap:0.35rem; margin-top:0.35rem; color:var(--text-secondary); font-size:0.8rem;">
+    <input type="checkbox" name="clear[{{ key }}]" value="1"> Clear saved value
+</label>
+{% endmacro %}
+
 {% block body %}
 {% embed '_partials/page_header.html.twig' with {
     title: 'Settings',
@@ -37,8 +43,9 @@
                 <h3 style="color: var(--accent); margin-bottom: 1rem;">Global Settings</h3>
                 <div style="margin-bottom: 1rem;">
                     <label for="api_key">Alldebrid API Key</label>
-                    <input type="text" id="api_key" name="api_key" value="{{ config.api_key|default('') }}" placeholder="Enter your API Key">
+                    <input type="password" id="api_key" name="api_key" value="" placeholder="{{ config.api_key is not empty ? 'Saved — leave blank to keep' : 'Enter your API Key' }}" autocomplete="new-password">
                     <small style="color: var(--text-secondary);">Your personal Alldebrid API token.</small>
+                    {{ _self.clearSecret('api_key') }}
                 </div>
 
                 
@@ -89,8 +96,9 @@
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label for="spotify_client_secret">Spotify Client Secret</label>
-                    <input type="password" id="spotify_client_secret" name="spotify_client_secret" value="{{ config.spotify_client_secret|default('') }}" placeholder="Enter Client Secret">
+                    <input type="password" id="spotify_client_secret" name="spotify_client_secret" value="" placeholder="{{ config.spotify_client_secret is not empty ? 'Saved — leave blank to keep' : 'Enter Client Secret' }}" autocomplete="new-password">
                     <small style="color: var(--text-secondary);">Required for real-time track metadata extraction.</small>
+                    {{ _self.clearSecret('spotify_client_secret') }}
                 </div>
 
                 <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">App Security 🔐</h3>
@@ -100,8 +108,8 @@
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label for="admin_password">Password</label>
-                    <input type="password" id="admin_password" name="admin_password" value="{{ config.admin_password|default('admin') }}" required>
-                    <small style="color: var(--text-secondary);">Used to secure your dashboard.</small>
+                    <input type="password" id="admin_password" name="admin_password" value="" placeholder="Leave blank to keep current password" autocomplete="new-password">
+                    <small style="color: var(--text-secondary);">Used to secure your dashboard. Leave blank to keep the current password.</small>
                 </div>
 
                 <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Jellyfin API (Nuvio) 🎬</h3>
@@ -125,8 +133,9 @@
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label for="jellyfin_password">Jellyfin password</label>
-                    <input type="password" id="jellyfin_password" name="jellyfin_password" value="{{ config.jellyfin_password|default('') }}">
+                    <input type="password" id="jellyfin_password" name="jellyfin_password" value="" placeholder="{{ config.jellyfin_password is not empty ? 'Saved — leave blank to keep' : 'Enter Jellyfin password' }}" autocomplete="new-password">
                     <small style="color: var(--text-secondary);">Dedicated password required to connect Nuvio. Login stays disabled while this is empty.</small>
+                    {{ _self.clearSecret('jellyfin_password') }}
                 </div>
             </section>
 
@@ -223,13 +232,15 @@
                 <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">Lyrics Sources 🎤</h3>
                 <div style="margin-bottom: 1rem;">
                     <label for="genius_api_token">Genius API Token</label>
-                    <input type="text" id="genius_api_token" name="genius_api_token" value="{{ config.genius_api_token|default('') }}" placeholder="Enter Genius Client Access Token">
+                    <input type="password" id="genius_api_token" name="genius_api_token" value="" placeholder="{{ config.genius_api_token is not empty ? 'Saved — leave blank to keep' : 'Enter Genius Client Access Token' }}" autocomplete="new-password">
                     <small style="color: var(--text-secondary);">Used for fetching unsynchronized lyrics.</small>
+                    {{ _self.clearSecret('genius_api_token') }}
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label for="lrclib_token">LRCLib Token (Optional)</label>
-                    <input type="text" id="lrclib_token" name="lrclib_token" value="{{ config.lrclib_token|default('') }}" placeholder="Enter LRCLib Token">
+                    <input type="password" id="lrclib_token" name="lrclib_token" value="" placeholder="{{ config.lrclib_token is not empty ? 'Saved — leave blank to keep' : 'Enter LRCLib Token' }}" autocomplete="new-password">
                     <small style="color: var(--text-secondary);">LRCLib usually doesn't require a token for standard usage.</small>
+                    {{ _self.clearSecret('lrclib_token') }}
                 </div>
 
                 <div style="margin-top: 1rem;">
@@ -345,8 +356,9 @@
                 </div>
                 <div>
                     <label for="openrouter_api_key">OpenRouter API Key</label>
-                    <input type="password" id="openrouter_api_key" name="openrouter_api_key" value="{{ config.openrouter_api_key|default('') }}" placeholder="sk-or-v1-..." autocomplete="off">
-                    <small style="color: var(--text-secondary);">Stored server-side. Leave empty to use the xAI fallback.</small>
+                    <input type="password" id="openrouter_api_key" name="openrouter_api_key" value="" placeholder="{{ config.openrouter_api_key is not empty ? 'Saved — leave blank to keep' : 'sk-or-v1-...' }}" autocomplete="new-password">
+                    <small style="color: var(--text-secondary);">Stored server-side. Leave empty to keep the saved key.</small>
+                    {{ _self.clearSecret('openrouter_api_key') }}
                 </div>
             </div>
 
@@ -369,7 +381,8 @@
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
                     <div>
                         <label for="grok_api_key">xAI API Key</label>
-                        <input type="password" id="grok_api_key" name="grok_api_key" value="{{ config.grok_api_key|default('') }}" placeholder="xai-..." autocomplete="off">
+                        <input type="password" id="grok_api_key" name="grok_api_key" value="" placeholder="{{ config.grok_api_key is not empty ? 'Saved — leave blank to keep' : 'xai-...' }}" autocomplete="new-password">
+                        {{ _self.clearSecret('grok_api_key') }}
                     </div>
                     <div>
                         <label for="grok_model">xAI Renaming Model</label>

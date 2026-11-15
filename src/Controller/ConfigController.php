@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Service\AiService;
 use App\Service\JsonStorage;
+use App\Service\PasswordService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -14,7 +15,7 @@ use Symfony\Component\Routing\Annotation\Route;
 class ConfigController extends AbstractController
 {
     #[Route('/config', name: 'config')]
-    public function index(Request $request, JsonStorage $storage): Response
+    public function index(Request $request, JsonStorage $storage, PasswordService $passwords): Response
     {
         $currentConfig = $storage->get('config');
 
@@ -25,8 +26,46 @@ class ConfigController extends AbstractController
         }
 
         if ($request->isMethod('POST')) {
-            $apiKey = $request->request->get('api_key');
-            $grokKey = $request->request->get('grok_api_key', $currentConfig['grok_api_key'] ?? '');
+            $clear = $request->request->all('clear');
+            if (!is_array($clear)) {
+                $clear = [];
+            }
+            $secret = static function (string $key, string $current) use ($request, $clear): string {
+                if (!empty($clear[$key])) {
+                    return '';
+                }
+                $value = $request->request->get($key);
+                if (is_string($value) && $value !== '') {
+                    return $value;
+                }
+
+                return $current;
+            };
+
+            $apiKey = $secret('api_key', (string) ($currentConfig['api_key'] ?? ''));
+            $tmdbApiKey = $request->request->has('tmdb_api_key')
+                ? $secret('tmdb_api_key', (string) ($currentConfig['tmdb_api_key'] ?? ''))
+                : (string) ($currentConfig['tmdb_api_key'] ?? '');
+            $openrouterKey = $secret('openrouter_api_key', (string) ($currentConfig['openrouter_api_key'] ?? ''));
+            $grokKey = $secret('grok_api_key', (string) ($currentConfig['grok_api_key'] ?? ''));
+            $spotifySecret = $secret('spotify_client_secret', (string) ($currentConfig['spotify_client_secret'] ?? ''));
+            $geniusToken = $secret('genius_api_token', (string) ($currentConfig['genius_api_token'] ?? ''));
+            $lrclibToken = $secret('lrclib_token', (string) ($currentConfig['lrclib_token'] ?? ''));
+
+            $adminPassword = (string) ($currentConfig['admin_password'] ?? 'admin');
+            $postedAdminPassword = $request->request->get('admin_password');
+            if (is_string($postedAdminPassword) && $postedAdminPassword !== '') {
+                $adminPassword = $passwords->hashIfPlain($postedAdminPassword);
+            }
+
+            $jellyfinPassword = (string) ($currentConfig['jellyfin_password'] ?? '');
+            $postedJellyfinPassword = $request->request->get('jellyfin_password');
+            if (!empty($clear['jellyfin_password'])) {
+                $jellyfinPassword = '';
+            } elseif (is_string($postedJellyfinPassword) && $postedJellyfinPassword !== '') {
+                $jellyfinPassword = $passwords->hashIfPlain($postedJellyfinPassword);
+            }
+
             $defaultPath = $request->request->get('default_path');
             $aiProvider = $request->request->get('ai_provider', 'openrouter');
             if (!in_array($aiProvider, ['openrouter', 'xai'], true)) {
@@ -35,12 +74,10 @@ class ConfigController extends AbstractController
 
             $storage->set('config', [
                 'api_key' => $apiKey,
-                'tmdb_api_key' => $request->request->has('tmdb_api_key')
-                    ? $request->request->get('tmdb_api_key')
-                    : ($currentConfig['tmdb_api_key'] ?? ''),
+                'tmdb_api_key' => $tmdbApiKey,
                 'tmdb_language' => $request->request->get('tmdb_language', $currentConfig['tmdb_language'] ?? 'fr-FR'),
                 'ai_provider' => $aiProvider,
-                'openrouter_api_key' => $request->request->get('openrouter_api_key', ''),
+                'openrouter_api_key' => $openrouterKey,
                 'ai_model_default' => trim((string) $request->request->get('ai_model_default', '')),
                 'ai_model_renaming' => trim((string) $request->request->get('ai_model_renaming', '')),
                 'ai_model_music_genre' => trim((string) $request->request->get('ai_model_music_genre', '')),
@@ -48,7 +85,7 @@ class ConfigController extends AbstractController
                 'grok_model' => $request->request->get('grok_model', $currentConfig['grok_model'] ?? 'grok-4-fast-non-reasoning'),
                 'default_path' => $defaultPath,
                 'spotify_client_id' => $request->request->get('spotify_client_id', ''),
-                'spotify_client_secret' => $request->request->get('spotify_client_secret', ''),
+                'spotify_client_secret' => $spotifySecret,
                 'music_output' => $request->request->get('music_output', '{artist} - {album} - {song_name}.{ext}'),
                 'music_format' => $request->request->get('music_format', 'mp3'),
                 'music_root_path' => $request->request->get('music_root_path', ''),
@@ -70,13 +107,13 @@ class ConfigController extends AbstractController
                 'music_genre_grok_prompt' => $request->request->get('music_genre_grok_prompt', ''),
                 'music_genre_grok_model' => $request->request->get('music_genre_grok_model', $currentConfig['music_genre_grok_model'] ?? 'grok-4-fast-non-reasoning'),
                 'music_genres' => $request->request->get('music_genres') === '1',
-                'genius_api_token' => $request->request->get('genius_api_token', ''),
-                'lrclib_token' => $request->request->get('lrclib_token', ''),
+                'genius_api_token' => $geniusToken,
+                'lrclib_token' => $lrclibToken,
                 'admin_user' => $request->request->get('admin_user', 'admin'),
-                'admin_password' => $request->request->get('admin_password', 'admin'),
+                'admin_password' => $adminPassword,
                 'jellyfin_enabled' => $request->request->get('jellyfin_enabled') === '1',
                 'jellyfin_username' => trim((string) $request->request->get('jellyfin_username', 'jellyfin')),
-                'jellyfin_password' => (string) $request->request->get('jellyfin_password', ''),
+                'jellyfin_password' => $jellyfinPassword,
                 'jellyfin_server_name' => trim((string) $request->request->get('jellyfin_server_name', 'Downloader')) ?: 'Downloader',
                 'history_retention_limit' => (int) $request->request->get('history_retention_limit', 500),
                 'grok_renaming_prompt' => $request->request->get('grok_renaming_prompt', ''),
@@ -101,9 +138,11 @@ class ConfigController extends AbstractController
     public function aiModels(Request $request, AiService $ai): Response
     {
         $data = json_decode($request->getContent(), true);
-        $apiKey = is_array($data) ? ($data['api_key'] ?? null) : null;
+        $apiKey = is_array($data) && isset($data['api_key']) && trim((string) $data['api_key']) !== ''
+            ? (string) $data['api_key']
+            : null;
 
-        $result = $ai->listOpenRouterModels($apiKey !== null ? (string) $apiKey : null);
+        $result = $ai->listOpenRouterModels($apiKey);
 
         return $this->json($result, $result['success'] ? 200 : 422);
     }
@@ -123,9 +162,13 @@ class ConfigController extends AbstractController
 
         $overrides = [];
         foreach (['provider', 'api_key', 'model'] as $key) {
-            if (array_key_exists($key, $data)) {
-                $overrides[$key] = $data[$key];
+            if (!array_key_exists($key, $data)) {
+                continue;
             }
+            if ($key === 'api_key' && trim((string) $data[$key]) === '') {
+                continue;
+            }
+            $overrides[$key] = $data[$key];
         }
 
         $result = $ai->testUsage($usage, $overrides);
@@ -419,6 +462,7 @@ class ConfigController extends AbstractController
         }
 
         $zip->close();
+        @chmod($zipPath, 0600);
 
         if (!$added) {
             return new Response('No configuration files found to export.', 404);
@@ -458,11 +502,12 @@ class ConfigController extends AbstractController
             // Extract config.json
             if ($zip->locateName('config.json') !== false) {
                 if (!is_dir($configDir)) {
-                    mkdir($configDir, 0777, true);
+                    mkdir($configDir, 0700, true);
                 }
                 $content = $zip->getFromName('config.json');
                 if ($content !== false) {
                     file_put_contents($configDir . '/config.json', $content);
+                    @chmod($configDir . '/config.json', 0600);
                     $extracted[] = 'config.json';
                 }
             }
@@ -470,11 +515,12 @@ class ConfigController extends AbstractController
             // Extract media_addons.json
             if ($zip->locateName('media_addons.json') !== false) {
                 if (!is_dir($configDir)) {
-                    mkdir($configDir, 0777, true);
+                    mkdir($configDir, 0700, true);
                 }
                 $content = $zip->getFromName('media_addons.json');
                 if ($content !== false) {
                     file_put_contents($configDir . '/media_addons.json', $content);
+                    @chmod($configDir . '/media_addons.json', 0600);
                     $extracted[] = 'media_addons.json';
                 }
             }
@@ -482,11 +528,12 @@ class ConfigController extends AbstractController
             // Extract credentials.json
             if ($zip->locateName('credentials.json') !== false) {
                 if (!is_dir($credsDir)) {
-                    mkdir($credsDir, 0777, true);
+                    mkdir($credsDir, 0700, true);
                 }
                 $content = $zip->getFromName('credentials.json');
                 if ($content !== false) {
                     file_put_contents($credsDir . '/credentials.json', $content);
+                    @chmod($credsDir . '/credentials.json', 0600);
                     $extracted[] = 'credentials.json';
                 }
             }

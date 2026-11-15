@@ -6,6 +6,7 @@ use App\Service\Automation\ReleaseIntentService;
 use App\Service\DownloadManager;
 use App\Service\QueueManager;
 use App\Service\JsonStorage;
+use App\Service\LogRedactor;
 use App\Service\ServerNotificationService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -26,6 +27,7 @@ class DownloadWorkerCommand extends Command
     private DownloadManager $downloadManager;
     private ReleaseIntentService $releaseIntents;
     private ServerNotificationService $notifications;
+    private LogRedactor $redactor;
     private string $projectDir;
 
     public function __construct(
@@ -33,6 +35,7 @@ class DownloadWorkerCommand extends Command
         DownloadManager $downloadManager,
         ReleaseIntentService $releaseIntents,
         ServerNotificationService $notifications,
+        LogRedactor $redactor,
         string $projectDir
     ) {
         parent::__construct();
@@ -40,6 +43,7 @@ class DownloadWorkerCommand extends Command
         $this->downloadManager = $downloadManager;
         $this->releaseIntents = $releaseIntents;
         $this->notifications = $notifications;
+        $this->redactor = $redactor;
         $this->projectDir = $projectDir;
     }
 
@@ -48,9 +52,10 @@ class DownloadWorkerCommand extends Command
         $storage = $this->queueManager->getStorage();
         $logFile = $storage->getStorageDir() . '/worker.log';
         $log = function ($msg) use ($logFile, $output) {
-            $line = "[" . date('Y-m-d H:i:s') . "] $msg\n";
+            $safeMessage = $this->redactor->redact((string) $msg);
+            $line = "[" . date('Y-m-d H:i:s') . "] $safeMessage\n";
             file_put_contents($logFile, $line, FILE_APPEND);
-            $output->writeln($msg);
+            $output->writeln($safeMessage);
         };
 
         $log('Checking for existing worker...');
@@ -191,6 +196,7 @@ class DownloadWorkerCommand extends Command
             $cmdStr .= " $key \"$val\"";
         }
         $cmdStr .= ")"; // Redirection will be handled by Symfony Process
+        $logCmdStr = $this->redactor->redact($cmdStr);
 
         // Prepare logs directory
         $logsDir = $storage->getStorageDir() . '/logs';
@@ -210,12 +216,12 @@ class DownloadWorkerCommand extends Command
         }
 
         // Append to logs to preserve metadata logs from enqueue phase
-        file_put_contents($activeLogFile, "Executing Music Downloader:\n\"$url\" ...\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
-        file_put_contents($historyLogFile, "Executing Full Command:\n$cmdStr\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
+        file_put_contents($activeLogFile, "Executing Music Downloader:\n\"" . $this->redactor->redact($url) . "\" ...\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
+        file_put_contents($historyLogFile, "Executing Full Command:\n$logCmdStr\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
 
         $progressFile = $storage->getStorageDir() . '/progress_' . $downloadId . '.json';
 
-        $log("Executing: $cmdStr");
+        $log("Executing: $logCmdStr");
 
         $expectedTracks = $item['expected_tracks'] ?? [];
         $matchedTracks = [];
@@ -246,8 +252,9 @@ class DownloadWorkerCommand extends Command
                 $buffer = $out . $err;
 
                 if ($buffer !== '') {
-                    file_put_contents($activeLogFile, $buffer, FILE_APPEND);
-                    file_put_contents($historyLogFile, $buffer, FILE_APPEND);
+                    $safeBuffer = $this->redactor->redact($buffer);
+                    file_put_contents($activeLogFile, $safeBuffer, FILE_APPEND);
+                    file_put_contents($historyLogFile, $safeBuffer, FILE_APPEND);
 
                     $processOutput .= $buffer;
                     if (strlen($processOutput) > 2000000) {
@@ -273,15 +280,17 @@ class DownloadWorkerCommand extends Command
             // Final check for remaining output
             $buffer = $process->getIncrementalOutput() . $process->getIncrementalErrorOutput();
             if ($buffer !== '') {
-                file_put_contents($activeLogFile, $buffer, FILE_APPEND);
-                file_put_contents($historyLogFile, $buffer, FILE_APPEND);
+                $safeBuffer = $this->redactor->redact($buffer);
+                file_put_contents($activeLogFile, $safeBuffer, FILE_APPEND);
+                file_put_contents($historyLogFile, $safeBuffer, FILE_APPEND);
                 $processOutput .= $buffer;
             }
 
         } catch (\Throwable $e) {
             $startupError = "Failed to start process: " . $e->getMessage();
-            file_put_contents($activeLogFile, "\n[STARTUP ERROR]\n" . $startupError, FILE_APPEND);
-            file_put_contents($historyLogFile, "\n[STARTUP ERROR]\n" . $startupError, FILE_APPEND);
+            $safeStartupError = $this->redactor->redact($startupError);
+            file_put_contents($activeLogFile, "\n[STARTUP ERROR]\n" . $safeStartupError, FILE_APPEND);
+            file_put_contents($historyLogFile, "\n[STARTUP ERROR]\n" . $safeStartupError, FILE_APPEND);
             throw $e;
         }
 
@@ -292,8 +301,9 @@ class DownloadWorkerCommand extends Command
             $processOutput .= "\n" . $errorMsg;
 
             // Log fatal error but DO NOT throw if we want to retry
-            file_put_contents($activeLogFile, "\n[FATAL ERROR]\n" . $errorMsg, FILE_APPEND);
-            file_put_contents($historyLogFile, "\n[FATAL ERROR]\n" . $errorMsg, FILE_APPEND);
+            $safeErrorMsg = $this->redactor->redact($errorMsg);
+            file_put_contents($activeLogFile, "\n[FATAL ERROR]\n" . $safeErrorMsg, FILE_APPEND);
+            file_put_contents($historyLogFile, "\n[FATAL ERROR]\n" . $safeErrorMsg, FILE_APPEND);
 
             $log("Music download script failed. Marking as error to trigger retry check.");
             $finalStatus = 'error';

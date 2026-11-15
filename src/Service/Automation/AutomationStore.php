@@ -41,9 +41,17 @@ class AutomationStore
             $this->pdo->exec('PRAGMA journal_mode = WAL');
             $this->pdo->exec('PRAGMA busy_timeout = 15000');
             $this->pdo->exec('PRAGMA synchronous = NORMAL');
+            $this->tightenDatabasePermissions();
         }
 
         return $this->pdo;
+    }
+
+    private function tightenDatabasePermissions(): void
+    {
+        @chmod($this->dbPath, 0600);
+        @chmod($this->dbPath . '-wal', 0600);
+        @chmod($this->dbPath . '-shm', 0600);
     }
 
     public function initialize(): void
@@ -336,6 +344,7 @@ class AutomationStore
         $pdo->exec('UPDATE library_entries SET folder_path = CASE WHEN length(relative_path) > length(filename) + 1 THEN substr(relative_path, 1, length(relative_path) - length(filename) - 1) ELSE \'\' END WHERE folder_path IS NULL OR folder_path = \'\'');
         $pdo->exec('PRAGMA user_version = 6');
 
+        $this->tightenDatabasePermissions();
         $this->initialized = true;
     }
 

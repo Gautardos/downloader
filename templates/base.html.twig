@@ -728,7 +728,10 @@
                 {% else %}
                     <a href="{{ path('config') }}" class="{{ current_route == 'config' ? 'active' : '' }}">Setup</a>
                 {% endif %}
-                <a href="{{ path('logout') }}" class="logout-link">Logout</a>
+                <form method="post" action="{{ path('logout') }}" class="logout-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token }}">
+                    <button type="submit" class="logout-link">Logout</button>
+                </form>
             </div>
             {% endif %}
         </div>
@@ -876,9 +879,31 @@
             background: rgba(56, 189, 248, 0.1);
         }
 
-        .nav-links a.logout-link {
+        .nav-links a.logout-link,
+        .nav-links button.logout-link {
             color: #f87171 !important;
             margin-left: 0.5rem;
+        }
+
+        .nav-links .logout-form {
+            display: inline-flex;
+            margin: 0;
+            padding: 0;
+        }
+
+        .nav-links button.logout-link {
+            background: transparent;
+            border: 0;
+            border-radius: 8px;
+            padding: 0.55rem 0.8rem;
+            font: inherit;
+            font-size: 0.88rem;
+            font-weight: 650;
+            cursor: pointer;
+        }
+
+        .nav-links button.logout-link:hover {
+            background: rgba(255, 255, 255, 0.04);
         }
 
         .nav-activity-dot {
@@ -1294,8 +1319,20 @@
                 gap: .6rem;
             }
 
-            .nav-links a.logout-link {
+            .nav-links a.logout-link,
+            .nav-links button.logout-link {
                 margin-left: 0;
+            }
+
+            .nav-links .logout-form {
+                width: 100%;
+            }
+
+            .nav-links button.logout-link {
+                width: 100%;
+                text-align: left;
+                padding: 0.9rem 1.25rem;
+                font-size: 1rem;
             }
         }
 
