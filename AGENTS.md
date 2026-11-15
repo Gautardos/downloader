@@ -1268,11 +1268,12 @@ pendant le polling.
 - Les métadonnées `automation_intent_id`, `automation_media_key`, `automation`,
   `season` et `episode` sont propagées dans l'item de queue. Le worker de
   téléchargement passe l'intent en `downloading`, puis `success` ou `error`
-  (avec backoff). La sélection du fichier dans un torrent est stricte : `file_idx`
-  s'il pointe vers un fichier vidéo de l'épisode, sinon recherche exacte de
-  `SxxExx`. Un pack sans fichier correspondant, un multi-épisode ou un pack de
-  saison single-file est refusé ; le plus gros fichier vidéo n'est jamais pris
-  pour un épisode.
+  (avec backoff). La sélection du fichier est déterministe : pour un épisode,
+  recherche exacte `SxxExx` (hors multi-épisodes) ; un `file_idx` n'est
+  prioritaire que s'il correspond à l'index torrent d'origine (`torrent_index`),
+  jamais à l'index réindexé après filtrage. Sans fichier exact, le pack est
+  refusé. Pour un film, `file_idx` fiable puis nom de fichier demandé ; un pack
+  ambigu sans preuve n'est jamais remplacé par son plus gros fichier.
 - `intent_runs` est mis à jour en cours de run. Un `queue guard`
   (`backfill.queue_guard`, défaut 20) suspend le traitement si la file contient
   déjà trop de téléchargements et efface la demande de run pour éviter un

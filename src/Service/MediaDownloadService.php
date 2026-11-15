@@ -141,7 +141,7 @@ class MediaDownloadService
             'filename' => $filename,
             'path' => $path,
             'size' => $this->normalizeSize($unlocked['filesize'] ?? ($selected['size'] ?? null)),
-            'file_index' => $selected['index'],
+            'file_index' => $selected['torrent_index'] ?? null,
             'addon' => $payload['addon'] ?? null,
             'season' => $season,
             'episode' => $episode,
@@ -417,8 +417,16 @@ class MediaDownloadService
                 $link = $entry['l'] ?? $entry['link'] ?? null;
 
                 if ($link) {
+                    $torrentIndex = null;
+                    foreach (['i', 'index', 'fileIdx', 'file_index'] as $indexKey) {
+                        if (isset($entry[$indexKey]) && is_numeric($entry[$indexKey])) {
+                            $torrentIndex = (int) $entry[$indexKey];
+                            break;
+                        }
+                    }
                     $files[] = [
                         'index' => $index++,
+                        'torrent_index' => $torrentIndex,
                         'name' => $name,
                         'path' => $path,
                         'link' => $link,
@@ -450,6 +458,19 @@ class MediaDownloadService
             return in_array(strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)), $videoExtensions, true);
         }));
 
+        $findByTorrentIndex = function (array $candidates) use ($fileIdx): ?array {
+            if ($fileIdx === null) {
+                return null;
+            }
+            foreach ($candidates as $file) {
+                if ($this->fileTorrentIndex($file) === $fileIdx) {
+                    return $file;
+                }
+            }
+
+            return null;
+        };
+
         if ($season !== null && $episode !== null) {
             $exact = [];
             foreach ($videos as $file) {
@@ -461,79 +482,63 @@ class MediaDownloadService
                     $exact[] = $file;
                 }
             }
-            if ($exact) {
-                foreach ($exact as $file) {
-                    if ($fileIdx !== null && (int) $file['index'] === $fileIdx) {
-                        return $file;
-                    }
-                }
 
-                return $exact[0];
-            }
-
-            if ($this->isMultiEpisodeText($episodeHint)) {
-                return null;
-            }
-            if ($this->hasEpisodeMarker($episodeHint) && !$this->episodeMatchesText($episodeHint, $season, $episode)) {
-                return null;
-            }
-            if ($this->looksLikeSeasonPack($episodeHint, $season)) {
+            if ($exact === []) {
                 return null;
             }
 
+            $indexed = $findByTorrentIndex($exact);
+            if ($indexed !== null) {
+                return $indexed;
+            }
+
+            usort($exact, static fn ($a, $b) => strcmp((string) ($a['path'] ?? $a['name'] ?? ''), (string) ($b['path'] ?? $b['name'] ?? '')));
+
+            return $exact[0];
+        }
+
+        if ($fileIdx !== null) {
+            $indexed = $findByTorrentIndex($videos);
+            if ($indexed !== null) {
+                return $indexed;
+            }
+            if ($findByTorrentIndex($files) !== null) {
+                return null;
+            }
+        }
+
+        $target = strtolower(basename($preferredFilename));
+        if ($target !== '') {
             foreach ($videos as $file) {
-                $text = (string) ($file['name'] ?? '') . ' ' . (string) ($file['path'] ?? '');
-                if ($this->hasEpisodeMarker($text) || $this->looksLikeSeasonPack($text, $season)) {
-                    return null;
-                }
-            }
-
-            if ($fileIdx !== null) {
-                foreach ($videos as $file) {
-                    if ((int) $file['index'] !== $fileIdx) {
-                        continue;
-                    }
-                    $text = (string) ($file['name'] ?? '') . ' ' . (string) ($file['path'] ?? '');
-                    if ($this->isMultiEpisodeText($text)) {
-                        return null;
-                    }
-                    if (count($videos) === 1) {
-                        return $file;
-                    }
-
-                    return null;
-                }
-            }
-
-            if (count($videos) === 1 && !$this->isMultiEpisodeText((string) ($videos[0]['name'] ?? ''))) {
-                return $videos[0];
-            }
-
-            return null;
-        }
-
-        if ($fileIdx !== null && isset($files[$fileIdx])) {
-            return $files[$fileIdx];
-        }
-
-        if ($preferredFilename !== '') {
-            $target = strtolower(basename($preferredFilename));
-            foreach ($files as $file) {
-                if (strtolower(basename($file['name'])) === $target) {
+                if (strtolower(basename((string) $file['name'])) === $target) {
                     return $file;
                 }
             }
-            foreach ($files as $file) {
-                if ($target !== '' && str_contains(strtolower($file['path']), $target)) {
+            foreach ($videos as $file) {
+                if (str_contains(strtolower((string) ($file['path'] ?? '')), $target)) {
                     return $file;
                 }
             }
+            if ($videos === [] && count($files) === 1) {
+                return $files[0];
+            }
         }
 
-        $candidates = !empty($videos) ? $videos : $files;
-        usort($candidates, static fn ($a, $b) => ($b['size'] ?? 0) <=> ($a['size'] ?? 0));
+        if (count($videos) === 1) {
+            return $videos[0];
+        }
+        if ($videos === [] && count($files) === 1) {
+            return $files[0];
+        }
 
-        return $candidates[0] ?? null;
+        return null;
+    }
+
+    private function fileTorrentIndex(array $file): ?int
+    {
+        return isset($file['torrent_index']) && is_numeric($file['torrent_index'])
+            ? (int) $file['torrent_index']
+            : null;
     }
 
     private function episodeMatchesText(string $text, int $season, int $episode): bool

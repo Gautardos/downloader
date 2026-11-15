@@ -8,6 +8,7 @@ use App\Service\Automation\ListMatcher;
 use App\Service\Automation\ReleaseIntentService;
 use App\Service\Automation\ReleaseIntegrityService;
 use App\Service\JsonStorage;
+use App\Service\MediaDownloadService;
 use App\Service\TmdbService;
 
 $passes = 0;
@@ -503,6 +504,51 @@ eq(50, $missingQueue['stats']['created'], '416 missing episodes are queued in a 
 check(str_contains(implode(' ', $missingQueue['stats']['warnings']), 'Maximum intents per run'), '416 queue reports the per-run cap');
 eq(50, (int) $missingStore->getPdo()->query("SELECT COUNT(*) FROM intents WHERE media_type = 'series'")->fetchColumn(), 'first batch contains exactly 50 intents');
 removeTree($missingProject);
+
+echo "Deterministic file selection\n";
+$selector = (new ReflectionClass(MediaDownloadService::class))->newInstanceWithoutConstructor();
+$selectFile = new ReflectionMethod(MediaDownloadService::class, 'selectFile');
+$selectFile->setAccessible(true);
+$packIndexed = [
+    ['index' => 0, 'torrent_index' => 5, 'name' => 'Show.S01E03.mkv', 'path' => 'Show.S01E03.mkv', 'size' => 100, 'link' => 'a'],
+    ['index' => 1, 'torrent_index' => 9, 'name' => 'Show.S01E04.mkv', 'path' => 'Show.S01E04.mkv', 'size' => 200, 'link' => 'b'],
+];
+$pick = $selectFile->invoke($selector, $packIndexed, 5, '', 1, 3, 'Show.S01E03');
+check(($pick['name'] ?? null) === 'Show.S01E03.mkv', 'exact episode wins with matching torrent index');
+$pick = $selectFile->invoke($selector, $packIndexed, 9, '', 1, 3, 'Show.S01E03');
+check(($pick['name'] ?? null) === 'Show.S01E03.mkv', 'wrong torrent index does not override exact episode');
+$packUnindexed = [
+    ['index' => 0, 'name' => 'Show.S01E05.mkv', 'path' => 'Show.S01E05.mkv', 'size' => 100, 'link' => 'a'],
+    ['index' => 1, 'name' => 'Show.S01E03.mkv', 'path' => 'Show.S01E03.mkv', 'size' => 200, 'link' => 'b'],
+];
+$pick = $selectFile->invoke($selector, $packUnindexed, 0, '', 1, 3, 'Show.S01E03');
+check(($pick['name'] ?? null) === 'Show.S01E03.mkv', 'reindexed fileIdx is ignored without torrent index metadata');
+$pick = $selectFile->invoke($selector, [$packUnindexed[0]], 0, '', 1, 3, 'Show.S01E03');
+eq(null, $pick, 'pack without exact episode is refused');
+$pick = $selectFile->invoke($selector, [['index' => 0, 'name' => 'Show.S01E03E04.mkv', 'path' => 'Show.S01E03E04.mkv', 'size' => 100, 'link' => 'a']], 0, '', 1, 3, 'Show.S01E03E04');
+eq(null, $pick, 'multi-episode file is refused');
+$pick = $selectFile->invoke($selector, [['index' => 0, 'name' => 'Show.S01.1080p.mkv', 'path' => 'Show.S01.1080p.mkv', 'size' => 100, 'link' => 'a']], 0, '', 1, 3, 'Show.S01.1080p');
+eq(null, $pick, 'single-file season pack without episode marker is refused');
+$pick = $selectFile->invoke($selector, [['index' => 0, 'name' => 'Show.1080p.mkv', 'path' => 'Show.1080p.mkv', 'size' => 100, 'link' => 'a']], 0, '', 1, 3, 'Show');
+eq(null, $pick, 'unmarked single file is refused for an episode');
+
+$movieFiles = [
+    ['index' => 0, 'torrent_index' => 2, 'name' => 'Movie.mkv', 'path' => 'Movie.mkv', 'size' => 100, 'link' => 'a'],
+    ['index' => 1, 'torrent_index' => 3, 'name' => 'Featurette.mkv', 'path' => 'Featurette.mkv', 'size' => 200, 'link' => 'b'],
+];
+$pick = $selectFile->invoke($selector, $movieFiles, 2, '', null, null, '');
+check(($pick['name'] ?? null) === 'Movie.mkv', 'movie uses a reliable torrent index');
+$pick = $selectFile->invoke($selector, $movieFiles, null, 'Featurette.mkv', null, null, '');
+check(($pick['name'] ?? null) === 'Featurette.mkv', 'movie falls back to the requested filename');
+$pick = $selectFile->invoke($selector, $movieFiles, null, '', null, null, '');
+eq(null, $pick, 'ambiguous movie pack never falls back to the biggest file');
+$pick = $selectFile->invoke($selector, [['index' => 0, 'name' => 'Movie.mkv', 'path' => 'Movie.mkv', 'size' => 100, 'link' => 'a']], 0, '', null, null, '');
+check(($pick['name'] ?? null) === 'Movie.mkv', 'single-file movie is selected');
+$pick = $selectFile->invoke($selector, [
+    ['index' => 0, 'name' => 'Movie.mkv', 'path' => 'Movie.mkv', 'size' => 100, 'link' => 'a'],
+    ['index' => 1, 'name' => 'Extra.mkv', 'path' => 'Extra.mkv', 'size' => 200, 'link' => 'b'],
+], 0, '', null, null, '');
+eq(null, $pick, 'ambiguous movie index without metadata is refused');
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);
