@@ -794,7 +794,8 @@
     {% block actions %}
         <button class="btn btn-secondary" type="button" onclick="startLibraryScan()">Scan now</button>
         <button class="btn btn-secondary" type="button" onclick="startMetadataResolution()" {{ (resolve_requested or not tmdb_configured) ? 'disabled' : '' }} title="{{ tmdb_configured ? '' : 'Configure a TMDB API key in Discover first.' }}">Resolve metadata</button>
-        <button class="btn btn-secondary" type="button" onclick="startTitleRefresh()" {{ (not tmdb_configured or title_refresh.status in ['requested', 'running']) ? 'disabled' : '' }} title="{{ tmdb_configured ? 'Refresh movie titles from TMDB. Then use Rename matched.' : 'Configure a TMDB API key in Discover first.' }}">Refresh English titles</button>
+        <button class="btn btn-secondary" type="button" onclick="startTitleRefresh()" {{ (not tmdb_configured or title_refresh.status in ['requested', 'running']) ? 'disabled' : '' }} title="{{ tmdb_configured ? 'Refresh movie and series titles from TMDB. Then use Rename matched.' : 'Configure a TMDB API key in Discover first.' }}">Refresh titles</button>
+        <button class="btn btn-secondary" type="button" onclick="pruneEmptyFolders()" title="Preview and remove empty folders left behind by renames.">Clean empty folders</button>
         <button class="btn btn-primary" type="button" onclick="openRenamePreview()">Rename matched</button>
     {% endblock %}
 {% endembed %}
@@ -1199,6 +1200,7 @@
     const automationStatusRoute = "{{ path('automation_status') }}";
     const titleRefreshRoute = "{{ path('automation_library_title_refresh') }}";
     const titleRefreshStatusRoute = "{{ path('automation_library_title_refresh_status') }}";
+    const pruneEmptyDirsRoute = "{{ path('automation_library_prune_empty_dirs') }}";
     const libraryCsrfToken = "{{ csrf_token|e('js') }}";
     const initialTitleRefreshActive = {{ title_refresh.status in ['requested', 'running'] ? 'true' : 'false' }};
     let titleRefreshWasActive = initialTitleRefreshActive;
@@ -1418,6 +1420,43 @@
         }
     }
 
+    async function pruneEmptyFolders() {
+        try {
+            const previewResponse = await fetch(pruneEmptyDirsRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: libraryCsrfToken, dry_run: true })
+            });
+            const preview = await previewResponse.json();
+            if (!previewResponse.ok || preview.success === false) {
+                throw new Error(preview.message || 'Could not preview empty folders.');
+            }
+            const candidates = Number(preview.stats?.candidates || 0);
+            if (candidates < 1) {
+                if (window.notify) window.notify('info', 'No empty folder to remove.');
+                return;
+            }
+            if (!window.confirm('Remove ' + candidates + ' empty folder' + (candidates === 1 ? '' : 's') + '?')) return;
+
+            const applyResponse = await fetch(pruneEmptyDirsRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: libraryCsrfToken, dry_run: false })
+            });
+            const applied = await applyResponse.json();
+            if (!applyResponse.ok || applied.success === false) {
+                throw new Error(applied.message || 'Could not remove empty folders.');
+            }
+            if (window.notify) {
+                const stats = applied.stats || {};
+                window.notify('success', Number(stats.deleted || 0) + ' empty folder(s) removed.');
+            }
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
     async function pollTitleRefreshStatus() {
         try {
             const response = await fetch(titleRefreshStatusRoute);
@@ -1439,8 +1478,8 @@
                 setTitleRefreshState(
                     status === 'running' ? 'English title refresh in progress' : 'English title refresh requested',
                     total > 0
-                        ? processed + ' / ' + total + ' TMDB movies · ' + Number(state.updated || 0) + ' entries updated'
-                        : 'Refreshing movie titles to ' + String(state.language || 'en-US') + '. Use Rename matched afterwards to preview file moves.',
+                        ? processed + ' / ' + total + ' TMDB items · ' + Number(state.updated || 0) + ' entries updated'
+                        : 'Refreshing movie and series titles to ' + String(state.language || 'en-US') + '. Use Rename matched afterwards to preview file moves.',
                     status === 'requested' ? 'waiting' : ''
                 );
                 setTimeout(pollTitleRefreshStatus, 1500);

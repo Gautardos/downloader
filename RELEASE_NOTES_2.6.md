@@ -6,6 +6,20 @@ La 2.6 est la mise à jour la plus ambitieuse depuis longtemps. Elle transforme 
 
 Bienvenue dans **Automations**.
 
+## 2.6.2 — Correctifs Library
+
+- **Rename matched** met désormais à jour le `folder_path` réel : le Folder
+  Browser ne conserve plus l'ancien nom de dossier après un déplacement.
+- Un scan répare aussi les `folder_path` obsolètes, même lorsque le fichier
+  n'a pas changé de taille ou de date.
+- **Refresh titles** rafraîchit maintenant les films **et les séries**. Pour
+  les séries, le dossier logique (`show_folder`) est aligné sur
+  `Titre (Année)` avant le renommage.
+- Nouveau bouton **Clean empty folders** et commande
+  `app:library-prune-empty-dirs [--root=movies] [--dry-run]` pour supprimer
+  les dossiers vides laissés par les renommages.
+- Les dossiers non vides, les racines et les dossiers cachés sont préservés.
+
 ![Vue d'ensemble Automations](https://raw.githubusercontent.com/Gautardos/downloader/v2.6.0/screenshots/v2.6/01-automations-overview.png)
 
 ## Le concept

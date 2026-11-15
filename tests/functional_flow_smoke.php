@@ -9,7 +9,9 @@ use App\Service\Automation\AutomationSettings;
 use App\Service\Automation\AutomationStore;
 use App\Service\Automation\EpisodeNumberingService;
 use App\Service\Automation\LibraryIndexService;
+use App\Service\Automation\LibraryRenameService;
 use App\Service\Automation\LibraryNameParser;
+use App\Service\Automation\LibraryTitleRefreshService;
 use App\Service\Automation\ListMatcher;
 use App\Service\Automation\ListSourceClientInterface;
 use App\Service\Automation\ListSourceRegistry;
@@ -1405,6 +1407,90 @@ $reconcileTesterK = new CommandTester($reconcileCommandK);
 eq(0, $reconcileTesterK->execute(['--dry-run' => true]), 'K reconciliation command exits successfully when skipped');
 check(str_contains($reconcileTesterK->getDisplay(), 'skipped'), 'K reconciliation command reports the skip reason', $reconcileTesterK->getDisplay());
 removeTree($projectK);
+
+echo "L. Title refresh and empty-folder cleanup\n";
+$projectL = tempProject('functional-l');
+$moviesRootL = $projectL . '/nas/Movies';
+$seriesRootL = $projectL . '/nas/TV Shows';
+$moviePathL = $moviesRootL . '/Alien, le huitième passager (1979)/Alien, le huitième passager (1979).mkv';
+$seriesPathL = $seriesRootL . '/Old Show Folder/Season 01/Old.Show.S01E01.mkv';
+writeFile($moviePathL, str_repeat('m', 512));
+writeFile($seriesPathL, str_repeat('s', 512));
+mkdir($moviesRootL . '/Old Empty/Nested Empty', 0777, true);
+mkdir($moviesRootL . '/Deep/A/B', 0777, true);
+mkdir($moviesRootL . '/Non Empty/Keep (2020)', 0777, true);
+writeFile($moviesRootL . '/Non Empty/Keep (2020)/Keep.mkv', 'video');
+mkdir($moviesRootL . '/.hidden-empty', 0777, true);
+$storeL = new AutomationStore($projectL);
+$settingsL = new AutomationSettings($storeL);
+$storageL = storageAt($projectL . '/var/storage');
+$settingsL->save([
+    'roots' => [
+        'movies' => ['label' => 'Movies', 'path' => $moviesRootL, 'type' => 'movie', 'enabled' => true],
+        'series' => ['label' => 'TV Shows', 'path' => $seriesRootL, 'type' => 'series', 'enabled' => true],
+        'anime' => ['label' => 'Anime', 'path' => $projectL . '/nas/Anime', 'type' => 'anime', 'enabled' => false],
+    ],
+    'metadata' => ['title_language' => 'en-US'],
+]);
+addLibraryEntry($storeL, [
+    'root_key' => 'movies',
+    'path' => $moviePathL,
+    'relative_path' => 'Alien, le huitième passager (1979)/Alien, le huitième passager (1979).mkv',
+    'filename' => basename($moviePathL),
+    'media_type' => 'movie',
+    'title' => 'Alien, le huitième passager',
+    'title_normalized' => 'alien le huitieme passager',
+    'year' => 1979,
+    'tmdb_id' => 348,
+    'imdb_id' => 'tt0078748',
+    'media_key' => 'movie:tmdb:348',
+    'size' => 512,
+]);
+addLibraryEntry($storeL, [
+    'root_key' => 'series',
+    'path' => $seriesPathL,
+    'relative_path' => 'Old Show Folder/Season 01/' . basename($seriesPathL),
+    'filename' => basename($seriesPathL),
+    'media_type' => 'series',
+    'title' => 'Ancien Titre',
+    'title_normalized' => 'ancien titre',
+    'year' => 2022,
+    'season' => 1,
+    'episode' => 1,
+    'tmdb_id' => 114410,
+    'imdb_id' => 'tt13616990',
+    'media_key' => 'series:tmdb:114410:s01e01',
+    'size' => 512,
+    'show_folder' => 'Old Show Folder',
+]);
+$tmdbL = new FunctionalFakeTmdb();
+$tmdbL->detailsMap[348] = ['id' => 348, 'type' => 'movie', 'title' => 'Alien', 'year' => '1979'];
+$tmdbL->detailsMap[114410] = ['id' => 114410, 'type' => 'series', 'title' => 'Chainsaw Man', 'year' => '2022'];
+$titleRefreshL = new LibraryTitleRefreshService($storeL, $settingsL, $tmdbL, $storageL, $projectL);
+$refreshL = $titleRefreshL->refresh(50, 'en-US', null, true);
+check(!empty($refreshL['success']), 'L title refresh succeeds', $refreshL);
+eq(2, $refreshL['state']['updated'] ?? null, 'L title refresh updates movie and series entries');
+$movieRowL = $storeL->getPdo()->query("SELECT title, show_folder FROM library_entries WHERE media_key = 'movie:tmdb:348'")->fetch();
+eq('Alien', $movieRowL['title'] ?? null, 'L movie title is refreshed');
+$seriesRowL = $storeL->getPdo()->query("SELECT title, show_folder, path FROM library_entries WHERE media_key = 'series:tmdb:114410:s01e01'")->fetch();
+eq('Chainsaw Man', $seriesRowL['title'] ?? null, 'L series title is refreshed');
+eq('Chainsaw Man (2022)', $seriesRowL['show_folder'] ?? null, 'L series show folder is refreshed');
+eq($seriesPathL, $seriesRowL['path'] ?? null, 'L title refresh does not move files');
+
+$renameL = new LibraryRenameService($storeL, $settingsL, $tmdbL);
+$prunePreviewL = $renameL->pruneEmptyFolders(['movies'], true);
+check(!empty($prunePreviewL['success']), 'L empty-folder preview succeeds', $prunePreviewL);
+eq(5, $prunePreviewL['stats']['candidates'] ?? null, 'L preview finds nested empty folders');
+check(is_dir($moviesRootL . '/Old Empty/Nested Empty'), 'L preview does not delete folders');
+$pruneApplyL = $renameL->pruneEmptyFolders(['movies'], false);
+check(!empty($pruneApplyL['success']), 'L empty-folder cleanup succeeds', $pruneApplyL);
+eq(5, $pruneApplyL['stats']['deleted'] ?? null, 'L cleanup deletes empty folder trees');
+check(!is_dir($moviesRootL . '/Old Empty'), 'L empty parent folder is removed');
+check(!is_dir($moviesRootL . '/Deep'), 'L deeply nested empty folder is removed');
+check(is_dir($moviesRootL . '/Non Empty/Keep (2020)'), 'L non-empty folder is preserved');
+check(is_file($moviesRootL . '/Non Empty/Keep (2020)/Keep.mkv'), 'L non-empty folder keeps its file');
+check(is_dir($moviesRootL . '/.hidden-empty'), 'L hidden folders are preserved');
+removeTree($projectL);
 
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);

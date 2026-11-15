@@ -119,12 +119,18 @@ class LibraryTitleRefreshService
 
         $language = $language ?: $this->titleLanguage();
         $limit = max(1, min(5000, $limit ?? 1000));
-        $entries = $this->store->getMoviesForTitleRefresh(10000);
         $groups = [];
-        foreach ($entries as $entry) {
-            $tmdbId = (int) ($entry['tmdb_id'] ?? 0);
-            if ($tmdbId > 0) {
-                $groups[$tmdbId][] = $entry;
+        foreach (['movie' => $this->store->getMoviesForTitleRefresh(10000), 'series' => $this->store->getSeriesForTitleRefresh(10000)] as $type => $entries) {
+            foreach ($entries as $entry) {
+                $tmdbId = (int) ($entry['tmdb_id'] ?? 0);
+                if ($tmdbId <= 0) {
+                    continue;
+                }
+                $groupKey = $type . ':' . $tmdbId;
+                if (!isset($groups[$groupKey])) {
+                    $groups[$groupKey] = ['type' => $type, 'tmdb_id' => $tmdbId, 'entries' => []];
+                }
+                $groups[$groupKey]['entries'][] = $entry;
             }
         }
 
@@ -143,12 +149,14 @@ class LibraryTitleRefreshService
         $this->storage->set(self::STATE_KEY, $state);
 
         try {
-            foreach (array_slice($groups, 0, $limit, true) as $tmdbId => $movieEntries) {
+            foreach (array_slice($groups, 0, $limit, true) as $group) {
                 if ($onProgress) {
                     $onProgress($state);
                 }
 
-                $details = $this->tmdb->details('movie', (int) $tmdbId, $language);
+                $type = (string) $group['type'];
+                $tmdbId = (int) $group['tmdb_id'];
+                $details = $this->tmdb->details($type, $tmdbId, $language);
                 if ($details === null || trim((string) ($details['title'] ?? '')) === '') {
                     $state['skipped']++;
                     $state['processed']++;
@@ -159,16 +167,22 @@ class LibraryTitleRefreshService
                 $title = trim((string) $details['title']);
                 $titleNormalized = $this->normalizeTitle($title);
                 $year = !empty($details['year']) ? (int) $details['year'] : null;
+                $showFolder = $type === 'series' ? $title . ($year !== null ? ' (' . $year . ')' : '') : null;
 
-                foreach ($movieEntries as $entry) {
+                foreach ($group['entries'] as $entry) {
                     $currentTitle = (string) ($entry['title'] ?? '');
                     $currentNormalized = (string) ($entry['title_normalized'] ?? '');
                     $currentYear = $entry['year'] !== null ? (int) $entry['year'] : null;
-                    if ($currentTitle === $title && $currentNormalized === $titleNormalized && $currentYear === $year) {
+                    $currentShowFolder = isset($entry['show_folder']) ? (string) $entry['show_folder'] : null;
+                    if ($currentTitle === $title
+                        && $currentNormalized === $titleNormalized
+                        && $currentYear === $year
+                        && ($type !== 'series' || $currentShowFolder === $showFolder)
+                    ) {
                         continue;
                     }
                     if ($apply) {
-                        $this->store->updateEntryTitle((int) $entry['id'], $title, $titleNormalized, $year);
+                        $this->store->updateEntryTitle((int) $entry['id'], $title, $titleNormalized, $year, $showFolder);
                     }
                     $state['updated']++;
                 }

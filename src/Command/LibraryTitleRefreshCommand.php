@@ -11,7 +11,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
     name: 'app:library-title-refresh',
-    description: 'Refresh movie titles from TMDB in the configured title language.',
+    description: 'Refresh movie and series titles from TMDB in the configured title language.',
 )]
 class LibraryTitleRefreshCommand extends Command
 {
@@ -25,7 +25,7 @@ class LibraryTitleRefreshCommand extends Command
 
     protected function configure(): void
     {
-        $this->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of TMDB movies to refresh.');
+        $this->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of TMDB items to refresh.');
         $this->addOption('language', null, InputOption::VALUE_REQUIRED, 'TMDB language for titles (default: en-US).');
         $this->addOption('dry-run', null, InputOption::VALUE_NONE, 'Preview title changes without updating the library.');
     }
@@ -43,7 +43,7 @@ class LibraryTitleRefreshCommand extends Command
         $state = $result['state'] ?? [];
         if (!empty($result['success'])) {
             $output->writeln(sprintf(
-                'Title refresh finished%s: %d movie(s) processed, %d entr%s updated, %d skipped.',
+                'Title refresh finished%s: %d item(s) processed, %d entr%s updated, %d skipped.',
                 !empty($state['dry_run']) ? ' (dry-run)' : '',
                 (int) ($state['processed'] ?? 0),
                 (int) ($state['updated'] ?? 0),
