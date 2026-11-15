@@ -30,6 +30,7 @@
 
 <div class="card">
     <form method="post">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
             <!-- Global Settings -->
             <section>
