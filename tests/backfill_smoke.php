@@ -357,5 +357,60 @@ eq('downloading', $staleStore->getIntent($activeDownloadingId)['status'] ?? null
 eq('queued', $staleStore->getIntent($historyQueuedId)['status'] ?? null, 'historical queued intent is preserved');
 removeTree($staleProject);
 
+echo "Movie intent cap\n";
+$capProject = tempProject('backfill-cap-smoke');
+$capStorage = storageAt($capProject . '/var/storage');
+$capStore = new AutomationStore($capProject);
+$capSettings = new AutomationSettings($capStore);
+$capSettings->save([
+    'sources' => [[
+        'id' => 'scrob',
+        'provider' => 'scrob',
+        'label' => 'Scrob',
+        'enabled' => true,
+        'config' => ['auto_download' => false, 'list_ids' => []],
+    ]],
+    'backfill' => ['max_intents_per_run' => 1, 'queue_guard' => 20],
+]);
+$capRun = $capStore->startListRun('scrob', 'scrob', 'dry_run');
+$capStore->finishListRun($capRun, ['items_seen' => 2], 'success');
+foreach ([
+    ['key' => 'cap-movie-1', 'tmdb' => 5001, 'title' => 'Cap Movie One'],
+    ['key' => 'cap-movie-2', 'tmdb' => 5002, 'title' => 'Cap Movie Two'],
+] as $movie) {
+    $capStore->upsertListItem([
+        'source_id' => 'scrob',
+        'provider' => 'scrob',
+        'list_ref' => '1',
+        'remote_key' => $movie['key'],
+        'media_type' => 'movie',
+        'tmdb_id' => $movie['tmdb'],
+        'title' => $movie['title'],
+        'title_normalized' => strtolower($movie['title']),
+        'year' => 2020,
+        'raw' => [],
+    ], $capRun);
+    $itemId = (int) $capStore->getPdo()->query("SELECT id FROM list_items WHERE remote_key = '" . $movie['key'] . "'")->fetchColumn();
+    $capStore->updateListItemMatch($itemId, [
+        'status' => 'missing',
+        'reason' => 'not_in_library',
+        'episodes_total' => 0,
+        'episodes_present' => 0,
+        'episodes_missing' => 0,
+        'missing_episodes' => [],
+    ], $capRun);
+}
+$capService = (new ReflectionClass(ReleaseIntentService::class))->newInstanceWithoutConstructor();
+foreach (['store' => $capStore, 'settings' => $capSettings, 'storage' => $capStorage] as $property => $value) {
+    $ref = new ReflectionProperty(ReleaseIntentService::class, $property);
+    $ref->setAccessible(true);
+    $ref->setValue($capService, $value);
+}
+$capResult = $capService->queueMissingMovies(false);
+eq(1, $capResult['stats']['created'], 'movie queue respects max_intents_per_run');
+check(str_contains(implode(' ', $capResult['stats']['warnings']), 'Maximum intents per run'), 'movie cap emits a warning');
+eq(1, (int) $capStore->getPdo()->query("SELECT COUNT(*) FROM intents WHERE media_type = 'movie'")->fetchColumn(), 'only one movie intent is created');
+removeTree($capProject);
+
 echo "\n$passes passed, $failures failed.\n";
 exit($failures === 0 ? 0 : 1);

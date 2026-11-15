@@ -88,7 +88,25 @@ class ReleaseIntentService
             'warnings' => [],
         ];
 
+        $backfill = $this->settings->getBackfill();
+        $maxPerRun = max(1, min(500, (int) ($backfill['max_intents_per_run'] ?? 50)));
+        $queueGuard = max(1, (int) ($backfill['queue_guard'] ?? 20));
+        $queueDepth = $this->getQueueDepth();
+        if ($queueDepth >= $queueGuard) {
+            $stats['warnings'][] = 'Queue guard reached (' . $queueDepth . '/' . $queueGuard . '); movie intents were not created.';
+
+            return [
+                'success' => true,
+                'stats' => $stats,
+                'message' => $stats['warnings'][0],
+            ];
+        }
+        $limitReached = false;
+
         foreach ($this->settings->getSources() as $source) {
+            if ($limitReached) {
+                break;
+            }
             if (!is_array($source) || empty($source['enabled'])) {
                 continue;
             }
@@ -115,6 +133,14 @@ class ReleaseIntentService
             $stats['sources']++;
 
             foreach ($items as $item) {
+                if ($limitReached) {
+                    break;
+                }
+                if ($stats['created'] >= $maxPerRun) {
+                    $limitReached = true;
+                    $stats['warnings'][] = 'Maximum intents per run reached (' . $maxPerRun . '); remaining movies were skipped.';
+                    break;
+                }
                 if (!empty($item['ignored_at']) || (string) ($item['match_status'] ?? '') !== 'missing') {
                     $stats['skipped']++;
                     continue;

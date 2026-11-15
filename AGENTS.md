@@ -1211,6 +1211,9 @@ pendant le polling.
   episodes”). Un intent ne peut être créé que pour un item `list_items`
   `match_status = missing`, non ignoré, après un dry-run terminé avec au moins
   un item. Les deux flags sont indépendants.
+- Films : `queueMissingMovies()` applique le même queue guard et le même
+  plafond `backfill.max_intents_per_run` que les épisodes, avec un warning et
+  un arrêt propre lorsque le plafond est atteint.
 - Épisodes : `queueMissingEpisodes()` lit `missing_json` (liste de `SxxExx`
   déjà diffusés), ignore les spéciaux si `backfill.exclude_specials`, vérifie
   les entrées `library_entries` actives/ignorées de la même série et les
