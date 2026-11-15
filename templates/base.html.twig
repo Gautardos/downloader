@@ -1400,40 +1400,64 @@
         }
 
         function renderQueue(queue) {
-            serverQueue = queue;
+            serverQueue = Array.isArray(queue) ? queue : [];
             const list = document.getElementById('queued-downloads-list');
-            list.innerHTML = '';
-            
-            if (queue.length === 0) {
-                list.innerHTML = '<div class="empty-msg">Queue is empty</div>';
-            } else {
-                queue.forEach((item, index) => {
-                    const mediaIcons = { 
-                        'music': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
-                        'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓' 
-                    };
-                    const typeIcon = mediaIcons[item.type] || (item.type === 'music' ? '🎵' : '🎥');
-                    const typeLabel = (item.type || 'torrent').toUpperCase();
-                    const notBefore = Number(item.not_before || 0);
-                    const isScheduled = notBefore > Math.floor(Date.now() / 1000);
-                    const scheduleLabel = isScheduled
-                        ? new Date(notBefore * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : '';
-                    const div = document.createElement('div');
-                    div.className = 'queued-item';
-                    div.innerHTML = `
-                        <div class="item-name" title="${item.filename}">
-                            <span class="badge ${item.type === 'music' ? 'badge-music' : 'badge-video'}" style="padding: 0.1rem 0.4rem; font-size: 0.6rem; margin-right: 0.4rem;">
-                                ${typeIcon} ${typeLabel}
-                            </span>
-                            ${item.filename}
-                            ${isScheduled ? `<div style="font-size: 0.65rem; color: var(--warning); margin-top: 0.25rem;">Retry programmé à ${scheduleLabel}</div>` : ''}
-                        </div>
-                        <button class="btn-remove" onclick="removeFromQueue(${index})">×</button>
-                    `;
-                    list.appendChild(div);
-                });
+            if (!list) return;
+            list.replaceChildren();
+
+            if (serverQueue.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-msg';
+                empty.textContent = 'Queue is empty';
+                list.appendChild(empty);
+                updateTrackerSummary();
+                return;
             }
+
+            serverQueue.forEach((item, index) => {
+                const mediaIcons = {
+                    'music': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚',
+                    'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓'
+                };
+                const typeIcon = mediaIcons[item.type] || (item.type === 'music' ? '🎵' : '🎥');
+                const typeLabel = String(item.type || 'torrent').toUpperCase();
+                const notBefore = Number(item.not_before || 0);
+                const isScheduled = notBefore > Math.floor(Date.now() / 1000);
+                const scheduleLabel = isScheduled
+                    ? new Date(notBefore * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : '';
+
+                const div = document.createElement('div');
+                div.className = 'queued-item';
+
+                const name = document.createElement('div');
+                name.className = 'item-name';
+                name.title = String(item.filename || '');
+
+                const badge = document.createElement('span');
+                badge.className = 'badge ' + (item.type === 'music' ? 'badge-music' : 'badge-video');
+                badge.style.cssText = 'padding: 0.1rem 0.4rem; font-size: 0.6rem; margin-right: 0.4rem;';
+                badge.textContent = typeIcon + ' ' + typeLabel;
+                name.appendChild(badge);
+                name.appendChild(document.createTextNode(' ' + String(item.filename || '')));
+
+                if (isScheduled) {
+                    const retry = document.createElement('div');
+                    retry.style.cssText = 'font-size: 0.65rem; color: var(--warning); margin-top: 0.25rem;';
+                    retry.textContent = 'Retry programmé à ' + scheduleLabel;
+                    name.appendChild(retry);
+                }
+
+                const button = document.createElement('button');
+                button.className = 'btn-remove';
+                button.type = 'button';
+                button.textContent = '×';
+                button.addEventListener('click', () => removeFromQueue(index));
+
+                div.appendChild(name);
+                div.appendChild(button);
+                list.appendChild(div);
+            });
             updateTrackerSummary();
         }
 
@@ -1460,26 +1484,31 @@
 
         async function updateActiveTaskUI(active) {
             const list = document.getElementById('active-downloads-list');
+            if (!list) return;
             serverActiveTask = active;
 
             if (!active) {
-                list.innerHTML = '<div class="empty-msg">No active downloads</div>';
+                list.replaceChildren();
+                const empty = document.createElement('div');
+                empty.className = 'empty-msg';
+                empty.textContent = 'No active downloads';
+                list.appendChild(empty);
                 updateTrackerSummary();
                 return;
             }
 
             try {
-                const downloadId = active.download_id || active.downloadId;
-                const res = await fetch(progressRouteTemplate.replace('000000', downloadId));
+                const downloadId = String(active.download_id || active.downloadId || '');
+                const res = await fetch(progressRouteTemplate.replace('000000', encodeURIComponent(downloadId)));
                 const progress = await res.json();
-                
-                const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
-                const mediaIcons = { 
-                    'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
-                    'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓' 
+
+                const filename = String(progress.filename || active.filename || active.override_filename || 'Initializing...');
+                const mediaIcons = {
+                    'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚',
+                    'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓'
                 };
                 const typeIcon = mediaIcons[active.type] || (active.type === 'music' || active.type === 'audio' ? '🎵' : '🎥');
-                const typeLabel = (active.type || 'torrent').toUpperCase();
+                const typeLabel = String(active.type || 'torrent').toUpperCase();
                 const isMusic = active.type === 'music';
                 const downloaded = Number(progress.downloaded || 0);
                 const total = Number(progress.total || 0) > 0 ? Number(progress.total) : parseHumanSizeBytes(active.size);
@@ -1501,121 +1530,228 @@
                         ? 'Downloading...' + (sizeLabel ? ' ' + sizeLabel : '')
                         : 'Starting...');
 
-                list.innerHTML = `
-                    <div class="active-item" id="active-${downloadId}">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom:0.75rem">
-                            <span class="badge ${isMusic ? 'badge-music' : 'badge-video'}" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">
-                                ${typeIcon} ${typeLabel}
-                            </span>
-                            <span class="badge badge-success" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">${isMusic ? 'PROCESSING' : 'DOWNLOADING'}</span>
-                        </div>
-                        <div class="item-header">
-                            <span class="item-name" title="${filename}" style="font-size: 0.9rem; font-weight: 600; font-family: ${isMusic ? 'monospace' : 'inherit'};">${filename}</span>
-                            ${!isMusic ? `<span class="item-percent" style="font-weight: bold; color: var(--accent);">${percentLabel}</span>` : ''}
-                        </div>
-                        <div class="item-progress" style="${isMusic ? 'height: 2px; opacity: 0.5;' : ''}">
-                            <div class="bar ${isMusic ? 'pulsing' : (!hasTotal ? 'indeterminate' : '')}" style="width: ${isMusic ? '100' : (hasTotal ? percentage : '32')}%"></div>
-                        </div>
-                        <div class="item-footer">
-                            <span class="item-status">${statusLabel}</span>
-                            <span class="item-speed">${progress.speed || '...'}</span>
-                        </div>
-                    </div>
-                `;
+                const item = document.createElement('div');
+                item.className = 'active-item';
+                if (downloadId !== '') item.id = 'active-' + downloadId;
+
+                const header = document.createElement('div');
+                header.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem';
+                const typeBadge = document.createElement('span');
+                typeBadge.className = 'badge ' + (isMusic ? 'badge-music' : 'badge-video');
+                typeBadge.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.7rem;';
+                typeBadge.textContent = typeIcon + ' ' + typeLabel;
+                const stateBadge = document.createElement('span');
+                stateBadge.className = 'badge badge-success';
+                stateBadge.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.7rem;';
+                stateBadge.textContent = isMusic ? 'PROCESSING' : 'DOWNLOADING';
+                header.appendChild(typeBadge);
+                header.appendChild(stateBadge);
+
+                const itemHeader = document.createElement('div');
+                itemHeader.className = 'item-header';
+                const name = document.createElement('span');
+                name.className = 'item-name';
+                name.title = filename;
+                name.style.cssText = 'font-size:0.9rem;font-weight:600;font-family:' + (isMusic ? 'monospace' : 'inherit') + ';';
+                name.textContent = filename;
+                itemHeader.appendChild(name);
+                if (!isMusic) {
+                    const percent = document.createElement('span');
+                    percent.className = 'item-percent';
+                    percent.style.cssText = 'font-weight:bold;color:var(--accent);';
+                    percent.textContent = percentLabel;
+                    itemHeader.appendChild(percent);
+                }
+
+                const progressWrap = document.createElement('div');
+                progressWrap.className = 'item-progress';
+                if (isMusic) progressWrap.style.cssText = 'height:2px;opacity:0.5;';
+                const bar = document.createElement('div');
+                bar.className = 'bar ' + (isMusic ? 'pulsing' : (!hasTotal ? 'indeterminate' : ''));
+                bar.style.width = (isMusic ? '100' : (hasTotal ? percentage : '32')) + '%';
+                progressWrap.appendChild(bar);
+
+                const footer = document.createElement('div');
+                footer.className = 'item-footer';
+                const status = document.createElement('span');
+                status.className = 'item-status';
+                status.textContent = statusLabel;
+                const speed = document.createElement('span');
+                speed.className = 'item-speed';
+                speed.textContent = String(progress.speed || '...');
+                footer.appendChild(status);
+                footer.appendChild(speed);
+
+                item.appendChild(header);
+                item.appendChild(itemHeader);
+                item.appendChild(progressWrap);
+                item.appendChild(footer);
+                list.replaceChildren(item);
             } catch (e) {
                 console.warn("Progress update failed", e);
             }
             updateTrackerSummary();
         }
 
+        const notificationMediaIcons = {
+            'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚',
+            'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓', 'default': '📦'
+        };
+        const notificationStatusEmojis = { 'success': '✅', 'error': '❌', 'warning': '⚠️', 'info': 'ℹ️', 'Finished': '✨', 'Started': '🚀', 'Failed': '❌' };
+
+        function safeNotificationType(value) {
+            const type = String(value || 'info').toLowerCase();
+            return ['success', 'error', 'warning', 'info'].includes(type) ? type : 'info';
+        }
+
+        function notificationEmoji(type, action = '') {
+            return notificationStatusEmojis[String(action || '')]
+                || notificationStatusEmojis[String(type || '')]
+                || 'ℹ️';
+        }
+
+        function notificationIcon(mediaType) {
+            return notificationMediaIcons[String(mediaType || '')] || notificationMediaIcons.default;
+        }
+
+        function notificationTitle(log) {
+            return String(log.action || 'Update') + ': ' + notificationIcon(log.mediaType) + ' ' + String(log.mediaType || '');
+        }
+
+        function notificationBody(log) {
+            return String(log.item || log.message || '');
+        }
+
+        function renderNotification(log, container, prepend = false) {
+            if (!container) return;
+
+            const div = document.createElement('div');
+            div.className = 'notif-item ' + safeNotificationType(log.type);
+
+            const time = document.createElement('div');
+            time.className = 'notif-time';
+            time.textContent = String(log.time || '');
+
+            const msg = document.createElement('div');
+            msg.className = 'notif-msg';
+
+            if (Number(log.version) === 2 && (log.action || log.mediaType || log.item)) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:flex-start;gap:1rem;';
+
+                const emoji = document.createElement('span');
+                emoji.style.fontSize = '1.5rem';
+                emoji.textContent = notificationEmoji(log.type, log.action);
+
+                const body = document.createElement('div');
+                const title = document.createElement('div');
+                title.style.cssText = 'font-weight:bold;margin-bottom:2px;';
+                title.textContent = notificationTitle(log);
+                const text = document.createElement('div');
+                text.style.cssText = 'font-size:0.85rem;opacity:0.9;word-break:break-all;';
+                text.textContent = notificationBody(log);
+
+                body.appendChild(title);
+                body.appendChild(text);
+                row.appendChild(emoji);
+                row.appendChild(body);
+                msg.appendChild(row);
+            } else if (Number(log.version) === 2) {
+                const strong = document.createElement('b');
+                strong.textContent = notificationEmoji(log.type) + ' ' + String(log.message || '');
+                msg.appendChild(strong);
+            } else {
+                msg.textContent = String(log.message || log.text || '');
+            }
+
+            div.appendChild(time);
+            div.appendChild(msg);
+            if (prepend) container.prepend(div);
+            else container.appendChild(div);
+        }
+
         function toggleNotifSidebar() {
             const sidebar = document.getElementById('notif-sidebar');
+            if (!sidebar) return;
             sidebar.classList.toggle('open');
             if (sidebar.classList.contains('open')) {
-                document.getElementById('notif-dot').style.display = 'none';
+                const dot = document.getElementById('notif-dot');
+                if (dot) dot.style.display = 'none';
             }
         }
 
         function clearNotifications() {
             if (!confirm('Clear all logs?')) return;
             localStorage.setItem('notif_logs', '[]');
-            document.getElementById('notif-content').innerHTML = '<div class="empty-msg" style="text-align: center; margin-top: 2rem; color: var(--text-secondary);">No logs yet.</div>';
+            const container = document.getElementById('notif-content');
+            if (!container) return;
+            container.replaceChildren();
+            const empty = document.createElement('div');
+            empty.className = 'empty-msg';
+            empty.style.cssText = 'text-align: center; margin-top: 2rem; color: var(--text-secondary);';
+            empty.textContent = 'No logs yet.';
+            container.appendChild(empty);
         }
 
         window.notify = function(type, message) {
             const container = document.getElementById('notif-content');
+            if (!container) return;
             const dot = document.getElementById('notif-dot');
             const sidebar = document.getElementById('notif-sidebar');
 
             if (container.querySelector('.empty-msg')) {
-                container.innerHTML = '';
+                container.replaceChildren();
             }
 
             const now = new Date().toLocaleTimeString();
-            
-            // Rich notification formatting
-            let displayHtml = '';
-            const mediaIcons = { 
-                'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
-                'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓', 'default': '📦' 
+            const isObject = message !== null && typeof message === 'object';
+            const logType = safeNotificationType(isObject && message.type ? message.type : type);
+            const action = isObject ? String(message.action || '') : '';
+            const mediaType = isObject ? String(message.media_type || '') : '';
+            const item = isObject ? String(message.item || '') : '';
+            const text = isObject ? String(message.message || '') : String(message ?? '');
+
+            const logEntry = {
+                version: 2,
+                type: logType,
+                action,
+                mediaType,
+                item,
+                message: text,
+                time: now
             };
-            const statusEmojis = { 'success': '✅', 'error': '❌', 'info': 'ℹ️', 'Finished': '✨', 'Started': '🚀', 'Failed': '❌' };
 
-            if (typeof message === 'object') {
-                const icon = mediaIcons[message.media_type] || mediaIcons.default;
-                const statusEmoji = statusEmojis[message.action] || statusEmojis[message.type] || '';
-                
-                displayHtml = `
-                    <div style="display: flex; align-items: flex-start; gap: 1rem;">
-                        <span style="font-size: 1.5rem;">${statusEmoji}</span>
-                        <div>
-                            <div style="font-weight: bold; margin-bottom: 2px;">
-                                ${message.action || 'Update'}: ${icon} ${message.media_type || ''}
-                            </div>
-                            <div style="font-size: 0.85rem; opacity: 0.9; word-break: break-all;">
-                                ${message.item || message.message}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Fallback for simple strings
-                const lower = message.toLowerCase();
-                let emoji = 'ℹ️';
-                if (lower.includes('success')) emoji = '✅';
-                if (lower.includes('error') || lower.includes('fail')) emoji = '❌';
-
-                displayHtml = `<b>${emoji} ${message}</b>`;
+            let logs = [];
+            try {
+                logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
+                if (!Array.isArray(logs)) logs = [];
+            } catch (e) {
+                logs = [];
             }
-
-            const logEntry = { type, message: displayHtml, time: now };
-            
-            // Persist
-            const logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
             logs.unshift(logEntry);
-            localStorage.setItem('notif_logs', JSON.stringify(logs.slice(0, 100))); // Keep last 100
+            localStorage.setItem('notif_logs', JSON.stringify(logs.slice(0, 100)));
 
             renderNotification(logEntry, container, true);
 
-            if (!sidebar.classList.contains('open')) {
+            if (sidebar && dot && !sidebar.classList.contains('open')) {
                 dot.style.display = 'block';
             }
 
-            // Show Toast
             const toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) return;
             const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-            
-            let toastEmoji = 'ℹ️';
-            if (type === 'success' || type === 'Finished') toastEmoji = '✅';
-            if (type === 'error' || type === 'Failed') toastEmoji = '❌';
+            toast.className = 'toast ' + logType;
 
-            const toastBody = typeof message === 'object' ? (message.item || message.message) : message;
+            const toastEmoji = document.createElement('span');
+            toastEmoji.style.fontSize = '1.25rem';
+            toastEmoji.textContent = notificationEmoji(logType, action);
 
-            toast.innerHTML = `
-                <span style="font-size: 1.25rem;">${toastEmoji}</span>
-                <div style="font-size: 0.9rem; font-weight: 500;">${toastBody}</div>
-            `;
+            const toastBody = document.createElement('div');
+            toastBody.style.cssText = 'font-size:0.9rem;font-weight:500;word-break:break-word;';
+            toastBody.textContent = item || text || action;
+
+            toast.appendChild(toastEmoji);
+            toast.appendChild(toastBody);
             toastContainer.appendChild(toast);
 
             setTimeout(() => {
@@ -1623,13 +1759,9 @@
                 setTimeout(() => toast.remove(), 300);
             }, 5000);
 
-            // Native Browser Notification
-            if (Notification.permission === "granted" && typeof message === 'object') {
-                const icon = mediaIcons[message.media_type] || mediaIcons.default;
-                const statusEmoji = statusEmojis[message.action] || statusEmojis[message.type] || '';
-                
-                new Notification(`${statusEmoji} ${message.action || 'Update'}: ${message.media_type || ''}`, {
-                    body: message.item || message.message || '',
+            if ('Notification' in window && Notification.permission === 'granted' && isObject) {
+                new Notification(notificationEmoji(logType, action) + ' ' + String(action || 'Update') + ': ' + mediaType, {
+                    body: item || text || '',
                     icon: '/logo.png',
                     tag: 'downloader-update'
                 }).onclick = function() {
@@ -1655,26 +1787,21 @@
             }
         }
 
-        function renderNotification(log, container, prepend = false) {
-            const div = document.createElement('div');
-            div.className = `notif-item ${log.type}`;
-            div.innerHTML = `
-                <div class="notif-time">${log.time}</div>
-                <div class="notif-msg">${log.message}</div>
-            `;
-            if (prepend) container.prepend(div);
-            else container.appendChild(div);
-        }
-
         function toggleBurger() {
             document.getElementById('nav-links').classList.toggle('active');
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            const logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
+            let logs = [];
+            try {
+                logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
+                if (!Array.isArray(logs)) logs = [];
+            } catch (e) {
+                logs = [];
+            }
             const container = document.getElementById('notif-content');
             if (logs.length > 0 && container) {
-                container.innerHTML = '';
+                container.replaceChildren();
                 logs.forEach(log => renderNotification(log, container));
             }
 

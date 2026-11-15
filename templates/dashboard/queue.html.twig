@@ -117,19 +117,24 @@ async function refreshUI() {
 
 async function renderActive(active) {
     const container = document.getElementById('active-task-container');
+    if (!container) return;
     if (!active) {
-        container.innerHTML = '<p class="empty-msg">No active task.</p>';
+        container.replaceChildren();
+        const empty = document.createElement('p');
+        empty.className = 'empty-msg';
+        empty.textContent = 'No active task.';
+        container.appendChild(empty);
         return;
     }
 
     try {
-        const downloadId = active.download_id || active.downloadId;
-        const res = await fetch(progressRouteTemplate.replace('000000', downloadId));
+        const downloadId = String(active.download_id || active.downloadId || '');
+        const res = await fetch(progressRouteTemplate.replace('000000', encodeURIComponent(downloadId)));
         const progress = await res.json();
-        
-        const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
+
+        const filename = String(progress.filename || active.filename || active.override_filename || 'Initializing...');
         const typeIcon = getMediaIcon(active.type);
-        const typeLabel = (active.type || 'torrent').toUpperCase();
+        const typeLabel = String(active.type || 'torrent').toUpperCase();
         const downloaded = Number(progress.downloaded || 0);
         const total = Number(progress.total || 0) > 0
             ? Number(progress.total)
@@ -150,31 +155,73 @@ async function renderActive(active) {
             ? 'Transferring data...' + (sizeLabel ? ' ' + sizeLabel : '')
             : 'Contacting providers...';
 
-        container.innerHTML = `
-            <div class="active-task-wrapper">
-                <div class="active-task-icon">${typeIcon}</div>
-                <div style="flex: 1; min-width: 0;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
-                        <span class="badge ${active.type === 'music' ? 'badge-music' : 'badge-video'}" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">
-                            ${typeIcon} ${typeLabel}
-                        </span>
-                        <span class="badge badge-success" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">NOW PROCESSING</span>
-                    </div>
-                    <h4 class="active-task-title">${filename}</h4>
-                    <div class="active-task-meta">
-                        <span class="active-task-path">Target: <code style="background: rgba(255,255,255,0.08); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace;">${active.path || 'Default'}</code></span>
-                        <span class="active-task-speed">${progress.speed || '...'}</span>
-                    </div>
-                    <div style="height: 14px; background: rgba(255,255,255,0.05); border-radius: 7px; overflow: hidden; margin-bottom: 0.5rem; border: 1px solid rgba(255,255,255,0.03);">
-                        <div style="width: ${percentage}%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
-                        <span style="color: var(--text-secondary); font-style: italic;">${statusLabel}</span>
-                        <span style="font-weight: 800; color: var(--text-primary);">${percentLabel}</span>
-                    </div>
-                </div>
-            </div>
-        `;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'active-task-wrapper';
+
+        const icon = document.createElement('div');
+        icon.className = 'active-task-icon';
+        icon.textContent = typeIcon;
+
+        const content = document.createElement('div');
+        content.style.cssText = 'flex: 1; min-width: 0;';
+
+        const badges = document.createElement('div');
+        badges.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;';
+        const typeBadge = document.createElement('span');
+        typeBadge.className = 'badge ' + (active.type === 'music' ? 'badge-music' : 'badge-video');
+        typeBadge.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.7rem;';
+        typeBadge.textContent = typeIcon + ' ' + typeLabel;
+        const stateBadge = document.createElement('span');
+        stateBadge.className = 'badge badge-success';
+        stateBadge.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.7rem;';
+        stateBadge.textContent = 'NOW PROCESSING';
+        badges.appendChild(typeBadge);
+        badges.appendChild(stateBadge);
+
+        const title = document.createElement('h4');
+        title.className = 'active-task-title';
+        title.textContent = filename;
+
+        const meta = document.createElement('div');
+        meta.className = 'active-task-meta';
+        const pathLabel = document.createElement('span');
+        pathLabel.className = 'active-task-path';
+        pathLabel.textContent = 'Target: ';
+        const pathCode = document.createElement('code');
+        pathCode.style.cssText = 'background:rgba(255,255,255,0.08);padding:0.2rem 0.4rem;border-radius:4px;font-family:monospace;';
+        pathCode.textContent = String(active.path || 'Default');
+        pathLabel.appendChild(pathCode);
+        const speed = document.createElement('span');
+        speed.className = 'active-task-speed';
+        speed.textContent = String(progress.speed || '...');
+        meta.appendChild(pathLabel);
+        meta.appendChild(speed);
+
+        const progressOuter = document.createElement('div');
+        progressOuter.style.cssText = 'height:14px;background:rgba(255,255,255,0.05);border-radius:7px;overflow:hidden;margin-bottom:0.5rem;border:1px solid rgba(255,255,255,0.03);';
+        const progressBar = document.createElement('div');
+        progressBar.style.cssText = 'width:' + percentage + '%;height:100%;background:linear-gradient(90deg,var(--accent),var(--success));transition:width 0.5s cubic-bezier(0.4,0,0.2,1);';
+        progressOuter.appendChild(progressBar);
+
+        const footer = document.createElement('div');
+        footer.style.cssText = 'display:flex;justify-content:space-between;font-size:0.85rem;';
+        const status = document.createElement('span');
+        status.style.cssText = 'color:var(--text-secondary);font-style:italic;';
+        status.textContent = statusLabel;
+        const percent = document.createElement('span');
+        percent.style.cssText = 'font-weight:800;color:var(--text-primary);';
+        percent.textContent = percentLabel;
+        footer.appendChild(status);
+        footer.appendChild(percent);
+
+        content.appendChild(badges);
+        content.appendChild(title);
+        content.appendChild(meta);
+        content.appendChild(progressOuter);
+        content.appendChild(footer);
+        wrapper.appendChild(icon);
+        wrapper.appendChild(content);
+        container.replaceChildren(wrapper);
     } catch (e) {
         console.warn("Active progress fetch failed", e);
     }
@@ -207,39 +254,76 @@ async function updateActiveLog() {
 function renderQueueTable(queue) {
     const tbody = document.getElementById('queue-tbody');
     const badge = document.getElementById('queue-count-badge');
-    badge.innerText = queue.length;
+    const items = Array.isArray(queue) ? queue : [];
+    if (!tbody) return;
+    if (badge) badge.innerText = items.length;
 
-    if (queue.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="padding: 2rem; text-align: center; color: var(--text-secondary);">Queue is empty</td></tr>';
+    if (items.length === 0) {
+        tbody.replaceChildren();
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.style.cssText = 'padding:2rem;text-align:center;color:var(--text-secondary);';
+        td.textContent = 'Queue is empty';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
         return;
     }
 
-    tbody.innerHTML = '';
-    queue.forEach((item, index) => {
+    tbody.replaceChildren();
+    items.forEach((item, index) => {
         const typeIcon = getMediaIcon(item.type);
         const notBefore = Number(item.not_before || 0);
         const isScheduled = notBefore > Math.floor(Date.now() / 1000);
         const scheduleLabel = isScheduled
             ? new Date(notBefore * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : '';
+
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-        tr.innerHTML = `
-            <td style="padding: 1rem; font-size: 1.5rem;">${typeIcon}</td>
-            <td style="padding: 1rem;">
-                <div class="queue-filename" title="${item.filename}">
-                    ${item.filename}
-                    ${isScheduled ? `<div style="font-size: 0.7rem; color: var(--warning); margin-top: 0.3rem;">Retry programmé à ${scheduleLabel}</div>` : ''}
-                </div>
-            </td>
-            <td class="hide-mobile" style="padding: 1rem; font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">${item.path || '--'}</td>
-            <td class="hide-mobile" style="padding: 1rem; font-size: 0.8rem; color: ${isScheduled ? 'var(--warning)' : 'var(--text-secondary)'};">${isScheduled ? 'Retry ' + scheduleLabel : (item.date_added || '--')}</td>
-            <td style="padding: 1rem; text-align: right;">
-                <button class="btn btn-remove-task" onclick="removeTask(${index})">
-                    Remove
-                </button>
-            </td>
-        `;
+
+        const typeCell = document.createElement('td');
+        typeCell.style.cssText = 'padding:1rem;font-size:1.5rem;';
+        typeCell.textContent = typeIcon;
+
+        const fileCell = document.createElement('td');
+        fileCell.style.padding = '1rem';
+        const file = document.createElement('div');
+        file.className = 'queue-filename';
+        file.title = String(item.filename || '');
+        file.appendChild(document.createTextNode(String(item.filename || '')));
+        if (isScheduled) {
+            const retry = document.createElement('div');
+            retry.style.cssText = 'font-size:0.7rem;color:var(--warning);margin-top:0.3rem;';
+            retry.textContent = 'Retry programmé à ' + scheduleLabel;
+            file.appendChild(retry);
+        }
+        fileCell.appendChild(file);
+
+        const pathCell = document.createElement('td');
+        pathCell.className = 'hide-mobile';
+        pathCell.style.cssText = 'padding:1rem;font-family:monospace;font-size:0.75rem;color:var(--text-secondary);';
+        pathCell.textContent = String(item.path || '--');
+
+        const dateCell = document.createElement('td');
+        dateCell.className = 'hide-mobile';
+        dateCell.style.cssText = 'padding:1rem;font-size:0.8rem;color:' + (isScheduled ? 'var(--warning)' : 'var(--text-secondary)') + ';';
+        dateCell.textContent = isScheduled ? 'Retry ' + scheduleLabel : String(item.date_added || '--');
+
+        const actionCell = document.createElement('td');
+        actionCell.style.cssText = 'padding:1rem;text-align:right;';
+        const button = document.createElement('button');
+        button.className = 'btn btn-remove-task';
+        button.type = 'button';
+        button.textContent = 'Remove';
+        button.addEventListener('click', () => removeTask(index));
+        actionCell.appendChild(button);
+
+        tr.appendChild(typeCell);
+        tr.appendChild(fileCell);
+        tr.appendChild(pathCell);
+        tr.appendChild(dateCell);
+        tr.appendChild(actionCell);
         tbody.appendChild(tr);
     });
 }
