@@ -17,20 +17,30 @@ class ReleaseIntegrityService
 
     public function verifySuccessfulIntents(bool $apply = false, bool $quarantine = false, int $limit = 200): array
     {
-        $items = $this->store->getIntents(['status' => 'success'], max(1, min(500, $limit)), 0);
         $stats = [
             'checked' => 0,
             'invalid' => 0,
             'retried' => 0,
             'quarantined' => 0,
             'skipped' => 0,
+            'failed' => 0,
             'details' => [],
         ];
 
+        if ($apply && !$quarantine) {
+            return [
+                'success' => false,
+                'message' => 'Applying verification requires --quarantine; no file was changed.',
+                'stats' => $stats,
+            ];
+        }
+
+        $items = $this->store->getIntents(['status' => 'success'], max(1, min(500, $limit)), 0);
+
         foreach ($items as $intent) {
             $stats['checked']++;
-            $file = $this->findDownloadedFile($intent);
-            if ($file === null) {
+            $historyEntry = $this->findDownloadedFile($intent);
+            if ($historyEntry === null) {
                 $stats['skipped']++;
                 $stats['details'][] = [
                     'id' => (int) $intent['id'],
@@ -41,11 +51,13 @@ class ReleaseIntegrityService
                 continue;
             }
 
-            $expected = $this->parseExpectedBytes((string) ($intent['release_explanation'] ?? ''));
+            $file = $historyEntry['path'];
+            $expected = (int) ($historyEntry['actual_size'] ?? 0);
             $actual = is_file($file) ? (int) filesize($file) : 0;
-            $invalid = !is_file($file)
-                || ($expected > 0 && $actual < (int) round($expected * 0.9))
-                || ($expected === 0 && $actual > 0 && $actual < 1024 * 1024);
+            $html = is_file($file) && $this->looksLikeHtml($file);
+            $tooSmall = $actual > 0 && $actual < 1024 * 1024;
+            $truncated = $expected > 0 && $actual < (int) round($expected * 0.9);
+            $invalid = !is_file($file) || $html || $tooSmall || $truncated;
 
             if (!$invalid) {
                 $stats['details'][] = [
@@ -60,6 +72,14 @@ class ReleaseIntegrityService
             }
 
             $stats['invalid']++;
+            $reason = !is_file($file)
+                ? 'Downloaded file is missing.'
+                : ($html
+                    ? 'Downloaded file looks like an HTML error page.'
+                    : ($tooSmall
+                        ? 'Downloaded file is too small (' . $actual . ' bytes).'
+                        : 'Downloaded file is smaller than the exact history size (' . $actual . ' vs ' . $expected . ' bytes).'));
+
             $detail = [
                 'id' => (int) $intent['id'],
                 'title' => (string) $intent['title'],
@@ -67,21 +87,23 @@ class ReleaseIntegrityService
                 'size' => $actual,
                 'expected' => $expected,
                 'status' => $apply ? 'retried' : 'would_retry',
-                'reason' => !is_file($file)
-                    ? 'Downloaded file is missing.'
-                    : ($expected > 0
-                        ? 'Downloaded file is smaller than expected (' . $actual . ' vs ' . $expected . ' bytes).'
-                        : 'Downloaded file is too small (' . $actual . ' bytes).'),
+                'reason' => $reason,
             ];
 
             if ($apply) {
-                if ($quarantine && is_file($file)) {
+                if (is_file($file)) {
                     $quarantinePath = $file . '.invalid-' . date('YmdHis');
-                    if (@rename($file, $quarantinePath)) {
-                        $detail['quarantined_to'] = $quarantinePath;
-                        $stats['quarantined']++;
+                    if (!@rename($file, $quarantinePath)) {
+                        $detail['status'] = 'error';
+                        $detail['reason'] = 'Could not quarantine file; intent was not changed.';
+                        $stats['failed']++;
+                        $stats['details'][] = $detail;
+                        continue;
                     }
+                    $detail['quarantined_to'] = $quarantinePath;
+                    $stats['quarantined']++;
                 }
+
                 $this->store->markEntryMissingByPath($file);
                 $this->store->updateIntent((int) $intent['id'], [
                     'status' => 'pending',
@@ -93,7 +115,10 @@ class ReleaseIntegrityService
                     'error_message' => 'Invalid download detected; queued for retry.',
                 ]);
                 $this->store->setSetting('library_scan_requested', true);
-                $this->store->setSetting('library_scan_requested_root', 'movies');
+                $this->store->setSetting(
+                    'library_scan_requested_root',
+                    in_array((string) ($intent['media_type'] ?? 'movie'), ['series', 'anime'], true) ? 'series' : 'movies'
+                );
                 $stats['retried']++;
             }
 
@@ -103,7 +128,7 @@ class ReleaseIntegrityService
         return ['success' => true, 'stats' => $stats];
     }
 
-    private function findDownloadedFile(array $intent): ?string
+    private function findDownloadedFile(array $intent): ?array
     {
         $downloadId = trim((string) ($intent['download_id'] ?? ''));
         if ($downloadId === '') {
@@ -125,26 +150,25 @@ class ReleaseIntegrityService
                 continue;
             }
 
-            return rtrim($path, '/\\') . DIRECTORY_SEPARATOR . $filename;
+            return [
+                'path' => rtrim($path, '/\\') . DIRECTORY_SEPARATOR . $filename,
+                'size' => isset($entry['size']) && is_numeric($entry['size']) ? (int) $entry['size'] : 0,
+                'actual_size' => isset($entry['actual_size']) && is_numeric($entry['actual_size']) ? (int) $entry['actual_size'] : 0,
+            ];
         }
 
         return null;
     }
 
-    private function parseExpectedBytes(string $text): int
+    private function looksLikeHtml(string $file): bool
     {
-        if (preg_match('/(\d+(?:[.,]\d+)?)\s*(TB|TO|GB|GO|MB|MO)\b/iu', $text, $matches)) {
-            $value = (float) str_replace(',', '.', $matches[1]);
-            $factor = match (strtoupper($matches[2])) {
-                'TB', 'TO' => 1024 ** 4,
-                'GB', 'GO' => 1024 ** 3,
-                'MB', 'MO' => 1024 ** 2,
-                default => 0,
-            };
-
-            return (int) round($value * $factor);
+        $handle = @fopen($file, 'rb');
+        if ($handle === false) {
+            return false;
         }
+        $head = (string) fread($handle, 512);
+        fclose($handle);
 
-        return 0;
+        return stripos($head, '<html') !== false || stripos($head, '<!DOCTYPE') !== false;
     }
 }

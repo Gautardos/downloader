@@ -1342,10 +1342,13 @@ pendant le polling.
   inférieure à 90 % de la taille attendue. Le fichier partiel est supprimé et
   l'intent passe en erreur/retry au lieu d'être marqué `success`.
 - `app:release-verify-downloads [--apply] [--quarantine]` vérifie les intents
-  `success` contre l'historique et la taille attendue. `--quarantine` renomme le
-  fichier invalide en `.invalid-<date>` (aucune suppression), remet l'intent en
-  `pending` et marque l'entrée d'index `missing` pour permettre un nouveau
-  téléchargement.
+  `success` contre la taille **exacte** enregistrée dans l'historique
+  (`actual_size`, issue des octets réellement téléchargés). Il n'utilise jamais
+  `release_explanation` ni la taille d'un pack. Pour les anciennes entrées sans
+  `actual_size`, seuls les contrôles durs (fichier absent, HTML, < 1 Mo) sont
+  appliqués. `--apply` exige `--quarantine` : le fichier invalide est renommé en
+  `.invalid-<date>` (aucune suppression), l'intent repasse en `pending` et
+  l'entrée d'index est marquée `missing`.
 
 ### Taille des téléchargements automation
 
@@ -1523,6 +1526,9 @@ pendant le polling.
 - `composer test:csrf` ou `php tests/csrf_smoke.php` : portée du rejet CSRF,
   formulaires/JSON/multipart, exemption Jellyfin et inventaire des routes
   state-changing.
+- `composer test:backfill` ou `php tests/backfill_smoke.php` : intégrité des
+  téléchargements, reprise des intents, plafonds, sélection de fichiers et
+  notifications de backfill.
 - Les tests de stockage nécessitent `pdo_sqlite` ; utiliser l'image Docker si
   le PHP local ne l'a pas.
 

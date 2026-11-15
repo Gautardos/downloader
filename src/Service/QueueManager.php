@@ -194,6 +194,7 @@ class QueueManager
             'path' => $item['path'] ?? '',
             'file_count' => $fileCount,
             'size' => $stats['size'] ?? ($item['size'] ?? null),
+            'actual_size' => isset($stats['size']) && is_numeric($stats['size']) ? (int) $stats['size'] : null,
             'speed' => $stats['speed'] ?? ($item['speed'] ?? null),
             'duration' => $stats['duration'] ?? ($item['duration'] ?? null),
             'expected_tracks' => $item['expected_tracks'] ?? [],

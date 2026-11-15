@@ -32,20 +32,34 @@ class ReleaseVerifyDownloadsCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $apply = (bool) $input->getOption('apply');
+        $quarantine = (bool) $input->getOption('quarantine');
+        if ($apply && !$quarantine) {
+            $output->writeln('<error>--apply requires --quarantine; no file was changed.</error>');
+
+            return Command::FAILURE;
+        }
+
         $limit = $input->getOption('limit');
         $result = $this->integrity->verifySuccessfulIntents(
-            (bool) $input->getOption('apply'),
-            (bool) $input->getOption('quarantine'),
+            $apply,
+            $quarantine,
             is_numeric($limit) ? (int) $limit : 200
         );
+        if (empty($result['success'])) {
+            $output->writeln('<error>' . (string) ($result['message'] ?? 'Verification failed.') . '</error>');
+
+            return Command::FAILURE;
+        }
         $stats = $result['stats'] ?? [];
 
-        $output->writeln(($input->getOption('apply') ? 'Verification applied' : 'Verification preview') . ':');
+        $output->writeln(($apply ? 'Verification applied' : 'Verification preview') . ':');
         $output->writeln('Checked: ' . ($stats['checked'] ?? 0));
         $output->writeln('Invalid: ' . ($stats['invalid'] ?? 0));
         $output->writeln('Retried: ' . ($stats['retried'] ?? 0));
         $output->writeln('Quarantined: ' . ($stats['quarantined'] ?? 0));
         $output->writeln('Skipped: ' . ($stats['skipped'] ?? 0));
+        $output->writeln('Failed: ' . ($stats['failed'] ?? 0));
 
         foreach (($stats['details'] ?? []) as $detail) {
             if (($detail['status'] ?? '') === 'ok') {
