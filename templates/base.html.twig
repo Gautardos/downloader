@@ -1362,10 +1362,20 @@
 
         (function () {
             const originalFetch = window.fetch.bind(window);
+            function isSameOrigin(value) {
+                try {
+                    const url = new URL(value, window.location.href);
+                    return url.origin === window.location.origin;
+                } catch (e) {
+                    return false;
+                }
+            }
+
             window.fetch = function (input, init) {
                 const options = init ? { ...init } : {};
+                const requestUrl = input instanceof Request ? input.url : String(input);
                 const method = String(options.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
-                if (csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+                if (csrfToken && isSameOrigin(requestUrl) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
                     const headers = new Headers(options.headers || (input instanceof Request ? input.headers : undefined));
                     if (!headers.has('X-CSRF-Token')) {
                         headers.set('X-CSRF-Token', csrfToken);
@@ -1386,6 +1396,10 @@
                         return;
                     }
                     if (form.querySelector('input[name="_token"]')) {
+                        return;
+                    }
+                    const action = form.getAttribute('action') || window.location.href;
+                    if (!isSameOrigin(action)) {
                         return;
                     }
                     const field = document.createElement('input');

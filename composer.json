@@ -67,7 +67,8 @@
         "test:automation": "php tests/automation_smoke.php",
         "test:jellyfin": "php tests/jellyfin_smoke.php",
         "test:security": "php tests/session_secrets_smoke.php",
-        "test:ssrf": "php tests/ssrf_smoke.php"
+        "test:ssrf": "php tests/ssrf_smoke.php",
+        "test:csrf": "php tests/csrf_smoke.php"
     },
     "conflict": {
         "symfony/symfony": "*"

@@ -896,11 +896,16 @@ python3 -m py_compile cli/*.py
 ## 16. Pièges, dette technique et points de vigilance
 
 ### Sécurité
-- **Pas de protection CSRF** (`framework.yaml` : `csrf_protection` commenté).
-- **Identifiants admin en clair** dans `var/storage/config.json`, mot de passe
-  par défaut `admin/admin`.
-- **Routes de polling non authentifiées** (`queue_status`, `progress`,
-  `notifications_poll`, `queue_active_log`).
+- **CSRF global** : `CsrfSubscriber` protège tous les POST/PUT/PATCH/DELETE
+  hors `/jellyfin`, avec le token de session `automation_csrf_token`
+  (`_token`, `csrf`, `X-CSRF-Token`). Les formulaires et fetch AJAX injectent
+  le token ; Jellyfin reste exempté car il utilise son propre token.
+- **Identifiants admin/Jellyfin** : hashés via `PasswordService` à la première
+  authentification réussie ; un ancien mot de passe en clair peut subsister
+  jusqu'à cette première connexion.
+- **Polling authentifié** : `queue_status`, `progress`, `notifications_poll`,
+  `queue_active_log` exigent une session ; `notifications_poll` est read-only
+  et l'acquittement passe par `notifications_ack` en POST/CSRF.
 - **Routes de debug** (`/debug-storage`, `/debug-api`, `/debug-grouping`) et
   **`public/info.php`** exposent des informations sensibles : à supprimer ou
   protéger en production.
@@ -1486,8 +1491,9 @@ pendant le polling.
   négatif 1 jour, `lists.include_unaired` désactivé. Le dry-run est le seul
   mode disponible dans ce lot.
 - Notifications : in-app uniquement pour la v1.
-- CSRF local sur les formulaires automation (`_token` / `X-Automation-Csrf`),
-  validation des racines sous `/nas`, `/mnt`, `/media` ou `/storage`.
+- CSRF global sur les routes state-changing hors Jellyfin (`_token` /
+  `X-CSRF-Token`), validation des racines sous `/nas`, `/mnt`, `/media` ou
+  `/storage`.
 - Verrous : `automation_scan.lock` et `automation_worker.lock` distinguent
   verrou détenu et erreur d'ouverture ; le heartbeat est maintenu pendant
   les scans longs et les runs stale sont marqués en erreur au démarrage du
@@ -1514,6 +1520,9 @@ pendant le polling.
 - `composer test:ssrf` ou `php tests/ssrf_smoke.php` : URLs privées/réservées,
   résolution DNS simulée, politique de redirection et filtrage des streams
   directs d'addons, sans réseau.
+- `composer test:csrf` ou `php tests/csrf_smoke.php` : portée du rejet CSRF,
+  formulaires/JSON/multipart, exemption Jellyfin et inventaire des routes
+  state-changing.
 - Les tests de stockage nécessitent `pdo_sqlite` ; utiliser l'image Docker si
   le PHP local ne l'a pas.
 
