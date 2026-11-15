@@ -1,0 +1,1109 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Connected Lists - Downloader{% endblock %}
+
+{% block body %}
+<style>
+    .lists-stats {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .lists-stat {
+        padding: 1.05rem 1.1rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 14px;
+        background: rgba(30, 41, 59, .72);
+    }
+    .lists-stat-label {
+        color: var(--text-secondary);
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+    }
+    .lists-stat-value {
+        margin-top: .5rem;
+        font-size: 1.5rem;
+        font-weight: 800;
+        letter-spacing: -.04em;
+    }
+    .lists-stat-meta {
+        margin-top: .3rem;
+        color: var(--text-secondary);
+        font-size: .73rem;
+    }
+    .lists-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    .lists-card-title { margin: 0; font-size: 1rem; letter-spacing: -.02em; }
+    .lists-card-subtitle {
+        margin: .35rem 0 0;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        line-height: 1.5;
+    }
+    .lists-kv { display: grid; gap: .5rem; margin-top: .85rem; }
+    .lists-kv-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding-bottom: .45rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .08);
+        font-size: .77rem;
+    }
+    .lists-kv-row:last-child { padding-bottom: 0; border-bottom: 0; }
+    .lists-kv-row span { color: var(--text-secondary); }
+    .lists-kv-row strong { text-align: right; }
+    .lists-source-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .8rem;
+        margin-bottom: .8rem;
+    }
+    .lists-source-title {
+        display: flex;
+        align-items: center;
+        gap: .7rem;
+        min-width: 0;
+    }
+    .lists-source-head-right {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+    .lists-collapse-btn {
+        width: 30px;
+        height: 30px;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 1px solid rgba(148, 163, 184, .24);
+        border-radius: 8px;
+        color: var(--text-secondary);
+        background: rgba(15, 23, 42, .45);
+        cursor: pointer;
+    }
+    .lists-collapse-btn:hover {
+        color: var(--text-primary);
+        border-color: rgba(56, 189, 248, .45);
+    }
+    .lists-collapse-icon { font-size: .7rem; line-height: 1; }
+    .card.is-collapsed .lists-source-body {
+        display: none;
+    }
+    .lists-source-body {
+        margin-top: .2rem;
+    }
+    .lists-source-collapsed-meta {
+        display: none;
+        align-items: center;
+        gap: .35rem;
+        flex-wrap: wrap;
+        margin-top: .45rem;
+    }
+    .card.is-collapsed .lists-source-collapsed-meta {
+        display: flex;
+    }
+    .lists-logo {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, .22);
+        color: var(--accent);
+        background: rgba(56, 189, 248, .1);
+    }
+    .lists-logo svg { width: 23px; height: 23px; }
+    .lists-logo-scrob {
+        color: #22d3ee;
+        border-color: rgba(34, 211, 238, .28);
+        background: rgba(34, 211, 238, .1);
+    }
+    .lists-logo-mdblist {
+        color: #fbbf24;
+        border-color: rgba(251, 191, 36, .28);
+        background: rgba(251, 191, 36, .1);
+    }
+    .lists-connection {
+        display: inline-flex;
+        align-items: center;
+        gap: .38rem;
+        padding: .3rem .6rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, .2);
+        color: var(--text-secondary);
+        background: rgba(148, 163, 184, .08);
+        font-size: .69rem;
+        font-weight: 750;
+        white-space: nowrap;
+    }
+    .lists-connection-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+    .lists-connection.is-online {
+        color: #86efac;
+        border-color: rgba(34, 197, 94, .24);
+        background: rgba(34, 197, 94, .08);
+    }
+    .lists-connection.is-offline {
+        color: #fca5a5;
+        border-color: rgba(239, 68, 68, .24);
+        background: rgba(239, 68, 68, .08);
+    }
+    .lists-connection.is-checking {
+        color: #fcd34d;
+        border-color: rgba(245, 158, 11, .24);
+        background: rgba(245, 158, 11, .08);
+    }
+    .lists-connection.is-checking .lists-connection-dot {
+        animation: lists-pulse 1s ease-in-out infinite;
+    }
+    @keyframes lists-pulse {
+        0%, 100% { opacity: .35; }
+        50% { opacity: 1; }
+    }
+    .lists-field { display: grid; gap: .35rem; margin-top: .7rem; }
+    .lists-field label {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: .75rem;
+        font-weight: 700;
+    }
+    .lists-field input[type="text"],
+    .lists-field input[type="password"] {
+        width: 100%;
+        margin: 0;
+        padding: .68rem .75rem;
+        border: 1px solid rgba(148, 163, 184, .28);
+        border-radius: 9px;
+        color: var(--text-primary);
+        background: rgba(15, 23, 42, .72);
+        font: inherit;
+        font-size: .8rem;
+        box-sizing: border-box;
+    }
+    .lists-field select[multiple] {
+        width: 100%;
+        margin: 0;
+        min-height: 8.6rem;
+        padding: .35rem;
+        border: 1px solid rgba(148, 163, 184, .28);
+        border-radius: 9px;
+        color: var(--text-primary);
+        background: rgba(15, 23, 42, .72);
+        font: inherit;
+        font-size: .8rem;
+        box-sizing: border-box;
+    }
+    .lists-field select[multiple] option {
+        padding: .35rem .45rem;
+        border-radius: 6px;
+    }
+    .lists-field select[multiple] option:checked {
+        color: #e0f2fe;
+        background: rgba(56, 189, 248, .35);
+    }
+    .lists-check {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin-top: .65rem;
+        color: var(--text-secondary);
+        font-size: .78rem;
+    }
+    .lists-hint { color: var(--text-muted, #64748b); font-size: .71rem; line-height: 1.5; }
+    .lists-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .9rem; }
+    .lists-sync-state {
+        border-left: 4px solid var(--accent);
+        background: rgba(56, 189, 248, .07);
+    }
+    .lists-sync-state.is-waiting {
+        border-left-color: var(--warning);
+        background: rgba(245, 158, 11, .08);
+    }
+    .lists-sync-state.is-stale {
+        border-left-color: #ef4444;
+        background: rgba(239, 68, 68, .08);
+    }
+    .lists-sync-inline {
+        display: flex;
+        align-items: flex-start;
+        gap: .75rem;
+    }
+    .lists-sync-spinner {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        margin-top: .16rem;
+        border-radius: 50%;
+        border: 2px solid rgba(56, 189, 248, .25);
+        border-top-color: var(--accent);
+        animation: lists-spin .8s linear infinite;
+    }
+    .lists-sync-state.is-waiting .lists-sync-spinner,
+    .lists-sync-state.is-stale .lists-sync-spinner {
+        border-top-color: var(--warning);
+    }
+    @keyframes lists-spin {
+        to { transform: rotate(360deg); }
+    }
+    .lists-table-wrap {
+        overflow-x: auto;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 12px;
+    }
+    .lists-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .79rem;
+    }
+    .lists-table th {
+        padding: .7rem .8rem;
+        color: var(--text-secondary);
+        font-size: .65rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-align: left;
+        text-transform: uppercase;
+        background: rgba(15, 23, 42, .42);
+        border-bottom: 1px solid rgba(148, 163, 184, .16);
+        white-space: nowrap;
+    }
+    .lists-table td {
+        padding: .72rem .8rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .08);
+        vertical-align: top;
+    }
+    .lists-table tr:last-child td { border-bottom: 0; }
+    .lists-table .right { text-align: right; }
+    .lists-row-title { font-weight: 700; }
+    .lists-row-sub {
+        margin-top: .2rem;
+        color: var(--text-secondary);
+        font-size: .7rem;
+        word-break: break-all;
+    }
+    .lists-empty {
+        padding: 1.2rem;
+        border: 1px dashed rgba(148, 163, 184, .28);
+        border-radius: 12px;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        text-align: center;
+    }
+    .lists-filters {
+        display: flex;
+        align-items: flex-end;
+        gap: .7rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+    .lists-filters .lists-field {
+        margin-top: 0;
+        min-width: 140px;
+    }
+    .lists-filters .lists-field label {
+        min-height: 1em;
+        line-height: 1;
+    }
+    .lists-filters .lists-field input[type="text"],
+    .lists-filters .lists-field select {
+        width: 100%;
+        height: 42px;
+        margin: 0;
+        padding: 0 .75rem;
+        border: 1px solid rgba(148, 163, 184, .28);
+        border-radius: 9px;
+        color: var(--text-primary);
+        background: rgba(15, 23, 42, .72);
+        font: inherit;
+        font-size: .8rem;
+        box-sizing: border-box;
+    }
+    .lists-filter-search {
+        flex: 1 1 260px;
+        min-width: 220px;
+    }
+    .lists-filters .btn {
+        height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+    }
+    .lists-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: .8rem;
+        color: var(--text-secondary);
+        font-size: .76rem;
+    }
+    @media (max-width: 1020px) {
+        .lists-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+        .lists-stats, .lists-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Connected Lists',
+    subtitle: 'Ingest Scrob and MDBList lists, then compare every item with the NAS index. Nothing is downloaded or queued.',
+    icon: 'automation'
+} %}
+    {% block actions %}
+        {% if running %}
+            <span class="badge badge-success">Syncing</span>
+        {% endif %}
+        <button class="btn btn-secondary" type="button" onclick="queueMissingEpisodes()" title="Create pending episode intents from validated missing series. Nothing is resolved or downloaded.">Queue missing episodes</button>
+        <button class="btn btn-primary" type="button" onclick="syncListSource(null)">Dry-run all sources</button>
+    {% endblock %}
+{% endembed %}
+
+{% include 'automation/_nav.html.twig' %}
+
+{% for message in app.flashes('success') %}
+    <div class="alert alert-success">{{ message }}</div>
+{% endfor %}
+{% for message in app.flashes('error') %}
+    <div class="alert alert-error">{{ message }}</div>
+{% endfor %}
+
+{% if lock_error %}
+    <div class="alert alert-error"><strong>List sync lock error:</strong> {{ lock_error }}</div>
+{% endif %}
+
+{% if running or sync_requested %}
+    <div class="alert lists-sync-state {{ running ? '' : 'is-waiting' }}" id="list-sync-state" data-requested-at="{{ requested_at|default(0) }}">
+        <div class="lists-sync-inline">
+            <span class="lists-sync-spinner" aria-hidden="true"></span>
+            <div>
+                <strong id="list-sync-state-title">{{ running ? 'Dry-run in progress' : 'Dry-run requested' }}</strong>
+                <div class="lists-hint" id="list-sync-state-meta">
+                    {% if running and running_run and running_run.items_seen > 0 %}
+                        {{ running_run.items_seen }} item{{ running_run.items_seen == 1 ? '' : 's' }} fetched · {{ running_run.present }} present · {{ running_run.missing }} missing · {{ running_run.ambiguous }} ambiguous
+                    {% elseif running %}
+                        Starting the dry-run…
+                    {% else %}
+                        Waiting for the automation worker…
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
+<section class="lists-stats">
+    <article class="lists-stat">
+        <div class="lists-stat-label">List items</div>
+        <div class="lists-stat-value">{{ counts.all }}</div>
+        <div class="lists-stat-meta">Active items from all sources</div>
+    </article>
+    <article class="lists-stat">
+        <div class="lists-stat-label">Present</div>
+        <div class="lists-stat-value">{{ counts.present }}</div>
+        <div class="lists-stat-meta">Already on the NAS</div>
+    </article>
+    <article class="lists-stat">
+        <div class="lists-stat-label">Missing</div>
+        <div class="lists-stat-value">{{ counts.missing }}</div>
+        <div class="lists-stat-meta">Aired episodes or movies to acquire later</div>
+    </article>
+    <article class="lists-stat">
+        <div class="lists-stat-label">Ambiguous</div>
+        <div class="lists-stat-value">{{ counts.ambiguous }}</div>
+        <div class="lists-stat-meta">Identity or episode list unresolved</div>
+    </article>
+    <article class="lists-stat">
+        <div class="lists-stat-label">Ignored</div>
+        <div class="lists-stat-value">{{ counts.ignored }}</div>
+        <div class="lists-stat-meta">Excluded from automation</div>
+    </article>
+</section>
+
+    <section class="lists-grid">
+        {% for source in sources %}
+            {% set config = source.config|default({}) %}
+            {% set lastRun = source.last_run %}
+            {% set selectedListIds = config.list_ids|default([]) %}
+            {% set selectedListCount = selectedListIds|length %}
+            <article class="card is-collapsed" data-list-source-card="{{ source.provider }}">
+                <div class="lists-source-head">
+                    <div class="lists-source-title">
+                        <span class="lists-logo lists-logo-{{ source.provider }}" aria-hidden="true">
+                            {% if source.provider == 'scrob' %}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"/><path d="m10 8 5 3-5 3V8Z" fill="currentColor" stroke="none"/></svg>
+                            {% else %}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1.2"/><rect x="3" y="10" width="18" height="4" rx="1.2"/><rect x="3" y="16" width="11" height="4" rx="1.2"/></svg>
+                            {% endif %}
+                        </span>
+                        <div>
+                            <h2 class="lists-card-title">{{ source.label }}</h2>
+                            <p class="lists-card-subtitle">{{ source.provider|upper }} source</p>
+                            <div class="lists-source-collapsed-meta">
+                                <span class="badge {{ source.enabled ? 'badge-success' : 'badge-neutral' }}">{{ source.enabled ? 'Active' : 'Disabled' }}</span>
+                                <span class="badge badge-neutral" title="Configured lists">{{ selectedListCount }} list{{ selectedListCount == 1 ? '' : 's' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lists-source-head-right">
+                        <span class="lists-connection {{ source.can_test ? 'is-checking' : '' }}" data-list-provider="{{ source.provider }}" data-list-check="{{ source.can_test ? '1' : '0' }}" aria-live="polite" title="{{ source.can_test ? 'Checking connection…' : 'Add the credentials to test the connection.' }}">
+                            <span class="lists-connection-dot"></span>
+                            <span class="lists-connection-text">{{ source.can_test ? 'Checking…' : 'Not configured' }}</span>
+                        </span>
+                        <button class="lists-collapse-btn" type="button" data-list-collapse="{{ source.provider }}" aria-expanded="false" aria-controls="source-body-{{ source.id }}" title="Expand source">
+                            <span class="lists-collapse-icon">▼</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="lists-source-body" id="source-body-{{ source.id }}" data-list-source-body hidden>
+                <form method="post" action="{{ path('automation_lists_settings') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token }}">
+                <div class="lists-field">
+                    <label for="source-label-{{ source.id }}">Display name</label>
+                    <input id="source-label-{{ source.id }}" type="text" name="sources[{{ source.provider }}][label]" value="{{ source.label }}">
+                </div>
+
+                {% if source.provider == 'scrob' %}
+                    <div class="lists-field">
+                        <label for="source-url-{{ source.id }}">Scrob base URL</label>
+                        <input id="source-url-{{ source.id }}" type="text" name="sources[{{ source.provider }}][config][base_url]" value="{{ config.base_url|default('') }}" placeholder="http://scrob:7330">
+                    </div>
+                    <div class="lists-field">
+                        <label for="source-prefix-{{ source.id }}">API prefix</label>
+                        <input id="source-prefix-{{ source.id }}" type="text" name="sources[{{ source.provider }}][config][api_prefix]" value="{{ config.api_prefix|default('/api/proxy') }}">
+                        <div class="lists-hint">Use <span class="mono">/api/proxy</span> for the standard Scrob app, or leave empty when pointing directly at the backend.</div>
+                    </div>
+                {% endif %}
+
+                <div class="lists-field">
+                    <label for="source-key-{{ source.id }}">API key</label>
+                    <input id="source-key-{{ source.id }}" type="password" name="sources[{{ source.provider }}][config][api_key]" value="" autocomplete="new-password" placeholder="{{ config.api_key is not empty ? 'Saved — leave blank to keep' : 'API key' }}">
+                </div>
+
+                <div class="lists-field">
+                    <label for="source-lists-{{ source.id }}">Lists</label>
+                    <select id="source-lists-{{ source.id }}" name="sources[{{ source.provider }}][config][list_ids][]" multiple size="6" data-list-select="{{ source.provider }}">
+                        {% for ref, label in source.list_options|default({}) %}
+                            <option value="{{ ref }}" {{ ref in selectedListIds ? 'selected' : '' }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="lists-hint">Select one or more lists. The connection indicator refreshes the available lists automatically.</div>
+                </div>
+
+                <label class="lists-check">
+                    <input type="checkbox" name="sources[{{ source.provider }}][enabled]" value="1" {{ source.enabled ? 'checked' : '' }}>
+                    Enable this source
+                </label>
+
+                <label class="lists-check">
+                    <input type="checkbox" name="sources[{{ source.provider }}][config][auto_download]" value="1" {{ config.auto_download|default(false) ? 'checked' : '' }}>
+                    Auto download missing movies from the selected lists
+                </label>
+                {% if config.auto_download|default(false) and not source.dry_run_validated|default(false) %}
+                    <div class="lists-hint">Auto download is on, but this source has no validated dry-run yet. Intents are skipped until a dry-run succeeds.</div>
+                {% endif %}
+
+                <label class="lists-check">
+                    <input type="checkbox" name="sources[{{ source.provider }}][config][auto_download_series]" value="1" {{ config.auto_download_series|default(false) ? 'checked' : '' }}>
+                    Auto download series episodes from the selected lists
+                </label>
+                {% if config.auto_download_series|default(false) and not source.dry_run_validated|default(false) %}
+                    <div class="lists-hint">Episode auto download is on, but this source has no validated dry-run yet. Episode intents are skipped until a dry-run succeeds.</div>
+                {% endif %}
+
+                <div class="lists-kv">
+                    <div class="lists-kv-row"><span>Last dry-run</span><strong>{{ lastRun ? (lastRun.finished_at ?: lastRun.started_at) : 'Never' }}</strong></div>
+                    <div class="lists-kv-row"><span>Last result</span><strong>{{ lastRun ? lastRun.status : '—' }}</strong></div>
+                    <div class="lists-kv-row"><span>Items</span><strong>{{ source.counts.all }} · {{ source.counts.present }} present · {{ source.counts.missing }} missing</strong></div>
+                    <div class="lists-kv-row"><span>Episodes</span><strong>{{ source.episode_counts.present|default(0) }} present · {{ source.episode_counts.missing|default(0) }} missing</strong></div>
+                </div>
+
+                <div class="lists-actions">
+                    <button class="btn btn-primary btn-sm" type="submit">Save this source</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="syncListSource('{{ source.id|e('js') }}')" {{ not source.enabled or not source.configured ? 'disabled' : '' }}>Dry-run this source</button>
+                    <button class="btn btn-ghost btn-sm" type="button" onclick="queueMissingEpisodes()" title="Create pending episode intents only. Nothing is resolved or downloaded.">Queue missing episodes</button>
+                </div>
+                </form>
+                </div>
+            </article>
+        {% endfor %}
+    </section>
+
+{% if recent_runs is not empty %}
+<section class="card" style="margin-bottom:1rem;">
+    <h2 class="lists-card-title">Recent dry-runs</h2>
+    <p class="lists-card-subtitle">Ingestion and matching history. No download intent is created by these runs.</p>
+    <div class="lists-table-wrap" style="margin-top:.9rem;">
+        <table class="lists-table">
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Items</th>
+                    <th>Present</th>
+                    <th>Missing</th>
+                    <th>Ambiguous</th>
+                    <th>Ignored</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in recent_runs %}
+                    <tr>
+                        <td>{{ run.started_at }}</td>
+                        <td>{{ source_labels[run.source_id]|default(run.source_id) }} <span class="lists-hint">({{ run.provider }})</span></td>
+                        <td><span class="badge {{ run.status == 'success' ? 'badge-success' : (run.status == 'error' ? 'badge-danger' : 'badge-warning') }}">{{ run.status }}</span></td>
+                        <td>{{ run.items_seen }}</td>
+                        <td>{{ run.present }}</td>
+                        <td>{{ run.missing }}</td>
+                        <td>{{ run.ambiguous }}</td>
+                        <td>{{ run.ignored }}</td>
+                        <td>{{ run.duration is not null ? run.duration ~ 's' : '—' }}</td>
+                    </tr>
+                    {% if run.error %}
+                        <tr>
+                            <td colspan="9" class="lists-hint">{{ run.error }}</td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<section class="card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div>
+            <h2 class="lists-card-title">Dry-run results</h2>
+            <p class="lists-card-subtitle">Present means the item is already on the NAS. Missing means aired episodes or the movie are not indexed. Ambiguous items are parked for review.</p>
+        </div>
+        <span class="badge badge-neutral">{{ total }} item{{ total == 1 ? '' : 's' }}</span>
+    </div>
+
+    <form method="get" action="{{ path('automation_lists') }}" class="lists-filters" style="margin-top:1rem;">
+        <div class="lists-field">
+            <label for="list-filter-status">Status</label>
+            <select id="list-filter-status" name="status">
+                {% for value in ['all', 'present', 'missing', 'ambiguous', 'ignored', 'pending'] %}
+                    <option value="{{ value }}" {{ filters.status == value ? 'selected' : '' }}>{{ value|capitalize }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="lists-field">
+            <label for="list-filter-source">Source</label>
+            <select id="list-filter-source" name="source">
+                <option value="">All sources</option>
+                {% for source in sources %}
+                    <option value="{{ source.id }}" {{ filters.source == source.id ? 'selected' : '' }}>{{ source.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="lists-field">
+            <label for="list-filter-type">Type</label>
+            <select id="list-filter-type" name="type">
+                {% for value in ['all', 'movie', 'series'] %}
+                    <option value="{{ value }}" {{ filters.type == value ? 'selected' : '' }}>{{ value|capitalize }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="lists-field lists-filter-search">
+            <label for="list-filter-q">Search</label>
+            <input id="list-filter-q" type="text" name="q" value="{{ filters.q }}" placeholder="Title, TMDB or IMDb ID">
+        </div>
+        <button class="btn btn-secondary" type="submit">Filter</button>
+        <a class="btn btn-ghost" href="{{ path('automation_lists') }}">Reset</a>
+    </form>
+
+    {% if items is empty %}
+        <div class="lists-empty">No list item matches these filters. Configure a source and run a dry-run.</div>
+    {% else %}
+        <div class="lists-table-wrap">
+            <table class="lists-table">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Source</th>
+                        <th>Type</th>
+                        <th>Identity</th>
+                        <th>Status</th>
+                        <th>Episodes</th>
+                        <th>Numbering</th>
+                        <th class="right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                        {% set statusBadge = item.match_status == 'present' ? 'badge-success' : (item.match_status == 'missing' ? 'badge-danger' : (item.match_status == 'ambiguous' ? 'badge-warning' : 'badge-neutral')) %}
+                        {% set missingEpisodes = item.missing_episodes|default([]) %}
+                        <tr>
+                            <td>
+                                <div class="lists-row-title">{{ item.title }}{% if item.year %} ({{ item.year }}){% endif %}</div>
+                                <div class="lists-row-sub">
+                                    {% if item.season is not null %}S{{ '%02d'|format(item.season) }}{% if item.episode is not null %}E{{ '%02d'|format(item.episode) }}{% endif %} · {% endif %}
+                                    {{ item.match_reason|default('—')|replace({'_': ' '}) }}
+                                </div>
+                            </td>
+                            <td>{{ source_labels[item.source_id]|default(item.source_id) }}<div class="lists-row-sub">{{ item.list_ref }}</div></td>
+                            <td>{{ item.media_type|capitalize }}</td>
+                            <td>
+                                {% if item.tmdb_id %}<span class="badge badge-success">TMDB {{ item.tmdb_id }}</span>{% endif %}
+                                {% if item.imdb_id %}<div class="lists-row-sub">{{ item.imdb_id }}</div>{% endif %}
+                                {% if not item.tmdb_id and not item.imdb_id %}<span class="badge badge-warning">No external ID</span>{% endif %}
+                                {% if item.matched_folder %}<div class="lists-row-sub">{{ item.matched_folder }}</div>{% endif %}
+                            </td>
+                            <td>
+                                <span class="badge {{ statusBadge }}">{{ item.match_status|capitalize }}</span>
+                                {% if missingEpisodes is not empty %}
+                                    <div class="lists-row-sub">Missing: {{ missingEpisodes|slice(0, 6)|join(', ') }}{% if missingEpisodes|length > 6 %}…{% endif %}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.media_type == 'series' %}
+                                    {{ item.episodes_present }} / {{ item.episodes_total }}
+                                    {% if item.episodes_missing > 0 %}<div class="lists-row-sub">{{ item.episodes_missing }} missing</div>{% endif %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.media_type == 'series' %}
+                                    {% set numbering = item.numbering|default(null) %}
+                                    {% if numbering %}
+                                        {% set numberingOk = numbering.status|default('ambiguous') == 'ok' %}
+                                        {% set numberingUsable = numberingOk and (numbering.source|default('') == 'manual' or numbering.confidence|default(0) >= 0.75) %}
+                                        <span class="badge {{ numberingUsable ? 'badge-success' : 'badge-warning' }}">{{ numberingUsable ? 'Mapped' : (numberingOk ? 'Review' : 'Ambiguous') }}</span>
+                                        <div class="lists-row-sub">{{ numbering.source|default('auto') }}{% if numbering.source_ref %} · {{ numbering.source_ref }}{% endif %}{% if numbering.confidence is defined %} · {{ (numbering.confidence * 100)|round }}%{% endif %}</div>
+                                        {% if numbering.segments|default([]) is not empty %}
+                                            <div class="lists-row-sub">
+                                                {% for segment in numbering.segments %}{% if not loop.first %} · {% endif %}S{{ segment.season }} {{ segment.episodes }}{% endfor %}
+                                            </div>
+                                        {% elseif numbering.reason|default('') is not empty %}
+                                            <div class="lists-row-sub">{{ numbering.reason|replace({'_': ' '}) }}</div>
+                                        {% endif %}
+                                        {% if numberingUsable %}
+                                            <label class="lists-row-sub">Jellyfin
+                                                <select data-list-numbering-mode="{{ item.id }}">
+                                                    <option value="local" {{ numbering.jellyfin_mode|default('local') == 'local' ? 'selected' : '' }}>Local</option>
+                                                    <option value="tmdb" {{ numbering.jellyfin_mode|default('local') == 'tmdb' ? 'selected' : '' }}>TMDB</option>
+                                                </select>
+                                            </label>
+                                        {% elseif numberingOk and numbering.mapping|default([]) is not empty %}
+                                            <button class="btn btn-secondary btn-sm" type="button" data-list-numbering-confirm="{{ item.id }}">Confirm mapping</button>
+                                        {% endif %}
+                                        <button class="btn btn-ghost btn-sm" type="button" data-list-numbering="{{ item.id }}">Re-detect</button>
+                                    {% else %}
+                                        <button class="btn btn-secondary btn-sm" type="button" data-list-numbering="{{ item.id }}">Detect numbering</button>
+                                    {% endif %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td class="right">
+                                {% set ignored = item.ignored_at is not empty %}
+                                <button class="btn btn-ghost btn-sm" type="button" data-list-ignore="{{ item.id }}" data-list-ignored="{{ ignored ? '1' : '0' }}">{{ ignored ? 'Restore' : 'Ignore' }}</button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="lists-pagination">
+            <span>Showing {{ offset + 1 }}–{{ min(offset + per_page, total) }} of {{ total }}</span>
+            <span>
+                {% if page > 1 %}
+                    <a class="btn btn-secondary btn-sm" href="{{ path('automation_lists', filters|merge({page: page - 1})) }}">Previous</a>
+                {% endif %}
+                {% if page < pages %}
+                    <a class="btn btn-secondary btn-sm" href="{{ path('automation_lists', filters|merge({page: page + 1})) }}">Next</a>
+                {% endif %}
+            </span>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block javascripts %}
+<script>
+    const listSyncRoute = "{{ path('automation_lists_sync') }}";
+    const listQueueEpisodesRoute = "{{ path('automation_lists_queue_episodes') }}";
+    const listNumberingRoute = "{{ path('automation_lists_numbering') }}";
+    const listStatusRoute = "{{ path('automation_lists_status') }}";
+    const listIgnoreRoute = "{{ path('automation_lists_ignore') }}";
+    const listTestRoute = "{{ path('automation_lists_test') }}";
+    const listCsrfToken = "{{ csrf_token|e('js') }}";
+    let listSyncRequestedAt = 0;
+    const listConnectionTimers = {};
+    const listCollapsePrefix = 'automation-list-collapsed-';
+
+    function setListSourceCollapsed(provider, collapsed, persist = true) {
+        const card = document.querySelector('[data-list-source-card="' + provider + '"]');
+        if (!card) return;
+        card.classList.toggle('is-collapsed', collapsed);
+        const button = card.querySelector('[data-list-collapse]');
+        if (button) {
+            button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            button.title = collapsed ? 'Expand source' : 'Collapse source';
+            const icon = button.querySelector('.lists-collapse-icon');
+            if (icon) icon.textContent = collapsed ? '▼' : '▲';
+        }
+        const body = card.querySelector('[data-list-source-body]');
+        if (body) body.hidden = collapsed;
+        if (persist) {
+            try {
+                localStorage.setItem(listCollapsePrefix + provider, collapsed ? '1' : '0');
+            } catch (error) {
+                // Ignore unavailable storage.
+            }
+        }
+    }
+
+    function listSourceConfig(provider) {
+        const read = key => {
+            const input = document.querySelector('[name="sources[' + provider + '][config][' + key + ']"]');
+            return input ? input.value : '';
+        };
+        const config = { api_key: read('api_key') };
+        if (provider === 'scrob') {
+            config.base_url = read('base_url');
+            config.api_prefix = read('api_prefix');
+        }
+        return config;
+    }
+
+    function setListConnectionStatus(provider, state, label, title) {
+        const element = document.querySelector('[data-list-provider="' + provider + '"]');
+        if (!element) return;
+        element.classList.remove('is-online', 'is-offline', 'is-checking');
+        if (state) element.classList.add('is-' + state);
+        const text = element.querySelector('.lists-connection-text');
+        if (text) text.textContent = label;
+        element.title = title || label;
+    }
+
+    function populateListOptions(provider, lists) {
+        const select = document.querySelector('[data-list-select="' + provider + '"]');
+        if (!select) return;
+
+        const selected = new Set(Array.from(select.selectedOptions).map(option => option.value));
+        const options = new Map();
+        Array.from(select.options).forEach(option => options.set(option.value, option.textContent));
+        (lists || []).forEach(list => {
+            const ref = String(list.ref || '');
+            if (!ref) return;
+            const count = Number(list.count || 0);
+            options.set(ref, String(list.name || ref) + (count > 0 ? ' (' + count + ')' : ''));
+        });
+
+        const entries = Array.from(options.entries()).sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
+        select.innerHTML = '';
+        entries.forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            option.selected = selected.has(value);
+            select.appendChild(option);
+        });
+    }
+
+    async function checkListConnection(provider) {
+        setListConnectionStatus(provider, 'checking', 'Checking…', 'Checking connection…');
+        try {
+            const response = await fetch(listTestRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: listCsrfToken, provider, config: listSourceConfig(provider) })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Connection failed.');
+            }
+            setListConnectionStatus(provider, 'online', 'Connected', data.message || 'Connection OK.');
+            populateListOptions(provider, data.lists || []);
+        } catch (error) {
+            setListConnectionStatus(provider, 'offline', 'Connection error', error.message);
+        }
+    }
+
+    function queueListConnectionCheck(provider) {
+        if (listConnectionTimers[provider]) {
+            clearTimeout(listConnectionTimers[provider]);
+        }
+        listConnectionTimers[provider] = setTimeout(() => checkListConnection(provider), 450);
+    }
+
+    async function syncListSource(sourceId) {
+        try {
+            const response = await fetch(listSyncRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: listCsrfToken, ...(sourceId ? { source: sourceId } : {}) })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not start the list dry-run.');
+            }
+            if (window.notify) {
+                window.notify('success', data.message || 'List dry-run requested.');
+            }
+            listSyncRequestedAt = Date.now();
+            setTimeout(pollListStatus, 1500);
+        } catch (error) {
+            if (window.notify) {
+                window.notify('error', error.message);
+            }
+        }
+    }
+
+    async function queueMissingEpisodes() {
+        try {
+            const response = await fetch(listQueueEpisodesRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: listCsrfToken })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not queue missing episodes.');
+            }
+            if (window.notify) {
+                window.notify('success', data.message || 'Missing episodes queued.');
+            }
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) {
+                window.notify('error', error.message);
+            }
+        }
+    }
+
+    async function listNumberingAction(id, payload) {
+        const response = await fetch(listNumberingRoute, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csrf: listCsrfToken, id, ...payload })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Numbering action failed.');
+        }
+
+        return data;
+    }
+
+    async function detectListNumbering(id, button) {
+        if (button) button.disabled = true;
+        try {
+            const data = await listNumberingAction(id, { action: 'detect' });
+            if (window.notify) {
+                window.notify((data.profile && data.profile.status === 'ok') ? 'success' : 'warning', data.message || 'Numbering detected.');
+            }
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function confirmListNumbering(id, button) {
+        if (button) button.disabled = true;
+        try {
+            const data = await listNumberingAction(id, { action: 'confirm' });
+            if (window.notify) window.notify('success', data.message || 'Numbering mapping confirmed.');
+            setTimeout(() => window.location.reload(), 700);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function setListNumberingMode(id, mode) {
+        try {
+            const data = await listNumberingAction(id, { action: 'modes', jellyfin_mode: mode });
+            if (window.notify) window.notify('success', 'Jellyfin numbering mode updated.');
+            setTimeout(() => window.location.reload(), 500);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    function formatListWait(seconds) {
+        if (seconds < 60) return seconds + 's';
+        const minutes = Math.floor(seconds / 60);
+        const remainder = seconds % 60;
+        return minutes + 'm' + (remainder ? ' ' + remainder + 's' : '');
+    }
+
+    function updateListSyncState(data) {
+        const panel = document.getElementById('list-sync-state');
+        if (!panel) return;
+
+        const running = !!data.running;
+        const requested = !!data.sync_requested;
+        if (!running && !requested) {
+            panel.hidden = true;
+            return;
+        }
+
+        panel.hidden = false;
+        panel.classList.remove('is-waiting', 'is-stale');
+        const title = document.getElementById('list-sync-state-title');
+        const meta = document.getElementById('list-sync-state-meta');
+
+        if (running) {
+            const run = data.list_run || {};
+            const fetched = Number(run.items_seen || 0);
+            const matched = Number(run.present || 0) + Number(run.missing || 0) + Number(run.ambiguous || 0) + Number(run.ignored || 0);
+            if (title) title.textContent = 'Dry-run in progress';
+            if (meta) {
+                meta.textContent = fetched > 0
+                    ? matched + ' / ' + fetched + ' matched · ' + Number(run.present || 0) + ' present · ' + Number(run.missing || 0) + ' missing · ' + Number(run.ambiguous || 0) + ' ambiguous'
+                    : 'Fetching lists from the providers…';
+            }
+            return;
+        }
+
+        const requestedAt = Number(data.list_sync_requested_at || panel.dataset.requestedAt || 0);
+        const waited = requestedAt > 0 ? Math.max(0, Math.round(Date.now() / 1000 - requestedAt)) : 0;
+        if (waited >= 60) {
+            panel.classList.add('is-stale');
+            if (title) title.textContent = 'Dry-run not started';
+            if (meta) meta.textContent = 'Requested ' + formatListWait(waited) + ' ago. The automation worker may be offline — check Activity, then retry.';
+        } else {
+            panel.classList.add('is-waiting');
+            if (title) title.textContent = 'Dry-run requested';
+            if (meta) meta.textContent = 'Waiting for the automation worker…' + (waited > 0 ? ' (' + formatListWait(waited) + ')' : '');
+        }
+    }
+
+    async function pollListStatus() {
+        try {
+            const response = await fetch(listStatusRoute);
+            const data = await response.json();
+            if (data.lock_error) {
+                if (window.notify) {
+                    window.notify('error', data.lock_error);
+                }
+                return;
+            }
+            updateListSyncState(data);
+            if (data.running || data.sync_requested) {
+                setTimeout(pollListStatus, 1500);
+                return;
+            }
+            if (listSyncRequestedAt) {
+                window.location.reload();
+            }
+        } catch (error) {
+            setTimeout(pollListStatus, 5000);
+        }
+    }
+
+    document.addEventListener('click', async function (event) {
+        const button = event.target.closest('[data-list-ignore]');
+        if (!button) return;
+        const ignored = button.getAttribute('data-list-ignored') === '1';
+        button.disabled = true;
+        try {
+            const response = await fetch(listIgnoreRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    csrf: listCsrfToken,
+                    id: Number(button.getAttribute('data-list-ignore')),
+                    ignored: !ignored
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not update this item.');
+            }
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            button.disabled = false;
+        }
+    });
+
+    document.addEventListener('click', async function (event) {
+        const confirmButton = event.target.closest('[data-list-numbering-confirm]');
+        if (confirmButton) {
+            await confirmListNumbering(Number(confirmButton.getAttribute('data-list-numbering-confirm')), confirmButton);
+            return;
+        }
+
+        const numberingButton = event.target.closest('[data-list-numbering]');
+        if (!numberingButton) return;
+        await detectListNumbering(Number(numberingButton.getAttribute('data-list-numbering')), numberingButton);
+    });
+
+    document.addEventListener('change', async function (event) {
+        const modeSelect = event.target.closest('[data-list-numbering-mode]');
+        if (!modeSelect) return;
+        modeSelect.disabled = true;
+        await setListNumberingMode(Number(modeSelect.getAttribute('data-list-numbering-mode')), modeSelect.value);
+    });
+
+    document.querySelectorAll('[data-list-source-card]').forEach(card => {
+        const provider = card.getAttribute('data-list-source-card');
+        if (!provider) return;
+        let collapsed = true;
+        try {
+            const stored = localStorage.getItem(listCollapsePrefix + provider);
+            collapsed = stored === null ? true : stored === '1';
+        } catch (error) {
+            collapsed = true;
+        }
+        setListSourceCollapsed(provider, collapsed, false);
+    });
+
+    document.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-list-collapse]');
+        if (!button) return;
+        const card = button.closest('[data-list-source-card]');
+        if (!card) return;
+        const provider = card.getAttribute('data-list-source-card');
+        if (!provider) return;
+        setListSourceCollapsed(provider, !card.classList.contains('is-collapsed'));
+    });
+
+    document.querySelectorAll('[data-list-provider]').forEach(element => {
+        const provider = element.getAttribute('data-list-provider');
+        if (!provider) return;
+        const shouldCheck = element.getAttribute('data-list-check') === '1';
+        if (shouldCheck) {
+            setTimeout(() => checkListConnection(provider), 150);
+        }
+
+        const card = element.closest('.card');
+        if (!card) return;
+        card.querySelectorAll('input[name*="[config]"]').forEach(input => {
+            input.addEventListener('change', () => queueListConnectionCheck(provider));
+        });
+    });
+
+    {% if running or sync_requested %}
+    setTimeout(pollListStatus, 1500);
+    {% endif %}
+</script>
+{% endblock %}

@@ -35,6 +35,11 @@ class SessionIdleSubscriber implements EventSubscriberInterface
         'media_collections_clear',
         'media_resolve_item',
         'automation_status',
+        'automation_lists_status',
+        'automation_downloads_status',
+        'automation_downloads_dry_run_status',
+        'automation_library_title_refresh_status',
+        'automation_lists_test',
         'check_files',
         'debug_storage',
         'debug_api',
@@ -50,7 +55,7 @@ class SessionIdleSubscriber implements EventSubscriberInterface
         $request = $event->getRequest();
         $route = $request->attributes->get('_route');
 
-        if (in_array($route, self::READ_ONLY_ROUTES, true)) {
+        if (in_array($route, self::READ_ONLY_ROUTES, true) || str_starts_with((string) $route, 'jellyfin_')) {
             if ($request->hasSession() && $request->getSession()->isStarted()) {
                 $request->getSession()->save(); // Writes and closes the session lock
             }
@@ -60,7 +65,7 @@ class SessionIdleSubscriber implements EventSubscriberInterface
     public static function getSubscribedEvents(): array
     {
         return [
-            KernelEvents::CONTROLLER => 'onKernelController',
+            KernelEvents::CONTROLLER => ['onKernelController', 0],
         ];
     }
 }

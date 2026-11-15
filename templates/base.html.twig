@@ -48,6 +48,16 @@
             transition: padding 0.2s;
         }
 
+        .page-content {
+            padding-bottom: 8rem;
+        }
+
+        @media (max-width: 768px) {
+            .page-content {
+                padding-bottom: 10rem;
+            }
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
@@ -549,6 +559,24 @@
             margin-left: 0.25rem;
         }
 
+        .tracker-activity-dot {
+            width: 8px;
+            height: 8px;
+            flex: 0 0 auto;
+            border-radius: 50%;
+            background: var(--success, #22c55e);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, .55);
+            animation: tracker-activity-pulse 1.4s ease-out infinite;
+        }
+        .tracker-activity-dot[hidden] {
+            display: none;
+        }
+        @keyframes tracker-activity-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); opacity: 1; }
+            70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); opacity: .55; }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); opacity: 1; }
+        }
+
         #tracker-toggle-btn {
             font-size: 0.7rem;
             color: var(--text-secondary);
@@ -623,6 +651,17 @@
             animation: pulse-bg 2s infinite linear;
         }
 
+        .item-progress .bar.indeterminate {
+            width: 32% !important;
+            background: linear-gradient(90deg, var(--accent), #818cf8);
+            animation: tracker-indeterminate 1.2s ease-in-out infinite;
+        }
+
+        @keyframes tracker-indeterminate {
+            0% { transform: translateX(-110%); }
+            100% { transform: translateX(320%); }
+        }
+
         @keyframes pulse-bg {
             0% { background-position: 100% 0; }
             100% { background-position: -100% 0; }
@@ -682,14 +721,17 @@
                     <a href="{{ path('music_files') }}" class="{{ current_route == 'music_files' ? 'active' : '' }}">Music Downloads</a>
                     <a href="{{ path('torrent') }}" class="{{ current_route == 'torrent' ? 'active' : '' }}">Debrid</a>
                     <a href="{{ path('media_index') }}" class="{{ current_route == 'media_index' ? 'active' : '' }}">Discover</a>
-                    <a href="{{ path('automation') }}" class="{{ current_route in ['automation', 'automation_settings'] ? 'active' : '' }}">Automations</a>
-                    <a href="{{ path('queue') }}" class="{{ current_route == 'queue' ? 'active' : '' }}">Queue</a>
+                    <a href="{{ path('automation') }}" class="{{ current_route starts with 'automation' ? 'active' : '' }}">Media Library</a>
+                    <a href="{{ path('queue') }}" class="{{ current_route == 'queue' ? 'active' : '' }}">Queue<span id="queue-nav-dot" class="nav-activity-dot" hidden aria-hidden="true"></span></a>
                     <a href="{{ path('history') }}" class="{{ current_route == 'history' ? 'active' : '' }}">History</a>
                     <a href="{{ path('config') }}" class="{{ current_route == 'config' ? 'active' : '' }}">Settings</a>
                 {% else %}
                     <a href="{{ path('config') }}" class="{{ current_route == 'config' ? 'active' : '' }}">Setup</a>
                 {% endif %}
-                <a href="{{ path('logout') }}" class="logout-link">Logout</a>
+                <form method="post" action="{{ path('logout') }}" class="logout-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token }}">
+                    <button type="submit" class="logout-link">Logout</button>
+                </form>
             </div>
             {% endif %}
         </div>
@@ -711,7 +753,7 @@
     </div>
     {% endif %}
 
-    <div class="container">
+    <div class="container page-content">
         <div class="toast-container" id="toast-container"></div>
         {% for message in app.flashes('success') %}
             <div class="alert alert-success">
@@ -740,14 +782,15 @@
     <!-- Global Download Tracker -->
     {% if (hide_tracker is not defined or not hide_tracker) and (app.session and app.session.get('authenticated')) %}
     <div id="download-tracker" class="tracker-container collapsed">
-        <div class="tracker-header">
-            <div class="tracker-title" onclick="toggleTracker()">
+        <div class="tracker-header" onclick="toggleTracker()">
+            <div class="tracker-title">
                 <span class="tracker-icon">🚀</span>
                 <strong>Downloads</strong>
+                <span id="tracker-activity-dot" class="tracker-activity-dot" hidden aria-hidden="true"></span>
                 <span id="tracker-summary" class="tracker-summary">(0 active, 0 queued)</span>
             </div>
             <div class="tracker-controls">
-                <button id="tracker-toggle-btn" class="btn btn-secondary btn-icon" onclick="toggleTracker()">▼</button>
+                <button id="tracker-toggle-btn" class="btn btn-secondary btn-icon" type="button">▼</button>
             </div>
         </div>
         <div class="tracker-content">
@@ -836,9 +879,50 @@
             background: rgba(56, 189, 248, 0.1);
         }
 
-        .nav-links a.logout-link {
+        .nav-links a.logout-link,
+        .nav-links button.logout-link {
             color: #f87171 !important;
             margin-left: 0.5rem;
+        }
+
+        .nav-links .logout-form {
+            display: inline-flex;
+            margin: 0;
+            padding: 0;
+        }
+
+        .nav-links button.logout-link {
+            background: transparent;
+            border: 0;
+            border-radius: 8px;
+            padding: 0.55rem 0.8rem;
+            font: inherit;
+            font-size: 0.88rem;
+            font-weight: 650;
+            cursor: pointer;
+        }
+
+        .nav-links button.logout-link:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .nav-activity-dot {
+            width: 7px;
+            height: 7px;
+            flex: 0 0 auto;
+            display: inline-block;
+            margin-left: .4rem;
+            vertical-align: middle;
+            border-radius: 50%;
+            background: var(--success, #22c55e);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, .55);
+            animation: nav-activity-pulse 1.4s ease-out infinite;
+        }
+        .nav-activity-dot[hidden] { display: none; }
+        @keyframes nav-activity-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); opacity: 1; }
+            70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); opacity: .55; }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); opacity: 1; }
         }
 
         .text-secondary {
@@ -1028,6 +1112,24 @@
             color: var(--text-primary) !important;
         }
 
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-secondary) !important;
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(148, 163, 184, 0.22);
+            color: var(--text-primary) !important;
+        }
+
+        .btn-sm {
+            padding: 0.45rem 0.7rem;
+            font-size: 0.75rem;
+            border-radius: 8px;
+        }
+
         .btn-warning {
             background: linear-gradient(135deg, var(--warning), #fbbf24);
             color: #1f1300;
@@ -1193,23 +1295,44 @@
 
         @media (max-width: 900px) {
             .nav-links {
-                width: 300px;
-                padding-top: 4.5rem;
+                width: min(320px, 86vw);
+                height: 100vh;
+                height: 100dvh;
+                max-height: 100vh;
+                max-height: 100dvh;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                padding: 4.5rem 0 max(1rem, env(safe-area-inset-bottom));
                 align-items: stretch;
+                justify-content: flex-start;
             }
 
             .nav-links a {
                 width: 100%;
-                padding: 1rem 1.25rem;
+                flex: 0 0 auto;
+                padding: .9rem 1.25rem;
                 margin: 0;
                 border-bottom: 1px solid var(--border);
                 border-radius: 0;
                 font-size: 1rem;
                 justify-content: flex-start;
+                gap: .6rem;
             }
 
-            .nav-links a.logout-link {
+            .nav-links a.logout-link,
+            .nav-links button.logout-link {
                 margin-left: 0;
+            }
+
+            .nav-links .logout-form {
+                width: 100%;
+            }
+
+            .nav-links button.logout-link {
+                width: 100%;
+                text-align: left;
+                padding: 0.9rem 1.25rem;
+                font-size: 1rem;
             }
         }
 
@@ -1233,10 +1356,73 @@
         const progressRouteTemplate = "{{ path('progress', {downloadId: '000000'}) }}";
         const queueStatusRoute = "{{ path('queue_status') }}";
         const queueRemoveRouteTemplate = "{{ path('queue_remove', {index: 'IDX'}) }}";
+        const notificationsAckRoute = "{{ path('notifications_ack') }}";
+        const csrfToken = "{{ csrf_token|default('')|e('js') }}";
+        window.csrfToken = csrfToken;
+
+        (function () {
+            const originalFetch = window.fetch.bind(window);
+            function isSameOrigin(value) {
+                try {
+                    const url = new URL(value, window.location.href);
+                    return url.origin === window.location.origin;
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            window.fetch = function (input, init) {
+                const options = init ? { ...init } : {};
+                const requestUrl = input instanceof Request ? input.url : String(input);
+                const method = String(options.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+                if (csrfToken && isSameOrigin(requestUrl) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+                    const headers = new Headers(options.headers || (input instanceof Request ? input.headers : undefined));
+                    if (!headers.has('X-CSRF-Token')) {
+                        headers.set('X-CSRF-Token', csrfToken);
+                    }
+                    options.headers = headers;
+                    if (input instanceof Request) {
+                        input = new Request(input, options);
+                        return originalFetch(input);
+                    }
+                }
+
+                return originalFetch(input, options);
+            };
+
+            document.addEventListener('DOMContentLoaded', () => {
+                document.querySelectorAll('form').forEach(form => {
+                    if ((form.getAttribute('method') || 'get').toLowerCase() !== 'post') {
+                        return;
+                    }
+                    if (form.querySelector('input[name="_token"]')) {
+                        return;
+                    }
+                    const action = form.getAttribute('action') || window.location.href;
+                    if (!isSameOrigin(action)) {
+                        return;
+                    }
+                    const field = document.createElement('input');
+                    field.type = 'hidden';
+                    field.name = '_token';
+                    field.value = csrfToken;
+                    form.appendChild(field);
+                });
+            });
+        })();
 
         // Queue State (UI only)
         let serverQueue = [];
         let serverActiveTask = null;
+
+        function parseHumanSizeBytes(value) {
+            if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+            if (value === null || value === undefined || value === '') return 0;
+            const match = String(value).trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(B|KB|MB|GB|TB)?$/i);
+            if (!match) return 0;
+            const units = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+            return Math.round(parseFloat(match[1]) * (units[(match[2] || 'B').toUpperCase()] || 1));
+        }
 
         function toggleTracker() {
             const el = document.getElementById('download-tracker');
@@ -1249,43 +1435,80 @@
             const activeCount = serverActiveTask ? 1 : 0;
             const queuedCount = serverQueue.length;
             document.getElementById('tracker-summary').innerText = `(${activeCount} active, ${queuedCount} queued)`;
+            const dot = document.getElementById('tracker-activity-dot');
+            if (dot) dot.hidden = activeCount === 0;
+            updateQueueNavDot(activeCount, queuedCount);
+        }
+
+        function updateQueueNavDot(activeCount, queuedCount) {
+            const dot = document.getElementById('queue-nav-dot');
+            if (!dot) return;
+            const busy = activeCount > 0 || queuedCount > 0;
+            dot.hidden = !busy;
+            dot.title = activeCount > 0
+                ? 'Download in progress'
+                : (queuedCount > 0 ? queuedCount + ' queued' : '');
         }
 
         function renderQueue(queue) {
-            serverQueue = queue;
+            serverQueue = Array.isArray(queue) ? queue : [];
             const list = document.getElementById('queued-downloads-list');
-            list.innerHTML = '';
-            
-            if (queue.length === 0) {
-                list.innerHTML = '<div class="empty-msg">Queue is empty</div>';
-            } else {
-                queue.forEach((item, index) => {
-                    const mediaIcons = { 
-                        'music': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
-                        'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓' 
-                    };
-                    const typeIcon = mediaIcons[item.type] || (item.type === 'music' ? '🎵' : '🎥');
-                    const typeLabel = (item.type || 'torrent').toUpperCase();
-                    const notBefore = Number(item.not_before || 0);
-                    const isScheduled = notBefore > Math.floor(Date.now() / 1000);
-                    const scheduleLabel = isScheduled
-                        ? new Date(notBefore * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : '';
-                    const div = document.createElement('div');
-                    div.className = 'queued-item';
-                    div.innerHTML = `
-                        <div class="item-name" title="${item.filename}">
-                            <span class="badge ${item.type === 'music' ? 'badge-music' : 'badge-video'}" style="padding: 0.1rem 0.4rem; font-size: 0.6rem; margin-right: 0.4rem;">
-                                ${typeIcon} ${typeLabel}
-                            </span>
-                            ${item.filename}
-                            ${isScheduled ? `<div style="font-size: 0.65rem; color: var(--warning); margin-top: 0.25rem;">Retry programmé à ${scheduleLabel}</div>` : ''}
-                        </div>
-                        <button class="btn-remove" onclick="removeFromQueue(${index})">×</button>
-                    `;
-                    list.appendChild(div);
-                });
+            if (!list) return;
+            list.replaceChildren();
+
+            if (serverQueue.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-msg';
+                empty.textContent = 'Queue is empty';
+                list.appendChild(empty);
+                updateTrackerSummary();
+                return;
             }
+
+            serverQueue.forEach((item, index) => {
+                const mediaIcons = {
+                    'music': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚',
+                    'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓'
+                };
+                const typeIcon = mediaIcons[item.type] || (item.type === 'music' ? '🎵' : '🎥');
+                const typeLabel = String(item.type || 'torrent').toUpperCase();
+                const notBefore = Number(item.not_before || 0);
+                const isScheduled = notBefore > Math.floor(Date.now() / 1000);
+                const scheduleLabel = isScheduled
+                    ? new Date(notBefore * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : '';
+
+                const div = document.createElement('div');
+                div.className = 'queued-item';
+
+                const name = document.createElement('div');
+                name.className = 'item-name';
+                name.title = String(item.filename || '');
+
+                const badge = document.createElement('span');
+                badge.className = 'badge ' + (item.type === 'music' ? 'badge-music' : 'badge-video');
+                badge.style.cssText = 'padding: 0.1rem 0.4rem; font-size: 0.6rem; margin-right: 0.4rem;';
+                badge.textContent = typeIcon + ' ' + typeLabel;
+                name.appendChild(badge);
+                name.appendChild(document.createTextNode(' ' + String(item.filename || '')));
+
+                if (isScheduled) {
+                    const retry = document.createElement('div');
+                    retry.style.cssText = 'font-size: 0.65rem; color: var(--warning); margin-top: 0.25rem;';
+                    retry.textContent = 'Retry programmé à ' + scheduleLabel;
+                    name.appendChild(retry);
+                }
+
+                const button = document.createElement('button');
+                button.className = 'btn-remove';
+                button.type = 'button';
+                button.textContent = '×';
+                button.addEventListener('click', () => removeFromQueue(index));
+
+                div.appendChild(name);
+                div.appendChild(button);
+                list.appendChild(div);
+            });
             updateTrackerSummary();
         }
 
@@ -1312,143 +1535,274 @@
 
         async function updateActiveTaskUI(active) {
             const list = document.getElementById('active-downloads-list');
+            if (!list) return;
             serverActiveTask = active;
 
             if (!active) {
-                list.innerHTML = '<div class="empty-msg">No active downloads</div>';
+                list.replaceChildren();
+                const empty = document.createElement('div');
+                empty.className = 'empty-msg';
+                empty.textContent = 'No active downloads';
+                list.appendChild(empty);
                 updateTrackerSummary();
                 return;
             }
 
             try {
-                const downloadId = active.download_id || active.downloadId;
-                const res = await fetch(progressRouteTemplate.replace('000000', downloadId));
+                const downloadId = String(active.download_id || active.downloadId || '');
+                const res = await fetch(progressRouteTemplate.replace('000000', encodeURIComponent(downloadId)));
                 const progress = await res.json();
-                
-                const filename = progress.filename || active.filename || active.override_filename || 'Initializing...';
-                const mediaIcons = { 
-                    'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
-                    'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓' 
+
+                const filename = String(progress.filename || active.filename || active.override_filename || 'Initializing...');
+                const mediaIcons = {
+                    'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚',
+                    'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓'
                 };
                 const typeIcon = mediaIcons[active.type] || (active.type === 'music' || active.type === 'audio' ? '🎵' : '🎥');
-                const typeLabel = (active.type || 'torrent').toUpperCase();
+                const typeLabel = String(active.type || 'torrent').toUpperCase();
                 const isMusic = active.type === 'music';
+                const downloaded = Number(progress.downloaded || 0);
+                const total = Number(progress.total || 0) > 0 ? Number(progress.total) : parseHumanSizeBytes(active.size);
+                const percentage = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+                const hasTotal = total > 0;
+                const formatBytes = bytes => {
+                    if (bytes >= 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+                    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+                    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                    return bytes + ' B';
+                };
+                const percentLabel = hasTotal ? percentage + '%' : '—';
+                const sizeLabel = hasTotal
+                    ? formatBytes(downloaded) + ' / ' + formatBytes(total)
+                    : (downloaded > 0 ? formatBytes(downloaded) : '');
+                const statusLabel = isMusic
+                    ? 'See Queue for full logs'
+                    : (progress.status === 'downloading'
+                        ? 'Downloading...' + (sizeLabel ? ' ' + sizeLabel : '')
+                        : 'Starting...');
 
-                list.innerHTML = `
-                    <div class="active-item" id="active-${downloadId}">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom:0.75rem">
-                            <span class="badge ${isMusic ? 'badge-music' : 'badge-video'}" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">
-                                ${typeIcon} ${typeLabel}
-                            </span>
-                            <span class="badge badge-success" style="padding: 0.2rem 0.6rem; font-size: 0.7rem;">${isMusic ? 'PROCESSING' : 'DOWNLOADING'}</span>
-                        </div>
-                        <div class="item-header">
-                            <span class="item-name" title="${filename}" style="font-size: 0.9rem; font-weight: 600; font-family: ${isMusic ? 'monospace' : 'inherit'};">${filename}</span>
-                            ${!isMusic ? `<span class="item-percent" style="font-weight: bold; color: var(--accent);">${progress.percentage || 0}%</span>` : ''}
-                        </div>
-                        <div class="item-progress" style="${isMusic ? 'height: 2px; opacity: 0.5;' : ''}">
-                            <div class="bar ${isMusic ? ' pulsing' : ''}" style="width: ${isMusic ? '100' : (progress.percentage || 0)}%"></div>
-                        </div>
-                        <div class="item-footer">
-                            <span class="item-status">${isMusic ? 'See Queue for full logs' : (progress.status === 'downloading' ? 'Downloading...' : 'Starting...')}</span>
-                            <span class="item-speed">${progress.speed || '...'}</span>
-                        </div>
-                    </div>
-                `;
+                const item = document.createElement('div');
+                item.className = 'active-item';
+                if (downloadId !== '') item.id = 'active-' + downloadId;
+
+                const header = document.createElement('div');
+                header.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem';
+                const typeBadge = document.createElement('span');
+                typeBadge.className = 'badge ' + (isMusic ? 'badge-music' : 'badge-video');
+                typeBadge.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.7rem;';
+                typeBadge.textContent = typeIcon + ' ' + typeLabel;
+                const stateBadge = document.createElement('span');
+                stateBadge.className = 'badge badge-success';
+                stateBadge.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.7rem;';
+                stateBadge.textContent = isMusic ? 'PROCESSING' : 'DOWNLOADING';
+                header.appendChild(typeBadge);
+                header.appendChild(stateBadge);
+
+                const itemHeader = document.createElement('div');
+                itemHeader.className = 'item-header';
+                const name = document.createElement('span');
+                name.className = 'item-name';
+                name.title = filename;
+                name.style.cssText = 'font-size:0.9rem;font-weight:600;font-family:' + (isMusic ? 'monospace' : 'inherit') + ';';
+                name.textContent = filename;
+                itemHeader.appendChild(name);
+                if (!isMusic) {
+                    const percent = document.createElement('span');
+                    percent.className = 'item-percent';
+                    percent.style.cssText = 'font-weight:bold;color:var(--accent);';
+                    percent.textContent = percentLabel;
+                    itemHeader.appendChild(percent);
+                }
+
+                const progressWrap = document.createElement('div');
+                progressWrap.className = 'item-progress';
+                if (isMusic) progressWrap.style.cssText = 'height:2px;opacity:0.5;';
+                const bar = document.createElement('div');
+                bar.className = 'bar ' + (isMusic ? 'pulsing' : (!hasTotal ? 'indeterminate' : ''));
+                bar.style.width = (isMusic ? '100' : (hasTotal ? percentage : '32')) + '%';
+                progressWrap.appendChild(bar);
+
+                const footer = document.createElement('div');
+                footer.className = 'item-footer';
+                const status = document.createElement('span');
+                status.className = 'item-status';
+                status.textContent = statusLabel;
+                const speed = document.createElement('span');
+                speed.className = 'item-speed';
+                speed.textContent = String(progress.speed || '...');
+                footer.appendChild(status);
+                footer.appendChild(speed);
+
+                item.appendChild(header);
+                item.appendChild(itemHeader);
+                item.appendChild(progressWrap);
+                item.appendChild(footer);
+                list.replaceChildren(item);
             } catch (e) {
                 console.warn("Progress update failed", e);
             }
             updateTrackerSummary();
         }
 
+        const notificationMediaIcons = {
+            'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚',
+            'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓', 'default': '📦'
+        };
+        const notificationStatusEmojis = { 'success': '✅', 'error': '❌', 'warning': '⚠️', 'info': 'ℹ️', 'Finished': '✨', 'Started': '🚀', 'Failed': '❌' };
+
+        function safeNotificationType(value) {
+            const type = String(value || 'info').toLowerCase();
+            return ['success', 'error', 'warning', 'info'].includes(type) ? type : 'info';
+        }
+
+        function notificationEmoji(type, action = '') {
+            return notificationStatusEmojis[String(action || '')]
+                || notificationStatusEmojis[String(type || '')]
+                || 'ℹ️';
+        }
+
+        function notificationIcon(mediaType) {
+            return notificationMediaIcons[String(mediaType || '')] || notificationMediaIcons.default;
+        }
+
+        function notificationTitle(log) {
+            return String(log.action || 'Update') + ': ' + notificationIcon(log.mediaType) + ' ' + String(log.mediaType || '');
+        }
+
+        function notificationBody(log) {
+            return String(log.item || log.message || '');
+        }
+
+        function renderNotification(log, container, prepend = false) {
+            if (!container) return;
+
+            const div = document.createElement('div');
+            div.className = 'notif-item ' + safeNotificationType(log.type);
+
+            const time = document.createElement('div');
+            time.className = 'notif-time';
+            time.textContent = String(log.time || '');
+
+            const msg = document.createElement('div');
+            msg.className = 'notif-msg';
+
+            if (Number(log.version) === 2 && (log.action || log.mediaType || log.item)) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:flex-start;gap:1rem;';
+
+                const emoji = document.createElement('span');
+                emoji.style.fontSize = '1.5rem';
+                emoji.textContent = notificationEmoji(log.type, log.action);
+
+                const body = document.createElement('div');
+                const title = document.createElement('div');
+                title.style.cssText = 'font-weight:bold;margin-bottom:2px;';
+                title.textContent = notificationTitle(log);
+                const text = document.createElement('div');
+                text.style.cssText = 'font-size:0.85rem;opacity:0.9;word-break:break-all;';
+                text.textContent = notificationBody(log);
+
+                body.appendChild(title);
+                body.appendChild(text);
+                row.appendChild(emoji);
+                row.appendChild(body);
+                msg.appendChild(row);
+            } else if (Number(log.version) === 2) {
+                const strong = document.createElement('b');
+                strong.textContent = notificationEmoji(log.type) + ' ' + String(log.message || '');
+                msg.appendChild(strong);
+            } else {
+                msg.textContent = String(log.message || log.text || '');
+            }
+
+            div.appendChild(time);
+            div.appendChild(msg);
+            if (prepend) container.prepend(div);
+            else container.appendChild(div);
+        }
+
         function toggleNotifSidebar() {
             const sidebar = document.getElementById('notif-sidebar');
+            if (!sidebar) return;
             sidebar.classList.toggle('open');
             if (sidebar.classList.contains('open')) {
-                document.getElementById('notif-dot').style.display = 'none';
+                const dot = document.getElementById('notif-dot');
+                if (dot) dot.style.display = 'none';
             }
         }
 
         function clearNotifications() {
             if (!confirm('Clear all logs?')) return;
             localStorage.setItem('notif_logs', '[]');
-            document.getElementById('notif-content').innerHTML = '<div class="empty-msg" style="text-align: center; margin-top: 2rem; color: var(--text-secondary);">No logs yet.</div>';
+            const container = document.getElementById('notif-content');
+            if (!container) return;
+            container.replaceChildren();
+            const empty = document.createElement('div');
+            empty.className = 'empty-msg';
+            empty.style.cssText = 'text-align: center; margin-top: 2rem; color: var(--text-secondary);';
+            empty.textContent = 'No logs yet.';
+            container.appendChild(empty);
         }
 
         window.notify = function(type, message) {
             const container = document.getElementById('notif-content');
+            if (!container) return;
             const dot = document.getElementById('notif-dot');
             const sidebar = document.getElementById('notif-sidebar');
 
             if (container.querySelector('.empty-msg')) {
-                container.innerHTML = '';
+                container.replaceChildren();
             }
 
             const now = new Date().toLocaleTimeString();
-            
-            // Rich notification formatting
-            let displayHtml = '';
-            const mediaIcons = { 
-                'music': '🎵', 'audio': '🎵', 'video': '🎥', 'text': '📄', 'ebook': '📚', 
-                'archive': '📦', 'image': '💿', 'photo': '🖼️', 'other': '❓', 'default': '📦' 
+            const isObject = message !== null && typeof message === 'object';
+            const logType = safeNotificationType(isObject && message.type ? message.type : type);
+            const action = isObject ? String(message.action || '') : '';
+            const mediaType = isObject ? String(message.media_type || '') : '';
+            const item = isObject ? String(message.item || '') : '';
+            const text = isObject ? String(message.message || '') : String(message ?? '');
+
+            const logEntry = {
+                version: 2,
+                type: logType,
+                action,
+                mediaType,
+                item,
+                message: text,
+                time: now
             };
-            const statusEmojis = { 'success': '✅', 'error': '❌', 'info': 'ℹ️', 'Finished': '✨', 'Started': '🚀', 'Failed': '❌' };
 
-            if (typeof message === 'object') {
-                const icon = mediaIcons[message.media_type] || mediaIcons.default;
-                const statusEmoji = statusEmojis[message.action] || statusEmojis[message.type] || '';
-                
-                displayHtml = `
-                    <div style="display: flex; align-items: flex-start; gap: 1rem;">
-                        <span style="font-size: 1.5rem;">${statusEmoji}</span>
-                        <div>
-                            <div style="font-weight: bold; margin-bottom: 2px;">
-                                ${message.action || 'Update'}: ${icon} ${message.media_type || ''}
-                            </div>
-                            <div style="font-size: 0.85rem; opacity: 0.9; word-break: break-all;">
-                                ${message.item || message.message}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Fallback for simple strings
-                const lower = message.toLowerCase();
-                let emoji = 'ℹ️';
-                if (lower.includes('success')) emoji = '✅';
-                if (lower.includes('error') || lower.includes('fail')) emoji = '❌';
-
-                displayHtml = `<b>${emoji} ${message}</b>`;
+            let logs = [];
+            try {
+                logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
+                if (!Array.isArray(logs)) logs = [];
+            } catch (e) {
+                logs = [];
             }
-
-            const logEntry = { type, message: displayHtml, time: now };
-            
-            // Persist
-            const logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
             logs.unshift(logEntry);
-            localStorage.setItem('notif_logs', JSON.stringify(logs.slice(0, 100))); // Keep last 100
+            localStorage.setItem('notif_logs', JSON.stringify(logs.slice(0, 100)));
 
             renderNotification(logEntry, container, true);
 
-            if (!sidebar.classList.contains('open')) {
+            if (sidebar && dot && !sidebar.classList.contains('open')) {
                 dot.style.display = 'block';
             }
 
-            // Show Toast
             const toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) return;
             const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-            
-            let toastEmoji = 'ℹ️';
-            if (type === 'success' || type === 'Finished') toastEmoji = '✅';
-            if (type === 'error' || type === 'Failed') toastEmoji = '❌';
+            toast.className = 'toast ' + logType;
 
-            const toastBody = typeof message === 'object' ? (message.item || message.message) : message;
+            const toastEmoji = document.createElement('span');
+            toastEmoji.style.fontSize = '1.25rem';
+            toastEmoji.textContent = notificationEmoji(logType, action);
 
-            toast.innerHTML = `
-                <span style="font-size: 1.25rem;">${toastEmoji}</span>
-                <div style="font-size: 0.9rem; font-weight: 500;">${toastBody}</div>
-            `;
+            const toastBody = document.createElement('div');
+            toastBody.style.cssText = 'font-size:0.9rem;font-weight:500;word-break:break-word;';
+            toastBody.textContent = item || text || action;
+
+            toast.appendChild(toastEmoji);
+            toast.appendChild(toastBody);
             toastContainer.appendChild(toast);
 
             setTimeout(() => {
@@ -1456,13 +1810,9 @@
                 setTimeout(() => toast.remove(), 300);
             }, 5000);
 
-            // Native Browser Notification
-            if (Notification.permission === "granted" && typeof message === 'object') {
-                const icon = mediaIcons[message.media_type] || mediaIcons.default;
-                const statusEmoji = statusEmojis[message.action] || statusEmojis[message.type] || '';
-                
-                new Notification(`${statusEmoji} ${message.action || 'Update'}: ${message.media_type || ''}`, {
-                    body: message.item || message.message || '',
+            if ('Notification' in window && Notification.permission === 'granted' && isObject) {
+                new Notification(notificationEmoji(logType, action) + ' ' + String(action || 'Update') + ': ' + mediaType, {
+                    body: item || text || '',
                     icon: '/logo.png',
                     tag: 'downloader-update'
                 }).onclick = function() {
@@ -1488,57 +1838,93 @@
             }
         }
 
-        function renderNotification(log, container, prepend = false) {
-            const div = document.createElement('div');
-            div.className = `notif-item ${log.type}`;
-            div.innerHTML = `
-                <div class="notif-time">${log.time}</div>
-                <div class="notif-msg">${log.message}</div>
-            `;
-            if (prepend) container.prepend(div);
-            else container.appendChild(div);
-        }
-
         function toggleBurger() {
             document.getElementById('nav-links').classList.toggle('active');
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            const logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
+            let logs = [];
+            try {
+                logs = JSON.parse(localStorage.getItem('notif_logs') || '[]');
+                if (!Array.isArray(logs)) logs = [];
+            } catch (e) {
+                logs = [];
+            }
             const container = document.getElementById('notif-content');
-            if (logs.length > 0) {
-                container.innerHTML = '';
+            if (logs.length > 0 && container) {
+                container.replaceChildren();
                 logs.forEach(log => renderNotification(log, container));
             }
 
+            const seenNotificationsKey = 'notif_server_seen_ids';
             async function pollServerNotifications() {
-            try {
-                const res = await fetch("{{ path('notifications_poll') }}");
-                const data = await res.json();
-                if (data.notifications && data.notifications.length > 0) {
-                    data.notifications.forEach(notif => {
+                try {
+                    const res = await fetch("{{ path('notifications_poll') }}");
+                    const data = await res.json();
+                    const notifications = Array.isArray(data.notifications) ? data.notifications : [];
+                    if (notifications.length === 0) {
+                        return;
+                    }
+
+                    let seen = [];
+                    try {
+                        seen = JSON.parse(localStorage.getItem(seenNotificationsKey) || '[]');
+                    } catch (e) {
+                        seen = [];
+                    }
+                    const seenSet = new Set(seen.map(String));
+                    const ids = [];
+
+                    notifications.forEach(notif => {
+                        const id = String(notif.id || '');
+                        if (id && seenSet.has(id)) {
+                            ids.push(id);
+                            return;
+                        }
                         if (window.notify) {
                             window.notify(notif.type, notif);
                         }
+                        if (id) {
+                            seenSet.add(id);
+                            ids.push(id);
+                        }
                     });
+
+                    localStorage.setItem(seenNotificationsKey, JSON.stringify(Array.from(seenSet).slice(-500)));
+
+                    if (ids.length > 0) {
+                        await fetch(notificationsAckRoute, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': csrfToken
+                            },
+                            body: JSON.stringify({ csrf: csrfToken, ids })
+                        });
+                    }
+                } catch (e) {
+                    console.error("Failed to poll notifications", e);
                 }
-            } catch (e) {
-                console.error("Failed to poll notifications", e);
+            }
+
+        // Initialize
+        const tracker = document.getElementById('download-tracker');
+        const trackerToggle = document.getElementById('tracker-toggle-btn');
+        if (tracker && trackerToggle) {
+            if (localStorage.getItem('tracker_collapsed') === 'true') {
+                tracker.classList.add('collapsed');
+                trackerToggle.innerText = '▲';
+            } else {
+                tracker.classList.remove('collapsed');
+                trackerToggle.innerText = '▼';
             }
         }
 
-        // Initialize
-        if (localStorage.getItem('tracker_collapsed') === 'true') {
-            document.getElementById('download-tracker').classList.add('collapsed');
-            document.getElementById('tracker-toggle-btn').innerText = '▲';
-        } else {
-            document.getElementById('download-tracker').classList.remove('collapsed');
-            document.getElementById('tracker-toggle-btn').innerText = '▼';
-        }
-
+        {% if app.session and app.session.get('authenticated') %}
         syncWithServer();
         setInterval(syncWithServer, 3000);
         setInterval(pollServerNotifications, 5000);
+        {% endif %}
 
         if (Notification.permission === "granted") {
             const btn = document.getElementById('btn-browser-notif');

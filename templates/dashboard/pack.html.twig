@@ -40,6 +40,7 @@
             </div>
 
             <form class="download-form" action="{{ path('download') }}" method="post" onsubmit="startDownload(event, '{{ file.filename }}')">
+                <input type="hidden" name="_token" value="{{ csrf_token }}">
                 <input type="hidden" name="url" value="{{ file.link }}">
                 <input type="hidden" name="filename" value="{{ file.filename }}">
                 <!-- Will be populated by JS -->

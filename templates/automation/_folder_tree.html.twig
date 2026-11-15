@@ -1,0 +1,30 @@
+{% macro tree(nodes, selectedRoot, selectedPath) %}
+<ul class="folder-tree-list">
+    {% for node in nodes %}
+        {% set hasChildren = node.has_children|default(node.children is not empty) %}
+        {% set childrenLoaded = node.children is not empty %}
+        <li class="folder-tree-item {{ node.open|default(false) ? 'is-open' : '' }} {{ node.root_key == selectedRoot and node.path == selectedPath ? 'is-active' : '' }}">
+            <div class="folder-tree-row">
+                {% if hasChildren %}
+                    <button class="folder-tree-toggle" type="button" data-tree-toggle aria-label="Toggle folder">▸</button>
+                {% else %}
+                    <span class="folder-tree-spacer"></span>
+                {% endif %}
+                <button class="folder-tree-label" type="button"
+                        data-folder-select
+                        data-root-key="{{ node.root_key|e('html_attr') }}"
+                        data-folder-path="{{ node.path|e('html_attr') }}"
+                        title="{{ node.label|e('html_attr') }}">{{ node.label }}</button>
+                <span class="folder-tree-count">{{ node.total_files }}</span>
+            </div>
+            {% if hasChildren %}
+                <div class="folder-tree-children" data-tree-children data-loaded="{{ childrenLoaded ? '1' : '0' }}">
+                    {% if childrenLoaded %}
+                        {{ _self.tree(node.children, selectedRoot, selectedPath) }}
+                    {% endif %}
+                </div>
+            {% endif %}
+        </li>
+    {% endfor %}
+</ul>
+{% endmacro %}

@@ -1,0 +1,198 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Automation configuration - Downloader{% endblock %}
+
+{% block body %}
+<style>
+    .config-grid { display: grid; gap: 1rem; }
+    .config-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .8rem;
+        cursor: pointer;
+        user-select: none;
+    }
+    .config-card-title { margin: 0; font-size: 1rem; letter-spacing: -.02em; }
+    .config-card-subtitle {
+        margin: .35rem 0 0;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        line-height: 1.5;
+    }
+    .config-collapse-btn {
+        width: 30px;
+        height: 30px;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 1px solid rgba(148, 163, 184, .24);
+        border-radius: 8px;
+        color: var(--text-secondary);
+        background: rgba(15, 23, 42, .45);
+        cursor: pointer;
+    }
+    .config-collapse-btn:hover {
+        color: var(--text-primary);
+        border-color: rgba(56, 189, 248, .45);
+    }
+    .config-collapse-icon { font-size: .7rem; line-height: 1; }
+    .config-card.is-collapsed .config-card-body { display: none; }
+    .config-card-body { margin-top: .2rem; }
+    .config-field { display: grid; gap: .35rem; margin-top: .7rem; }
+    .config-field label {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: .75rem;
+        font-weight: 700;
+    }
+    .config-field input[type="text"],
+    .config-field input[type="number"],
+    .config-field select {
+        width: 100%;
+        margin: 0;
+        padding: .64rem .72rem;
+        border: 1px solid rgba(148, 163, 184, .28);
+        border-radius: 9px;
+        color: var(--text-primary);
+        background: rgba(15, 23, 42, .72);
+        font: inherit;
+        font-size: .8rem;
+        box-sizing: border-box;
+    }
+    .config-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+    .config-checks { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-top: .7rem; }
+    .config-check {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        color: var(--text-secondary);
+        font-size: .77rem;
+    }
+    .config-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .9rem; }
+    .config-hint { color: var(--text-muted, #64748b); font-size: .71rem; line-height: 1.5; }
+    .config-preview { display: grid; gap: .55rem; margin-top: .9rem; }
+    .config-preview-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .8rem;
+        padding: .55rem .65rem;
+        border: 1px solid rgba(148, 163, 184, .12);
+        border-radius: 9px;
+        font-size: .76rem;
+    }
+    .config-preview-text { color: var(--text-secondary); line-height: 1.5; }
+    @media (max-width: 760px) {
+        .config-row { grid-template-columns: 1fr; }
+    }
+</style>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Automation configuration',
+    subtitle: 'Library roots and scanner, release quality rules, and intent processing limits.',
+    icon: 'automation'
+} %}
+    {% block actions %}
+        <a class="btn btn-secondary" href="{{ path('automation') }}">Back to overview</a>
+    {% endblock %}
+{% endembed %}
+
+{% include 'automation/_nav.html.twig' %}
+
+{% for message in app.flashes('success') %}
+    <div class="alert alert-success">{{ message }}</div>
+{% endfor %}
+{% for message in app.flashes('error') %}
+    <div class="alert alert-error">{{ message }}</div>
+{% endfor %}
+
+<section class="config-grid">
+    {% include 'automation/_quality_profile.html.twig' %}
+    {% include 'automation/_automation_limits.html.twig' %}
+    {% include 'automation/_metadata_settings.html.twig' %}
+    {% include 'automation/_roots_scanner.html.twig' %}
+</section>
+{% endblock %}
+
+{% block javascripts %}
+<script>
+    const configScanRoute = "{{ path('automation_scan') }}";
+    const configCsrfToken = "{{ csrf_token|e('js') }}";
+    const configCollapsePrefix = 'automation-config-collapsed-';
+
+    function setConfigCardCollapsed(key, collapsed, persist = true) {
+        const card = document.querySelector('[data-config-card="' + key + '"]');
+        if (!card) return;
+        card.classList.toggle('is-collapsed', collapsed);
+        const button = card.querySelector('[data-config-collapse]');
+        if (button) {
+            button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            button.title = collapsed ? 'Expand configuration' : 'Collapse configuration';
+            const icon = button.querySelector('.config-collapse-icon');
+            if (icon) icon.textContent = collapsed ? '▼' : '▲';
+        }
+        const body = card.querySelector('[data-config-body]');
+        if (body) body.hidden = collapsed;
+        if (persist) {
+            try {
+                localStorage.setItem(configCollapsePrefix + key, collapsed ? '1' : '0');
+            } catch (error) {
+                // Ignore unavailable storage.
+            }
+        }
+    }
+
+    document.querySelectorAll('[data-config-card]').forEach(card => {
+        const key = card.getAttribute('data-config-card');
+        if (!key) return;
+        let collapsed = true;
+        try {
+            const stored = localStorage.getItem(configCollapsePrefix + key);
+            collapsed = stored === null ? true : stored === '1';
+        } catch (error) {
+            collapsed = true;
+        }
+        setConfigCardCollapsed(key, collapsed, false);
+    });
+
+    const initialConfigHash = window.location.hash;
+    if (initialConfigHash.startsWith('#config-')) {
+        const key = initialConfigHash.slice('#config-'.length);
+        const card = document.querySelector('[data-config-card="' + key + '"]');
+        if (card) {
+            setConfigCardCollapsed(key, false, false);
+            card.scrollIntoView({ block: 'start' });
+        }
+    }
+
+    document.addEventListener('click', function (event) {
+        const head = event.target.closest('.config-card-head');
+        if (!head) return;
+        const card = head.closest('[data-config-card]');
+        if (!card) return;
+        const key = card.getAttribute('data-config-card');
+        if (!key) return;
+        setConfigCardCollapsed(key, !card.classList.contains('is-collapsed'));
+    });
+
+    async function startConfigScan() {
+        try {
+            const response = await fetch(configScanRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: configCsrfToken })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Could not start the scan.');
+            }
+            if (window.notify) window.notify('success', data.message || 'Library scan requested.');
+            setTimeout(() => window.location.reload(), 1500);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+</script>
+{% endblock %}

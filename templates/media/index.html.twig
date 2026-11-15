@@ -218,8 +218,11 @@
     <div class="addons-body">
         <div class="addon-field">
             <label for="tmdbApiKey">TMDB API key</label>
-            <input type="password" id="tmdbApiKey" value="{{ tmdb_api_key|e('html_attr') }}" placeholder="TMDB API key or v4 read token" autocomplete="off">
+            <input type="password" id="tmdbApiKey" value="" placeholder="{{ tmdb_key_saved ? 'Saved — leave blank to keep' : 'TMDB API key or v4 read token' }}" autocomplete="new-password">
             <small>Used for search, metadata, seasons and IMDb ID resolution.</small>
+            <label style="display:inline-flex;align-items:center;gap:0.35rem;margin-top:0.35rem;color:var(--text-secondary);font-size:0.8rem;">
+                <input type="checkbox" id="tmdbApiKeyClear"> Clear saved key
+            </label>
         </div>
         <div class="addon-field">
             <label for="tmdbLanguage">Metadata language</label>
@@ -495,7 +498,6 @@
 const initialMedia = {{ trending|json_encode|raw }};
 const mediaLanguage = {{ tmdb_language|json_encode|raw }};
 const tmdbConfigured = {{ tmdb_configured ? 'true' : 'false' }};
-const savedTmdbApiKey = {{ tmdb_api_key|json_encode|raw }};
 const defaultMediaPath = {{ default_path|json_encode|raw }};
 const recentMediaPaths = {{ recent_paths|json_encode|raw }};
 let mediaResults = initialMedia;
@@ -1205,6 +1207,7 @@ async function saveMediaSettings() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 tmdb_api_key: document.getElementById('tmdbApiKey').value.trim(),
+                clear_tmdb_api_key: document.getElementById('tmdbApiKeyClear')?.checked || false,
                 tmdb_language: document.getElementById('tmdbLanguage').value
             })
         });

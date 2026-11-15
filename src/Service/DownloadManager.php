@@ -3,22 +3,29 @@
 namespace App\Service;
 
 use GuzzleHttp\Client;
-// Guzzle is kept for constructor compatibility if needed, but we use native streams
-use GuzzleHttp\RequestOptions;
+use GuzzleHttp\Psr7\Uri;
+use GuzzleHttp\Psr7\UriResolver;
 
 class DownloadManager
 {
     private JsonStorage $storage;
-    private Client $client; // Kept for structure but unused in downloadFile
+    private Client $client;
+    private SafeUrlGuard $urlGuard;
 
-    public function __construct(JsonStorage $storage)
+    public function __construct(JsonStorage $storage, ?SafeUrlGuard $urlGuard = null)
     {
         $this->storage = $storage;
-        $this->client = new Client(); // Dummy client
+        $this->client = new Client();
+        $this->urlGuard = $urlGuard ?? new SafeUrlGuard();
     }
 
-    public function downloadFile(string $url, string $filename, string $destinationPath, string $downloadId, bool $overwrite = false, ?callable $heartbeatCallback = null): array
+    public function downloadFile(string $url, string $filename, string $destinationPath, string $downloadId, bool $overwrite = false, ?callable $heartbeatCallback = null, int $expectedSize = 0): array
     {
+        $urlCheck = $this->urlGuard->validate($url);
+        if (empty($urlCheck['allowed'])) {
+            return ['success' => false, 'message' => 'URL rejected: ' . (string) ($urlCheck['reason'] ?? 'invalid URL')];
+        }
+
         // 1. Background survival
         ignore_user_abort(true);
         set_time_limit(0);
@@ -65,56 +72,104 @@ class DownloadManager
                 'percentage' => 0,
                 'speed' => '0 KB/s',
                 'downloaded' => 0,
-                'total' => 0
+                'total' => max(0, $expectedSize)
             ]);
 
-            $contextOptions = [
-                'http' => [
-                    'method' => 'GET',
-                    'header' => "User-Agent: AlldebridDL/1.0\r\n",
-                    'follow_location' => 1,
-                    'max_redirects' => 20,
-                    'ignore_errors' => true
-                ]
-            ];
+            $knownTotal = max(0, $expectedSize);
+            $currentUrl = $url;
+            $redirects = 0;
+            $visited = [$url => true];
+            $source = null;
+            $headers = [];
 
-            $ctx = stream_context_create($contextOptions);
-            stream_context_set_params($ctx, [
-                'notification' => function ($code, $severity, $msg, $msg_code, $transferred, $max) use ($downloadId, $filename, &$lastTime, &$lastDownloaded, &$lastHeartbeatTime, $heartbeatCallback) {
-                    if ($code === STREAM_NOTIFY_PROGRESS) {
-                        $now = microtime(true);
+            while (true) {
+                $contextOptions = [
+                    'http' => [
+                        'method' => 'GET',
+                        'header' => "User-Agent: AlldebridDL/1.0\r\n",
+                        'follow_location' => 0,
+                        'max_redirects' => 0,
+                        'ignore_errors' => true,
+                        'timeout' => 60,
+                    ],
+                    'ssl' => [
+                        'verify_peer' => true,
+                        'verify_peer_name' => true,
+                    ],
+                ];
 
-                        // Heartbeat for Worker
-                        if ($heartbeatCallback && ($now - $lastHeartbeatTime >= 5.0)) {
-                            $heartbeatCallback();
-                            $lastHeartbeatTime = $now;
+                $ctx = stream_context_create($contextOptions);
+                stream_context_set_params($ctx, [
+                    'notification' => function ($code, $severity, $msg, $msg_code, $transferred, $max) use ($downloadId, $filename, &$lastTime, &$lastDownloaded, &$lastHeartbeatTime, &$knownTotal, $heartbeatCallback) {
+                        if ($code === STREAM_NOTIFY_PROGRESS) {
+                            $now = microtime(true);
+
+                            if ($heartbeatCallback && ($now - $lastHeartbeatTime >= 5.0)) {
+                                $heartbeatCallback();
+                                $lastHeartbeatTime = $now;
+                            }
+
+                            if ($transferred > 0 && ($now - $lastTime >= 0.5 || $transferred === $max)) {
+                                $speed = ($now > $lastTime) ? ($transferred - $lastDownloaded) / ($now - $lastTime) : 0;
+                                $speedStr = $this->formatSpeed($speed);
+                                $total = $max > 0 ? $max : $knownTotal;
+                                $pct = $total > 0 ? round(($transferred / $total) * 100) : 0;
+
+                                $this->updateProgress($downloadId, [
+                                    'status' => 'downloading',
+                                    'filename' => $filename,
+                                    'percentage' => $pct,
+                                    'speed' => $speedStr,
+                                    'downloaded' => $transferred,
+                                    'total' => $total,
+                                ]);
+
+                                $lastTime = $now;
+                                $lastDownloaded = $transferred;
+                            }
                         }
+                    },
+                ]);
 
-                        if ($transferred > 0 && ($now - $lastTime >= 0.5 || $transferred === $max)) {
-                            $speed = ($now > $lastTime) ? ($transferred - $lastDownloaded) / ($now - $lastTime) : 0;
-                            $speedStr = $this->formatSpeed($speed);
-                            $pct = $max > 0 ? round(($transferred / $max) * 100) : 0;
-
-                            $this->updateProgress($downloadId, [
-                                'status' => 'downloading',
-                                'filename' => $filename,
-                                'percentage' => $pct,
-                                'speed' => $speedStr,
-                                'downloaded' => $transferred,
-                                'total' => $max
-                            ]);
-
-                            $lastTime = $now;
-                            $lastDownloaded = $transferred;
-                        }
-                    }
+                $source = @fopen($currentUrl, 'r', false, $ctx);
+                if (!$source) {
+                    throw new \Exception('Could not open source URL (' . $this->urlHost($currentUrl) . ').');
                 }
-            ]);
 
-            $source = @fopen($url, 'r', false, $ctx);
-            if (!$source) {
-                $error = error_get_last();
-                throw new \Exception("Could not open source URL: " . ($error['message'] ?? 'Unknown error'));
+                $headers = $http_response_header ?? [];
+                $status = $this->parseStatusCode($headers);
+
+                if ($status >= 300 && $status < 400) {
+                    $location = $this->parseLocation($headers);
+                    fclose($source);
+                    $source = null;
+                    if ($location === '') {
+                        throw new \Exception('Redirect response without a Location header.');
+                    }
+
+                    $nextUrl = (string) UriResolver::resolve(new Uri($currentUrl), new Uri($location));
+                    $redirects++;
+                    $nextCheck = $this->urlGuard->validateRedirect($nextUrl, $redirects, array_keys($visited));
+                    if (empty($nextCheck['allowed'])) {
+                        throw new \Exception('Redirect rejected: ' . (string) ($nextCheck['reason'] ?? 'invalid URL'));
+                    }
+                    $visited[$nextUrl] = true;
+                    $currentUrl = $nextUrl;
+                    continue;
+                }
+
+                if ($status === 0 || $status >= 400) {
+                    fclose($source);
+                    $source = null;
+                    throw new \Exception('Source returned HTTP ' . ($status > 0 ? $status : 'unknown') . '.');
+                }
+
+                break;
+            }
+
+            $headerTotal = $this->parseContentLength($headers);
+            if ($headerTotal > 0) {
+                $knownTotal = $headerTotal;
             }
 
             $dest = @fopen($filePath, 'w');
@@ -128,13 +183,31 @@ class DownloadManager
             fclose($source);
             fclose($lastErrorDest = $dest);
 
-            // Sanity check (Alldebrid sometimes returns HTML errors as small files)
-            if ($bytes < 50000) {
-                $check = file_get_contents($filePath, false, null, 0, 100);
-                if (str_contains($check, '<html') || str_contains($check, '<!DOCTYPE')) {
-                    @unlink($filePath);
-                    throw new \Exception("Download resulted in an error page (expired link?).");
-                }
+            if ($bytes === false) {
+                @unlink($filePath);
+                throw new \Exception('Could not read the downloaded stream.');
+            }
+
+            $check = (string) @file_get_contents($filePath, false, null, 0, 512);
+            $diagnostic = $this->integrityDiagnostic($filePath, $headers, $bytes, $currentUrl);
+            if (stripos($check, '<html') !== false || stripos($check, '<!DOCTYPE') !== false) {
+                @unlink($filePath);
+                throw new \Exception('Download resulted in an HTML error page (expired link?).' . $diagnostic);
+            }
+
+            if ($bytes < 1024 * 1024) {
+                @unlink($filePath);
+                throw new \Exception('Downloaded file is too small to be a video (' . $bytes . ' bytes).' . $diagnostic);
+            }
+
+            if ($headerTotal > 0 && $bytes < $headerTotal) {
+                @unlink($filePath);
+                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for ' . $headerTotal . ' expected.' . $diagnostic);
+            }
+
+            if ($expectedSize > 0 && $bytes < (int) round($expectedSize * 0.9)) {
+                @unlink($filePath);
+                throw new \Exception('Incomplete download: ' . $bytes . ' bytes received for an expected size of ' . $expectedSize . '.' . $diagnostic);
             }
 
             $duration = microtime(true) - $startTime;
@@ -167,9 +240,68 @@ class DownloadManager
         }
     }
 
+    private function integrityDiagnostic(string $filePath, array $headers, int $bytes, string $url): string
+    {
+        $contentType = 'unknown';
+        foreach ($headers as $header) {
+            if (preg_match('/^content-type:\s*(.+)$/i', trim((string) $header), $matches)) {
+                $contentType = substr(trim($matches[1]), 0, 80);
+                break;
+            }
+        }
+
+        $headHex = '';
+        if (is_file($filePath)) {
+            $head = @file_get_contents($filePath, false, null, 0, 16);
+            if (is_string($head) && $head !== '') {
+                $headHex = bin2hex($head);
+            }
+        }
+
+        return ' [host=' . $this->urlHost($url)
+            . '; content-type=' . $contentType
+            . '; bytes=' . $bytes
+            . ($headHex !== '' ? '; head_hex=' . $headHex : '')
+            . ']';
+    }
+
+    private function parseStatusCode(array $headers): int
+    {
+        foreach ($headers as $header) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#i', trim((string) $header), $matches)) {
+                return (int) $matches[1];
+            }
+        }
+
+        return 0;
+    }
+
+    private function parseLocation(array $headers): string
+    {
+        foreach ($headers as $header) {
+            if (preg_match('/^location:\s*(.+)$/i', trim((string) $header), $matches)) {
+                return trim($matches[1]);
+            }
+        }
+
+        return '';
+    }
+
+    private function urlHost(string $url): string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? $host : 'unknown host';
+    }
+
     private function getStatusFile(string $downloadId): string
     {
-        return $this->storage->getStorageDir() . '/progress_' . $downloadId . '.json';
+        $file = $this->storage->getStorageDir() . '/progress_' . $downloadId . '.json';
+        if (is_file($file)) {
+            @chmod($file, 0600);
+        }
+
+        return $file;
     }
 
     private function updateProgress(string $downloadId, array $data): void
@@ -177,6 +309,18 @@ class DownloadManager
         $file = $this->getStatusFile($downloadId);
         $data['last_update'] = time(); // Heartbeat for mutex
         file_put_contents($file, json_encode($data));
+        @chmod($file, 0600);
+    }
+
+    private function parseContentLength(array $headers): int
+    {
+        foreach ($headers as $header) {
+            if (preg_match('/^content-length:\s*(\d+)/i', trim((string) $header), $matches)) {
+                return (int) $matches[1];
+            }
+        }
+
+        return 0;
     }
 
     private function formatSpeed(float $bytesPerSec): string

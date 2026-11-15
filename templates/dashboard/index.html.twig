@@ -216,7 +216,7 @@
                     <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0 0 0.5rem 0;">Paste a magnet link or hosting URLs (1fichier, Uptobox, etc.). One per line.</p>
                     <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
                         <textarea id="magnet-input" placeholder="magnet:?xt=urn:btih:...&#10;https://1fichier.com/?abc123" rows="3"
-                                  style="flex: 1; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; resize: vertical;"
+                                  style="flex: 1; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 1rem; background: var(--bg-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; resize: vertical;"
                                   oninput="document.getElementById('btn-link-preview').style.display = this.value.trim().length > 0 ? '' : 'none'"></textarea>
                         <button class="btn btn-secondary" id="btn-link-preview" onclick="previewLinks()" style="display: none; white-space: nowrap; background: #17a2b8; height: fit-content;">
                             🔍 Preview

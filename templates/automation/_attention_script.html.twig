@@ -1,0 +1,150 @@
+    const attentionSearchRoute = "{{ path('automation_attention_search') }}";
+    const attentionResolveRoute = "{{ path('automation_attention_resolve') }}";
+    const attentionIgnoreRoute = "{{ path('automation_attention_ignore') }}";
+    const attentionCsrfToken = "{{ csrf_token|e('js') }}";
+    let attentionGroup = null;
+    let attentionSelected = null;
+
+    function escapeAttentionHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        }[char]));
+    }
+
+    async function postAttention(url, payload) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csrf: attentionCsrfToken, ...payload })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Request failed.');
+        }
+        return data;
+    }
+
+    function openAttentionResolve(group) {
+        attentionGroup = group;
+        attentionSelected = null;
+        const dialog = document.getElementById('attention-dialog');
+        const title = document.getElementById('attention-dialog-title');
+        const subtitle = document.getElementById('attention-dialog-subtitle');
+        const state = document.getElementById('attention-search-state');
+        const results = document.getElementById('attention-results');
+        const apply = document.getElementById('attention-apply');
+
+        if (title) title.textContent = 'Resolve ' + group.title + (group.year ? ' (' + group.year + ')' : '');
+        if (subtitle) subtitle.textContent = group.show_folder || group.sample_path || '';
+        if (state) {
+            state.style.display = 'block';
+            state.textContent = 'Searching TMDB…';
+        }
+        if (results) results.innerHTML = '';
+        if (apply) apply.disabled = true;
+        if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+
+        postAttention(attentionSearchRoute, { group })
+            .then(data => renderAttentionCandidates(data.candidates || []))
+            .catch(error => {
+                if (state) state.textContent = error.message;
+                if (window.notify) window.notify('error', error.message);
+            });
+    }
+
+    function renderAttentionCandidates(candidates) {
+        const results = document.getElementById('attention-results');
+        const state = document.getElementById('attention-search-state');
+        if (!results) return;
+        results.innerHTML = '';
+
+        if (!candidates.length) {
+            if (state) {
+                state.style.display = 'block';
+                state.textContent = 'No TMDB candidate found. Try adding a year or an NFO, then rescan.';
+            }
+            return;
+        }
+
+        if (state) state.style.display = 'none';
+        candidates.forEach((candidate) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'attention-candidate';
+            const poster = candidate.poster
+                ? '<img class="attention-candidate-poster" src="' + escapeAttentionHtml(candidate.poster) + '" alt="">'
+                : '<span class="attention-candidate-poster"></span>';
+            const meta = [candidate.original_title, candidate.rating ? candidate.rating + '/10' : null]
+                .filter(Boolean)
+                .map(escapeAttentionHtml)
+                .join(' · ');
+            button.innerHTML = poster +
+                '<span class="attention-candidate-main">' +
+                    '<span class="attention-candidate-title">' + escapeAttentionHtml(candidate.title) + (candidate.year ? ' (' + candidate.year + ')' : '') + '</span>' +
+                    '<span class="attention-candidate-meta">' + meta + '</span>' +
+                '</span>';
+            button.addEventListener('click', () => {
+                results.querySelectorAll('.attention-candidate').forEach(item => item.classList.remove('is-selected'));
+                button.classList.add('is-selected');
+                attentionSelected = candidate;
+                const apply = document.getElementById('attention-apply');
+                if (apply) apply.disabled = false;
+            });
+            results.appendChild(button);
+        });
+    }
+
+    async function applyAttentionResolution() {
+        if (!attentionGroup || !attentionSelected) return;
+        const apply = document.getElementById('attention-apply');
+        if (apply) apply.disabled = true;
+        try {
+            await postAttention(attentionResolveRoute, {
+                group: attentionGroup,
+                tmdb_id: attentionSelected.id,
+                type: attentionSelected.type
+            });
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (apply) apply.disabled = false;
+        }
+    }
+
+    async function ignoreAttentionGroup(group, ignored) {
+        try {
+            const data = await postAttention(attentionIgnoreRoute, { group, ignored });
+            if (window.notify) {
+                window.notify('success', ignored ? 'Group ignored.' : 'Group restored.');
+            }
+            window.location.reload();
+            return data;
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    document.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-attention-action]');
+        if (!button) return;
+        const group = JSON.parse(button.getAttribute('data-group'));
+        const action = button.getAttribute('data-attention-action');
+        if (action === 'resolve') {
+            openAttentionResolve(group);
+        } else if (action === 'ignore') {
+            ignoreAttentionGroup(group, true);
+        } else if (action === 'restore') {
+            ignoreAttentionGroup(group, false);
+        }
+    });
+
+    const attentionDialog = document.getElementById('attention-dialog');
+    if (attentionDialog) {
+        const close = () => attentionDialog.close();
+        document.getElementById('attention-dialog-close')?.addEventListener('click', close);
+        document.getElementById('attention-dialog-cancel')?.addEventListener('click', close);
+        document.getElementById('attention-apply')?.addEventListener('click', applyAttentionResolution);
+        attentionDialog.addEventListener('click', event => {
+            if (event.target === attentionDialog) attentionDialog.close();
+        });
+    }

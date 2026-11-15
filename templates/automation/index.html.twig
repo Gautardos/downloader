@@ -1,0 +1,321 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Automations - Downloader{% endblock %}
+
+{% block body %}
+<style>
+    .overview-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .overview-stat {
+        padding: 1.05rem 1.1rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 14px;
+        background: rgba(30, 41, 59, .72);
+    }
+    .overview-stat-label {
+        color: var(--text-secondary);
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+    }
+    .overview-stat-value {
+        margin-top: .5rem;
+        font-size: 1.5rem;
+        font-weight: 800;
+        letter-spacing: -.04em;
+    }
+    .overview-stat-meta {
+        margin-top: .3rem;
+        color: var(--text-secondary);
+        font-size: .72rem;
+        line-height: 1.45;
+    }
+    .overview-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    .overview-card-title { margin: 0; font-size: 1rem; letter-spacing: -.02em; }
+    .overview-card-subtitle {
+        margin: .35rem 0 0;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        line-height: 1.5;
+    }
+    .overview-kv { display: grid; gap: .5rem; margin-top: .9rem; }
+    .overview-kv-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding-bottom: .45rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .08);
+        font-size: .77rem;
+    }
+    .overview-kv-row:last-child { padding-bottom: 0; border-bottom: 0; }
+    .overview-kv-row span { color: var(--text-secondary); }
+    .overview-kv-row strong { text-align: right; }
+    .overview-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
+    .overview-alerts { display: grid; gap: .55rem; margin-bottom: 1rem; }
+    .overview-alert {
+        padding: .85rem 1rem;
+        border: 1px solid rgba(245, 158, 11, .28);
+        border-left: 4px solid var(--warning);
+        border-radius: 11px;
+        background: rgba(245, 158, 11, .07);
+        font-size: .8rem;
+    }
+    .overview-alert.is-error {
+        border-color: rgba(239, 68, 68, .3);
+        border-left-color: #ef4444;
+        background: rgba(239, 68, 68, .07);
+    }
+    .overview-alert strong { display: block; margin-bottom: .2rem; }
+    .overview-activity-list { display: grid; gap: .65rem; }
+    .overview-activity-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .7rem .8rem;
+        border: 1px solid rgba(148, 163, 184, .14);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, .38);
+        font-size: .78rem;
+    }
+    .overview-activity-main { min-width: 0; }
+    .overview-activity-title { font-weight: 700; }
+    .overview-activity-meta { margin-top: .2rem; color: var(--text-secondary); font-size: .72rem; }
+    .overview-progress {
+        height: 6px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, .14);
+        margin-top: .55rem;
+    }
+    .overview-progress-bar {
+        height: 100%;
+        width: 35%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--accent), #818cf8);
+        animation: overview-progress 1.2s ease-in-out infinite;
+    }
+    @keyframes overview-progress {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(320%); }
+    }
+    @media (max-width: 1020px) {
+        .overview-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .overview-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 760px) {
+        .overview-stats { grid-template-columns: 1fr; }
+    }
+</style>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Automations',
+    subtitle: 'Unified status for lists, library index, and movie downloads.',
+    icon: 'automation'
+} %}
+    {% block actions %}
+        <span class="badge {{ worker_online ? 'badge-success' : 'badge-danger' }}">
+            {{ worker_online ? 'Worker online' : 'Worker offline' }}
+        </span>
+        <a class="btn btn-secondary" href="{{ path('automation_activity') }}">Activity</a>
+    {% endblock %}
+{% endembed %}
+
+{% include 'automation/_nav.html.twig' %}
+
+{% for message in app.flashes('success') %}
+    <div class="alert alert-success">{{ message }}</div>
+{% endfor %}
+{% for message in app.flashes('error') %}
+    <div class="alert alert-error">{{ message }}</div>
+{% endfor %}
+
+{% set list_busy = list_running or list_sync_requested %}
+{% set intent_busy = running_intent_run is not null or intent_run_requested %}
+{% set scan_error = last_scan and last_scan.status == 'error' and last_scan.error %}
+{% set list_error = last_list_run and last_list_run.status == 'error' and last_list_run.error %}
+{% set intent_error = intent_counts.error > 0 or intent_counts.no_source > 0 %}
+
+{% if not worker_online or scan_lock_error or scan_error or (last_scan and last_scan.warnings is not empty) or list_error or intent_error %}
+    <section class="overview-alerts">
+        {% if not worker_online %}
+            <div class="overview-alert is-error"><strong>Automation worker offline</strong>The worker is not sending heartbeats. Scans, list dry-runs, and downloads will stay queued.</div>
+        {% endif %}
+        {% if scan_lock_error %}
+            <div class="overview-alert is-error"><strong>Scanner lock error</strong>{{ scan_lock_error }}</div>
+        {% endif %}
+        {% if scan_error %}
+            <div class="overview-alert is-error"><strong>Last library scan failed</strong>{{ last_scan.error }}</div>
+        {% elseif last_scan and last_scan.warnings is not empty %}
+            <div class="overview-alert"><strong>Last library scan warnings</strong>{{ last_scan.warnings|slice(0, 3)|join(' · ') }}{% if last_scan.warnings|length > 3 %} · …{% endif %}</div>
+        {% endif %}
+        {% if list_error %}
+            <div class="overview-alert is-error"><strong>Last list dry-run failed</strong>{{ last_list_run.error }}</div>
+        {% endif %}
+        {% if intent_error %}
+            <div class="overview-alert"><strong>Movie intents need attention</strong>{{ intent_counts.no_source }} without a source · {{ intent_counts.error }} in error.</div>
+        {% endif %}
+    </section>
+{% endif %}
+
+<section class="overview-stats">
+    <article class="overview-stat">
+        <div class="overview-stat-label">Library index</div>
+        <div class="overview-stat-value">{{ stats.total }}</div>
+        <div class="overview-stat-meta">{{ stats.movies }} movie{{ stats.movies == 1 ? '' : 's' }} · {{ stats.episodes }} episode{{ stats.episodes == 1 ? '' : 's' }}</div>
+    </article>
+    <article class="overview-stat">
+        <div class="overview-stat-label">List items missing</div>
+        <div class="overview-stat-value">{{ list_counts.missing }}</div>
+        <div class="overview-stat-meta">{{ list_counts.present }} present · {{ list_counts.ambiguous }} ambiguous · {{ list_counts.pending }} pending</div>
+    </article>
+    <article class="overview-stat">
+        <div class="overview-stat-label">Movie intents</div>
+        <div class="overview-stat-value">{{ intent_counts.pending + intent_counts.no_source + intent_counts.error }}</div>
+        <div class="overview-stat-meta">{{ intent_counts.queued }} queued · {{ intent_counts.downloading }} downloading · {{ intent_counts.success }} success</div>
+    </article>
+    <article class="overview-stat">
+        <div class="overview-stat-label">Download queue</div>
+        <div class="overview-stat-value">{{ intent_queue_depth }}</div>
+        <div class="overview-stat-meta">{{ auto_download_sources ? 'Auto-download source enabled' : 'No auto-download source' }}</div>
+    </article>
+</section>
+
+<section class="overview-grid">
+    <article class="card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem;">
+            <div>
+                <h2 class="overview-card-title">Connected Lists</h2>
+                <p class="overview-card-subtitle">Scrob and MDBList sources, dry-run matching, and auto-download eligibility.</p>
+            </div>
+            <span class="badge {{ list_busy ? 'badge-info' : 'badge-neutral' }}">{{ list_busy ? 'Running' : 'Idle' }}</span>
+        </div>
+        <div class="overview-kv">
+            <div class="overview-kv-row"><span>Last dry-run</span><strong>{{ last_list_run ? (last_list_run.finished_at ?: last_list_run.started_at) : 'Never' }}</strong></div>
+            <div class="overview-kv-row"><span>Last result</span><strong>{{ last_list_run ? last_list_run.status : '—' }}</strong></div>
+            <div class="overview-kv-row"><span>Items</span><strong>{{ list_counts.all }} · {{ list_counts.missing }} missing · {{ list_counts.ambiguous }} ambiguous</strong></div>
+        </div>
+        {% if list_busy %}
+            <div class="overview-progress"><div class="overview-progress-bar"></div></div>
+        {% endif %}
+        <div class="overview-actions">
+            <a class="btn btn-secondary btn-sm" href="{{ path('automation_lists') }}">Open connected lists</a>
+        </div>
+    </article>
+
+    <article class="card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem;">
+            <div>
+                <h2 class="overview-card-title">Media Library</h2>
+                <p class="overview-card-subtitle">NAS index, TMDB review queues, naming, and rename actions.</p>
+            </div>
+            <span class="badge {{ scan_running ? 'badge-info' : 'badge-neutral' }}">{{ scan_running ? 'Scanning' : 'Idle' }}</span>
+        </div>
+        <div class="overview-kv">
+            <div class="overview-kv-row"><span>Last scan</span><strong>{{ last_scan ? (last_scan.finished_at ?: last_scan.started_at) : 'Never' }}</strong></div>
+            <div class="overview-kv-row"><span>Scan result</span><strong>{{ last_scan ? last_scan.status : '—' }}</strong></div>
+            <div class="overview-kv-row"><span>Next scan</span><strong>{{ next_scan_at ? next_scan_at|date('Y-m-d H:i') : 'Not scheduled' }}</strong></div>
+            <div class="overview-kv-row"><span>Needs attention</span><strong>{{ stats.ambiguous }}</strong></div>
+        </div>
+        {% if scan_running %}
+            <div class="overview-progress"><div class="overview-progress-bar"></div></div>
+        {% endif %}
+        <div class="overview-actions">
+            <a class="btn btn-secondary btn-sm" href="{{ path('automation_library') }}">Open library</a>
+        </div>
+    </article>
+
+    <article class="card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem;">
+            <div>
+                <h2 class="overview-card-title">Download Automations</h2>
+                <p class="overview-card-subtitle">Missing movie intents, release resolution, queue depth, and errors.</p>
+            </div>
+            <span class="badge {{ intent_busy ? 'badge-info' : 'badge-neutral' }}">{{ intent_busy ? 'Running' : 'Idle' }}</span>
+        </div>
+        <div class="overview-kv">
+            <div class="overview-kv-row"><span>Last intent run</span><strong>{{ last_intent_run ? (last_intent_run.finished_at ?: last_intent_run.started_at) : 'Never' }}</strong></div>
+            <div class="overview-kv-row"><span>Last result</span><strong>{{ last_intent_run ? last_intent_run.status : '—' }}</strong></div>
+            <div class="overview-kv-row"><span>Queued this run</span><strong>{{ last_intent_run ? last_intent_run.intents_queued : 0 }}</strong></div>
+            <div class="overview-kv-row"><span>Queue depth</span><strong>{{ intent_queue_depth }}</strong></div>
+        </div>
+        {% if intent_busy %}
+            <div class="overview-progress"><div class="overview-progress-bar"></div></div>
+        {% endif %}
+        <div class="overview-actions">
+            <a class="btn btn-secondary btn-sm" href="{{ path('automation_downloads') }}">Open download automations</a>
+        </div>
+    </article>
+</section>
+
+<section class="card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="overview-card-title">Current activity</h2>
+            <p class="overview-card-subtitle">Active automation jobs. Detailed history lives on the Activity page.</p>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="{{ path('automation_activity') }}">Full activity</a>
+    </div>
+
+    {% if scan_running or list_busy or intent_busy %}
+        <div class="overview-activity-list">
+            {% if scan_running %}
+                <div class="overview-activity-row">
+                    <div class="overview-activity-main">
+                        <div class="overview-activity-title">Library scan in progress</div>
+                        <div class="overview-activity-meta">
+                            {% if running_scan %}{{ running_scan.files_seen }} seen · {{ running_scan.files_indexed }} new · {{ running_scan.files_updated }} updated · {{ running_scan.files_missing }} missing{% else %}Indexing the configured NAS roots…{% endif %}
+                        </div>
+                        <div class="overview-progress"><div class="overview-progress-bar"></div></div>
+                    </div>
+                    <span class="badge badge-info">Running</span>
+                </div>
+            {% endif %}
+            {% if list_busy %}
+                <div class="overview-activity-row">
+                    <div class="overview-activity-main">
+                        <div class="overview-activity-title">{{ list_running ? 'List dry-run in progress' : 'List dry-run queued' }}</div>
+                        <div class="overview-activity-meta">
+                            {% if running_list_run %}{{ running_list_run.items_seen }} items · {{ running_list_run.present }} present · {{ running_list_run.missing }} missing · {{ running_list_run.ambiguous }} ambiguous{% else %}Waiting for the automation worker…{% endif %}
+                        </div>
+                        <div class="overview-progress"><div class="overview-progress-bar"></div></div>
+                    </div>
+                    <span class="badge badge-info">{{ list_running ? 'Running' : 'Queued' }}</span>
+                </div>
+            {% endif %}
+            {% if intent_busy %}
+                <div class="overview-activity-row">
+                    <div class="overview-activity-main">
+                        <div class="overview-activity-title">{{ running_intent_run ? 'Movie intent run in progress' : 'Movie intent run queued' }}</div>
+                        <div class="overview-activity-meta">
+                            {% if running_intent_run %}{{ running_intent_run.intents_seen }} seen · {{ running_intent_run.intents_queued }} queued · {{ running_intent_run.intents_no_source }} no source · {{ running_intent_run.intents_error }} error{% else %}Waiting for the automation worker…{% endif %}
+                        </div>
+                        <div class="overview-progress"><div class="overview-progress-bar"></div></div>
+                    </div>
+                    <span class="badge badge-info">{{ running_intent_run ? 'Running' : 'Queued' }}</span>
+                </div>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="library-empty">All automation jobs are idle. Worker heartbeat: {{ worker_heartbeat ? worker_heartbeat|date('Y-m-d H:i:s') : 'never' }}.</div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block javascripts %}
+<script>
+    {% if scan_running or list_running or list_sync_requested or running_intent_run is not null or intent_run_requested %}
+    setTimeout(() => window.location.reload(), 5000);
+    {% endif %}
+</script>
+{% endblock %}

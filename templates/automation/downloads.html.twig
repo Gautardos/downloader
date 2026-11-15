@@ -1,0 +1,1294 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Download Automations - Downloader{% endblock %}
+
+{% block body %}
+<style>
+    .downloads-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .downloads-stat {
+        padding: 1.05rem 1.1rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 14px;
+        background: rgba(30, 41, 59, .72);
+    }
+    .downloads-stat-label {
+        color: var(--text-secondary);
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+    }
+    .downloads-stat-value {
+        margin-top: .5rem;
+        font-size: 1.5rem;
+        font-weight: 800;
+        letter-spacing: -.04em;
+    }
+    .downloads-stat-meta {
+        margin-top: .3rem;
+        color: var(--text-secondary);
+        font-size: .72rem;
+    }
+    .downloads-card-title { margin: 0; font-size: 1rem; letter-spacing: -.02em; }
+    .downloads-card-subtitle {
+        margin: .35rem 0 0;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        line-height: 1.5;
+    }
+    .downloads-field { display: grid; gap: .35rem; margin-top: .7rem; }
+    .downloads-field label {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: .75rem;
+        font-weight: 700;
+    }
+    .downloads-field input[type="text"],
+    .downloads-field input[type="number"],
+    .downloads-field select {
+        width: 100%;
+        margin: 0;
+        padding: .64rem .72rem;
+        border: 1px solid rgba(148, 163, 184, .28);
+        border-radius: 9px;
+        color: var(--text-primary);
+        background: rgba(15, 23, 42, .72);
+        font: inherit;
+        font-size: .8rem;
+        box-sizing: border-box;
+    }
+    .downloads-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+    .downloads-checks { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-top: .7rem; }
+    .downloads-check {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        color: var(--text-secondary);
+        font-size: .77rem;
+    }
+    .downloads-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .9rem; }
+    .downloads-hint { color: var(--text-muted, #64748b); font-size: .71rem; line-height: 1.5; }
+    .downloads-table-wrap {
+        overflow-x: auto;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 12px;
+    }
+    .downloads-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .79rem;
+    }
+    .downloads-table th {
+        padding: .7rem .8rem;
+        color: var(--text-secondary);
+        font-size: .65rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-align: left;
+        text-transform: uppercase;
+        background: rgba(15, 23, 42, .42);
+        border-bottom: 1px solid rgba(148, 163, 184, .16);
+        white-space: nowrap;
+    }
+    .downloads-table td {
+        padding: .72rem .8rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .08);
+        vertical-align: top;
+    }
+    .downloads-table tr:last-child td { border-bottom: 0; }
+    .downloads-table .right { text-align: right; }
+    .downloads-row-title { font-weight: 700; }
+    .downloads-row-sub {
+        margin-top: .2rem;
+        color: var(--text-secondary);
+        font-size: .7rem;
+        word-break: break-word;
+    }
+    .downloads-empty {
+        padding: 1.2rem;
+        border: 1px dashed rgba(148, 163, 184, .28);
+        border-radius: 12px;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        text-align: center;
+    }
+    .downloads-filters {
+        display: flex;
+        align-items: flex-end;
+        gap: .7rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+    .downloads-filters .downloads-field { margin-top: 0; min-width: 140px; }
+    .downloads-filters .downloads-field input[type="text"],
+    .downloads-filters .downloads-field select { height: 42px; }
+    .downloads-filter-search { flex: 1 1 260px; min-width: 220px; }
+    .downloads-preview {
+        display: grid;
+        gap: .55rem;
+        margin-top: .9rem;
+    }
+    .downloads-preview-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .8rem;
+        padding: .55rem .65rem;
+        border: 1px solid rgba(148, 163, 184, .12);
+        border-radius: 9px;
+        font-size: .76rem;
+    }
+    .downloads-preview-text { color: var(--text-secondary); line-height: 1.5; }
+    .downloads-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: .8rem;
+        color: var(--text-secondary);
+        font-size: .76rem;
+    }
+    .downloads-run-state {
+        border-left: 4px solid var(--accent);
+        background: rgba(56, 189, 248, .07);
+    }
+    .dry-run-spinner {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        margin-top: .16rem;
+        border-radius: 50%;
+        border: 2px solid rgba(56, 189, 248, .25);
+        border-top-color: var(--accent);
+        animation: dry-run-spin .8s linear infinite;
+    }
+    @keyframes dry-run-spin { to { transform: rotate(360deg); } }
+    .dry-run-progress {
+        height: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, .14);
+        margin-top: .65rem;
+    }
+    .dry-run-progress-bar {
+        height: 100%;
+        width: 0;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--accent), #818cf8);
+        transition: width .3s ease;
+    }
+    .dry-run-progress-bar.is-indeterminate {
+        width: 35%;
+        animation: dry-run-progress 1.2s ease-in-out infinite;
+    }
+    @keyframes dry-run-progress {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(320%); }
+    }
+    .dry-run-events {
+        margin-top: .55rem;
+        color: var(--text-secondary);
+        font-size: .72rem;
+        line-height: 1.5;
+        white-space: pre-line;
+    }
+    .dry-run-toggle {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(148, 163, 184, .24);
+        border-radius: 9px;
+        color: var(--text-secondary);
+        background: rgba(15, 23, 42, .45);
+        cursor: pointer;
+        transition: color .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .dry-run-toggle:hover {
+        color: var(--text-primary);
+        border-color: rgba(56, 189, 248, .45);
+        background: rgba(56, 189, 248, .08);
+    }
+    .dry-run-toggle-icon {
+        font-size: .7rem;
+        line-height: 1;
+    }
+    .dry-run-head {
+        cursor: pointer;
+        user-select: none;
+    }
+    .dry-run-collapsed-summary {
+        display: none;
+        margin-top: .45rem;
+        color: var(--text-secondary);
+        font-size: .74rem;
+    }
+    .is-collapsed .dry-run-collapsed-summary {
+        display: block;
+    }
+    .dry-run-body {
+        margin-top: .2rem;
+    }
+    .is-collapsed .dry-run-body {
+        display: none;
+    }
+    .dry-run-state {
+        display: flex;
+        align-items: flex-start;
+        gap: .75rem;
+        padding: .8rem 1rem;
+        margin-top: .9rem;
+        border: 1px solid rgba(56, 189, 248, .24);
+        border-left: 4px solid var(--accent);
+        border-radius: 10px;
+        background: rgba(56, 189, 248, .07);
+        font-size: .8rem;
+    }
+    .dry-run-state.is-waiting {
+        border-color: rgba(245, 158, 11, .28);
+        border-left-color: var(--warning);
+        background: rgba(245, 158, 11, .08);
+    }
+    .dry-run-state.is-stale {
+        border-color: rgba(239, 68, 68, .3);
+        border-left-color: #ef4444;
+        background: rgba(239, 68, 68, .08);
+    }
+    .dry-run-item {
+        margin-top: .65rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 11px;
+        background: rgba(15, 23, 42, .32);
+        overflow: hidden;
+    }
+    .dry-run-item > summary {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .8rem .9rem;
+        cursor: pointer;
+        list-style: none;
+    }
+    .dry-run-item > summary::-webkit-details-marker { display: none; }
+    .dry-run-item-title { font-weight: 700; font-size: .84rem; }
+    .dry-run-item-meta { margin-top: .2rem; color: var(--text-secondary); font-size: .72rem; }
+    .dry-run-item-body { padding: 0 .9rem .9rem; }
+    .dry-run-selected {
+        margin-top: .3rem;
+        padding: .55rem .65rem;
+        border: 1px solid rgba(34, 197, 94, .22);
+        border-radius: 9px;
+        background: rgba(34, 197, 94, .07);
+        font-size: .75rem;
+    }
+    .dry-run-candidates { margin-top: .7rem; }
+    .dry-run-candidates .downloads-table-wrap { border-color: rgba(148, 163, 184, .12); }
+    .intent-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem;
+        justify-content: flex-end;
+        align-items: center;
+    }
+    .intent-actions .btn { white-space: nowrap; }
+    .downloads-dialog {
+        width: min(980px, 94vw);
+        max-height: 88vh;
+        padding: 0;
+        border: 1px solid rgba(148, 163, 184, .24);
+        border-radius: 14px;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        box-shadow: 0 24px 64px rgba(0, 0, 0, .55);
+    }
+    .downloads-dialog::backdrop {
+        background: rgba(2, 6, 23, .72);
+        backdrop-filter: blur(4px);
+    }
+    .downloads-dialog-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.2rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .14);
+    }
+    .downloads-dialog-title { margin: 0; font-size: 1rem; }
+    .downloads-dialog-subtitle { margin: .3rem 0 0; color: var(--text-secondary); font-size: .78rem; }
+    .downloads-dialog-body { max-height: 65vh; overflow: auto; padding: 1rem 1.2rem; }
+    .downloads-dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: .5rem;
+        padding: .8rem 1.2rem;
+        border-top: 1px solid rgba(148, 163, 184, .14);
+    }
+    .source-details {
+        display: flex;
+        gap: .9rem;
+        align-items: flex-start;
+        padding: .75rem;
+        border: 1px solid rgba(148, 163, 184, .14);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, .35);
+        margin-bottom: .9rem;
+    }
+    .source-details-poster {
+        width: 58px;
+        height: 86px;
+        object-fit: cover;
+        border-radius: 7px;
+        background: rgba(148, 163, 184, .14);
+        flex: 0 0 auto;
+    }
+    .source-details-title { font-weight: 800; font-size: .95rem; }
+    .source-details-meta { margin-top: .25rem; color: var(--text-secondary); font-size: .75rem; }
+    .source-details-overview { margin-top: .45rem; color: var(--text-secondary); font-size: .76rem; line-height: 1.5; }
+    @media (max-width: 1020px) {
+        .downloads-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+        .downloads-stats { grid-template-columns: 1fr; }
+        .downloads-row { grid-template-columns: 1fr; }
+    }
+</style>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Download Automations',
+    subtitle: 'Preview movie releases, then resolve and download missing movies and series episodes. Quality profile and limits live in Configuration.',
+    icon: 'automation'
+} %}
+    {% block actions %}
+        <span class="badge {{ worker_online ? 'badge-success' : 'badge-danger' }}">{{ worker_online ? 'Worker online' : 'Worker offline' }}</span>
+        <a class="btn btn-secondary" href="{{ path('automation_config') }}#config-quality">Settings</a>
+        {% if counts.ignored > 0 %}
+            <button class="btn btn-secondary" type="button" onclick="restoreAllIgnored()" title="Restore every ignored intent and make it pending again.">Restore all ignored ({{ counts.ignored }})</button>
+        {% endif %}
+        <button class="btn btn-secondary" type="button" onclick="startReleaseDryRun()" title="Preview movie releases only, without queueing anything. Use Prepare episode intents for series.">Preview movie releases</button>
+        <button class="btn btn-primary" type="button" onclick="runDownloadAutomation()" title="Prepare missing movies and episodes, then resolve and queue downloads.">Run download automation</button>
+    {% endblock %}
+{% endembed %}
+
+{% include 'automation/_nav.html.twig' %}
+
+<div class="downloads-hint" style="margin-bottom:.9rem;">
+    <strong>Preview movie releases</strong> only inspects movie candidates. Series episodes are prepared separately with <strong>Prepare episode intents</strong>, then reviewed from each intent’s <strong>Sources</strong> dialog. <strong>Run download automation</strong> prepares and queues both.
+</div>
+
+{% for message in app.flashes('success') %}
+    <div class="alert alert-success">{{ message }}</div>
+{% endfor %}
+{% for message in app.flashes('error') %}
+    <div class="alert alert-error">{{ message }}</div>
+{% endfor %}
+
+{% if validated_sources == 0 %}
+    <div class="alert alert-warning">
+        <strong>Dry-run not validated.</strong> Run a list dry-run before queueing movies. Missing items without a successful dry-run are skipped.
+    </div>
+{% endif %}
+
+{% if auto_sources == 0 %}
+    <div class="alert alert-warning">
+        <strong>No auto-download movie source.</strong> Enable “Auto download” on a list source and validate its dry-run to let the worker queue movie intents automatically.
+    </div>
+{% endif %}
+
+{% if auto_series_sources == 0 %}
+    <div class="alert alert-warning">
+        <strong>No auto-download series source.</strong> Enable “Auto download series episodes” on a list source and validate its dry-run to let the worker queue episode intents automatically.
+    </div>
+{% endif %}
+
+{% if run_requested or running_run %}
+    <div class="alert downloads-run-state" id="intent-run-state">
+        <strong id="intent-run-title">{{ running_run ? 'Automation run in progress' : 'Automation run requested' }}</strong>
+        <div class="downloads-hint" id="intent-run-meta">
+            {% if running_run %}
+                {{ running_run.intents_seen }} intent{{ running_run.intents_seen == 1 ? '' : 's' }} seen · {{ running_run.intents_queued }} queued · {{ running_run.intents_no_source }} no source · {{ running_run.intents_error }} error
+            {% else %}
+                Waiting for the automation worker or the background command.
+            {% endif %}
+        </div>
+    </div>
+{% endif %}
+
+<section class="downloads-stats">
+    <article class="downloads-stat">
+        <div class="downloads-stat-label">Pending</div>
+        <div class="downloads-stat-value">{{ counts.pending + counts.no_source + counts.error }}</div>
+        <div class="downloads-stat-meta">{{ counts.pending }} pending · {{ counts.no_source }} no source · {{ counts.error }} error</div>
+    </article>
+    <article class="downloads-stat">
+        <div class="downloads-stat-label">In progress</div>
+        <div class="downloads-stat-value">{{ counts.resolving + counts.queued + counts.downloading }}</div>
+        <div class="downloads-stat-meta">{{ counts.resolving }} resolving · {{ counts.queued }} queued · {{ counts.downloading }} downloading</div>
+    </article>
+    <article class="downloads-stat">
+        <div class="downloads-stat-label">Success</div>
+        <div class="downloads-stat-value">{{ counts.success }}</div>
+        <div class="downloads-stat-meta">{{ counts.ignored }} ignored intent{{ counts.ignored == 1 ? '' : 's' }}</div>
+    </article>
+    <article class="downloads-stat">
+        <div class="downloads-stat-label">Queue depth</div>
+        <div class="downloads-stat-value">{{ queue_depth }}</div>
+        <div class="downloads-stat-meta">Guard: {{ queue_guard }} downloads</div>
+    </article>
+</section>
+
+<section class="card is-collapsed" id="dry-run-section" data-dry-run-section style="margin-bottom:1rem;">
+    <div class="dry-run-head" data-dry-run-head style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div>
+            <h2 class="downloads-card-title">Movie release dry-run</h2>
+            <p class="downloads-card-subtitle">Preview release selection and addon sources for every missing movie. Series episodes are not included here.</p>
+            <div class="dry-run-collapsed-summary">
+                {% if dry_run.status in ['requested', 'running'] %}
+                    Dry-run {{ dry_run.status }} · {{ dry_run.processed }}/{{ dry_run.total }} previewed
+                {% elseif dry_run.results is not empty %}
+                    {{ dry_run.total }} movie{{ dry_run.total == 1 ? '' : 's' }} · {{ dry_run.ok }} with release · {{ dry_run.no_source }} without source{% if dry_run.finished_at %} · {{ dry_run.finished_at }}{% endif %}
+                {% elseif dry_run.status == 'error' %}
+                    Last dry-run failed
+                {% else %}
+                    No dry-run yet
+                {% endif %}
+            </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+            {% if dry_run.status in ['requested', 'running'] %}
+                <span class="badge badge-info">{{ dry_run.status|capitalize }}</span>
+            {% endif %}
+            <button class="btn btn-secondary btn-sm" type="button" onclick="startReleaseDryRun()" {{ dry_run.status in ['requested', 'running'] ? 'disabled' : '' }}>Run movie dry-run</button>
+            <button class="dry-run-toggle" type="button" data-dry-run-toggle aria-expanded="false" aria-controls="dry-run-body" title="Expand dry-run">
+                <span class="dry-run-toggle-icon">▼</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="dry-run-body" id="dry-run-body" data-dry-run-body hidden>
+    {% if dry_run.status in ['requested', 'running'] %}
+        <div class="dry-run-state {{ dry_run.status == 'running' ? '' : 'is-waiting' }}" id="dry-run-state" data-started="{{ dry_run.started_at ? dry_run.started_at|date('U') : 0 }}">
+            <span class="dry-run-spinner" aria-hidden="true"></span>
+            <div>
+                <strong id="dry-run-state-title">{{ dry_run.status == 'running' ? 'Dry-run in progress' : 'Dry-run requested' }}</strong>
+                {% set dry_run_percent = dry_run.total > 0 ? ((dry_run.processed / dry_run.total) * 100)|round : 0 %}
+                <div class="downloads-hint" id="dry-run-state-meta">
+                    {% if dry_run.total > 0 %}
+                        {{ dry_run.processed }} / {{ dry_run.total }} movie{{ dry_run.total == 1 ? '' : 's' }} previewed · {{ dry_run_percent }}% · {{ dry_run.ok }} with a release · {{ dry_run.no_source }} without source
+                    {% else %}
+                        Collecting missing movies…
+                    {% endif %}
+                </div>
+                <div class="dry-run-progress">
+                    <div class="dry-run-progress-bar {{ dry_run.status == 'requested' or dry_run.total == 0 ? 'is-indeterminate' : '' }}" id="dry-run-progress-bar" style="width: {{ dry_run_percent }}%"></div>
+                </div>
+                <div class="downloads-hint" id="dry-run-state-current">
+                    {% if dry_run.current %}Current: {{ dry_run.current }}{% endif %}
+                </div>
+                <div class="dry-run-events" id="dry-run-state-events">
+                    {% for event in dry_run.events|default([])|slice(-4) %}{{ event.time }} · {{ event.message }}{% if not loop.last %}
+{% endif %}{% endfor %}
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if dry_run.status == 'error' %}
+        <div class="alert alert-error" style="margin-top:.9rem;">{{ dry_run.error ?: 'The release dry-run failed.' }}</div>
+    {% elseif dry_run.results is not empty %}
+        <div class="downloads-hint" style="margin-top:.8rem;">
+            {{ dry_run.total }} movie{{ dry_run.total == 1 ? '' : 's' }} · {{ dry_run.ok }} with a selected release · {{ dry_run.no_source }} without source
+            {% if dry_run.finished_at %} · results from {{ dry_run.finished_at }}{% endif %}
+        </div>
+        {% if dry_run.profile_hash|default('') == '' %}
+            <div class="alert alert-warning" style="margin-top:.7rem;">
+                These results predate profile tracking. Re-run the dry-run to confirm the current addons and quality profile.
+            </div>
+        {% elseif profile_hash_current|default('') and dry_run.profile_hash != profile_hash_current %}
+            <div class="alert alert-warning" style="margin-top:.7rem;">
+                The quality profile changed since this dry-run. Re-run it to refresh the selected sources.
+            </div>
+        {% endif %}
+
+        {% for result in dry_run.results %}
+            {% set selected = result.selected|default(null) %}
+            <details class="dry-run-item" {{ loop.first ? 'open' : '' }}>
+                <summary>
+                    <div>
+                        <div class="dry-run-item-title">{{ result.title }}{% if result.year %} ({{ result.year }}){% endif %}</div>
+                        <div class="dry-run-item-meta">
+                            {{ result.source_label }}{% if result.source_list_id %} · list {{ result.source_list_id }}{% endif %}
+                            {% if result.media_key %} · {{ result.media_key }}{% endif %}
+                            {% if result.streams_count is defined %} · {{ result.streams_count }} stream{{ result.streams_count == 1 ? '' : 's' }}{% endif %}
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="badge {{ result.status == 'ok' ? 'badge-success' : 'badge-warning' }}">{{ result.status == 'ok' ? 'Selected' : 'No source' }}</span>
+                        {% if selected %}
+                            <div class="dry-run-item-meta">{{ selected.addon ?: 'Unknown addon' }} · score {{ selected.score }}</div>
+                        {% endif %}
+                    </div>
+                </summary>
+                <div class="dry-run-item-body">
+                    {% if selected %}
+                        <div class="dry-run-selected">
+                            <strong>{{ selected.explanation }}</strong>
+                            {% if selected.kind|default('') == 'direct' %}
+                                <span class="badge badge-neutral" style="margin-left:.4rem;">Direct source</span>
+                            {% elseif selected.metadata.cached|default(null) is same as(true) %}
+                                <span class="badge badge-success" style="margin-left:.4rem;">Cached at Alldebrid</span>
+                            {% elseif selected.metadata.cached|default(null) is same as(false) %}
+                                <span class="badge badge-warning" style="margin-left:.4rem;">Uncached — Alldebrid will cache it</span>
+                            {% else %}
+                                <span class="badge badge-neutral" style="margin-left:.4rem;">Cache status unknown</span>
+                            {% endif %}
+                            {% if selected.filename %}<div class="downloads-hint">{{ selected.filename }}</div>{% endif %}
+                        </div>
+                    {% else %}
+                        <div class="alert alert-warning" style="margin-top:.3rem;">{{ result.reason ?: 'No release passed the quality profile.' }}</div>
+                        {% if result.rejection_summary|default({}) is not empty %}
+                            <div class="downloads-hint" style="margin-top:.45rem;">
+                                Filtered by:
+                                {% for reason, count in result.rejection_summary|default({}) %}
+                                    <span class="badge badge-neutral" title="{{ reason }}">{{ reason|replace({'_': ' '}) }} ({{ count }})</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% endif %}
+
+                    {% if result.candidates|default([]) is not empty %}
+                        <div class="dry-run-candidates">
+                            <table class="downloads-table">
+                                <thead>
+                                    <tr>
+                                        <th>Accepted candidate</th>
+                                        <th>Addon</th>
+                                        <th>Score</th>
+                                        <th>Cache</th>
+                                        <th>Release</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for candidate in result.candidates|default([]) %}
+                                        <tr>
+                                            <td>{{ loop.first ? 'Selected' : 'Alternative' }}</td>
+                                            <td>{{ candidate.addon ?: '—' }}</td>
+                                            <td>{{ candidate.score }}</td>
+                                            <td>
+                                                {% if candidate.kind|default('') == 'direct' %}
+                                                    Direct
+                                                {% elseif candidate.metadata.cached|default(null) is same as(true) %}
+                                                    Cached
+                                                {% elseif candidate.metadata.cached|default(null) is same as(false) %}
+                                                    Uncached
+                                                {% else %}
+                                                    Unknown
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div>{{ candidate.explanation }}</div>
+                                                {% if candidate.filename %}<div class="downloads-row-sub">{{ candidate.filename }}</div>{% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% endif %}
+
+                    {% if result.rejected|default([]) is not empty %}
+                        <details style="margin-top:.7rem;">
+                            <summary class="downloads-hint" style="cursor:pointer;">{{ result.rejected|default([])|length }} filtered candidate{{ result.rejected|default([])|length == 1 ? '' : 's' }}</summary>
+                            <div class="dry-run-candidates">
+                                <table class="downloads-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Candidate</th>
+                                            <th>Addon</th>
+                                            <th>Reason</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for candidate in result.rejected|default([]) %}
+                                            <tr>
+                                                <td>{{ candidate.explanation }}</td>
+                                                <td>{{ candidate.addon ?: '—' }}</td>
+                                                <td class="downloads-hint">{{ candidate.failures|join(', ') }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    {% endif %}
+                </div>
+            </details>
+        {% endfor %}
+    {% elseif dry_run.status == 'idle' %}
+        <div class="downloads-empty" style="margin-top:.9rem;">
+            No movie dry-run yet. Run it to preview which release and addon would be selected for each missing movie.
+            {% if missing_series > 0 %}
+                <div style="margin-top:.6rem;">
+                    {{ missing_series }} missing series item{{ missing_series == 1 ? '' : 's' }} ({{ missing_series_episodes }} episode{{ missing_series_episodes == 1 ? '' : 's' }}) are waiting for episode intents.
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="queueMissingEpisodes()" style="margin-left:.45rem;">Prepare episode intents</button>
+                </div>
+            {% endif %}
+        </div>
+    {% elseif dry_run.status == 'success' %}
+        <div class="downloads-empty" style="margin-top:.9rem;">
+            No missing movie found in validated list sources.
+            {% if missing_series > 0 %}
+                <div style="margin-top:.6rem;">
+                    {{ missing_series }} missing series item{{ missing_series == 1 ? '' : 's' }} ({{ missing_series_episodes }} episode{{ missing_series_episodes == 1 ? '' : 's' }}) are not covered by the movie dry-run.
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="queueMissingEpisodes()" style="margin-left:.45rem;">Prepare episode intents</button>
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+    </div>
+</section>
+
+<section class="card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div>
+            <h2 class="downloads-card-title">Download intents</h2>
+            <p class="downloads-card-subtitle">Only missing movies and aired episodes from a validated dry-run are queued here. Episodes are named <code>&lt;Series&gt; (&lt;Year&gt;) - SxxExx.ext</code> without episode titles.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="queueMissingMovies()" title="Create pending movie intents only. Nothing is resolved or downloaded.">Prepare movie intents</button>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="queueMissingEpisodes()" title="Create pending episode intents only. Nothing is resolved or downloaded.">Prepare episode intents</button>
+            <span class="badge badge-neutral">{{ total }} intent{{ total == 1 ? '' : 's' }}</span>
+        </div>
+    </div>
+
+    <form method="get" action="{{ path('automation_downloads') }}" class="downloads-filters" style="margin-top:1rem;">
+        <div class="downloads-field">
+            <label for="intent-filter-status">Status</label>
+            <select id="intent-filter-status" name="status">
+                {% for value in ['all', 'pending', 'resolving', 'queued', 'downloading', 'success', 'error', 'no_source', 'ignored'] %}
+                    <option value="{{ value }}" {{ filters.status == value ? 'selected' : '' }}>{{ value|replace({'_': ' '})|capitalize }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="downloads-field">
+            <label for="intent-filter-type">Type</label>
+            <select id="intent-filter-type" name="type">
+                {% for value in ['all', 'movie', 'series'] %}
+                    <option value="{{ value }}" {{ filters.type == value ? 'selected' : '' }}>{{ value|capitalize }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="downloads-field">
+            <label for="intent-filter-season">Season</label>
+            <input id="intent-filter-season" type="number" min="0" name="season" value="{{ filters.season }}" placeholder="All">
+        </div>
+        <div class="downloads-field">
+            <label for="intent-filter-source">Source</label>
+            <select id="intent-filter-source" name="source">
+                <option value="">All sources</option>
+                {% for source in sources %}
+                    <option value="{{ source.id }}" {{ filters.source == source.id ? 'selected' : '' }}>{{ source.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="downloads-field downloads-filter-search">
+            <label for="intent-filter-q">Search</label>
+            <input id="intent-filter-q" type="text" name="q" value="{{ filters.q }}" placeholder="Title, TMDB or IMDb ID">
+        </div>
+        <button class="btn btn-secondary" type="submit">Filter</button>
+        <a class="btn btn-ghost" href="{{ path('automation_downloads') }}">Reset</a>
+    </form>
+
+    {% if items is empty %}
+        <div class="downloads-empty">No intent matches these filters. Run a dry-run, then queue missing movies or episodes.</div>
+    {% else %}
+        <div class="downloads-table-wrap">
+            <table class="downloads-table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>Episode</th>
+                        <th>Source</th>
+                        <th>Status</th>
+                        <th>Selected release</th>
+                        <th>Tries</th>
+                        <th>Next attempt</th>
+                        <th>Error</th>
+                        <th class="right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                        {% set statusClass = item.status == 'success' ? 'badge-success' : (item.status in ['error', 'no_source'] ? 'badge-danger' : (item.status in ['queued', 'downloading', 'resolving'] ? 'badge-info' : (item.status == 'ignored' ? 'badge-neutral' : 'badge-warning'))) %}
+                        <tr>
+                            <td>
+                                <div class="downloads-row-title">{{ item.title }}{% if item.year %} ({{ item.year }}){% endif %}</div>
+                                <div class="downloads-row-sub">{{ item.media_key }}</div>
+                            </td>
+                            <td>
+                                {% set isSeries = item.media_type in ['series', 'anime'] %}
+                                <span class="badge {{ isSeries ? 'badge-info' : 'badge-neutral' }}">{{ isSeries ? 'Series' : 'Movie' }}</span>
+                            </td>
+                            <td>
+                                {% if item.season is not null and item.episode is not null %}
+                                    S{{ '%02d'|format(item.season) }}E{{ '%02d'|format(item.episode) }}
+                                    {% if item.release_season is not null and item.release_episode is not null and (item.release_season != item.season or item.release_episode != item.episode) %}
+                                        <div class="downloads-row-sub">Release S{{ '%02d'|format(item.release_season) }}E{{ '%02d'|format(item.release_episode) }}{% if item.numbering_source %} · {{ item.numbering_source }}{% endif %}</div>
+                                    {% endif %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>{{ source_labels[item.source_id]|default(item.source_id ?: '—') }}<div class="downloads-row-sub">{{ item.source_list_id ?: '' }}</div></td>
+                            <td><span class="badge {{ statusClass }}">{{ item.status|replace({'_': ' '})|capitalize }}</span></td>
+                            <td>
+                                {% if item.selected_source %}<div>{{ item.selected_source }}</div>{% endif %}
+                                {% if item.release_explanation %}<div class="downloads-row-sub">{{ item.release_explanation }}</div>{% endif %}
+                                {% if not item.selected_source and not item.release_explanation %}—{% endif %}
+                            </td>
+                            <td>{{ item.attempts }}</td>
+                            <td>{{ item.next_attempt_at ?: '—' }}</td>
+                            <td>
+                                {% if item.error_message %}
+                                    <span class="downloads-hint">{{ item.error_message }}</span>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td class="right">
+                                <div class="intent-actions">
+                                    {% if item.status != 'ignored' %}
+                                        <button class="btn btn-secondary btn-sm" type="button" data-intent-sources="{{ item.id }}">Sources</button>
+                                    {% endif %}
+                                    {% if item.download_id %}
+                                        <a class="btn btn-ghost btn-sm" href="{{ path('queue') }}">View queue</a>
+                                    {% endif %}
+                                    {% if item.status in ['error', 'no_source'] %}
+                                        <button class="btn btn-secondary btn-sm" type="button" data-intent-retry="{{ item.id }}">Retry</button>
+                                    {% endif %}
+                                    {% if item.status == 'ignored' %}
+                                        <button class="btn btn-ghost btn-sm" type="button" data-intent-ignore="{{ item.id }}" data-intent-ignored="1">Restore</button>
+                                        <button class="btn btn-ghost btn-sm" type="button" data-intent-delete="{{ item.id }}" style="color: var(--danger);" title="Delete this ignored intent permanently.">Delete</button>
+                                    {% elseif item.status != 'success' %}
+                                        <button class="btn btn-ghost btn-sm" type="button" data-intent-ignore="{{ item.id }}" data-intent-ignored="0">Ignore</button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="downloads-pagination">
+            <span>Showing {{ offset + 1 }}–{{ min(offset + per_page, total) }} of {{ total }}</span>
+            <span>
+                {% if page > 1 %}
+                    <a class="btn btn-secondary btn-sm" href="{{ path('automation_downloads', filters|merge({page: page - 1})) }}">Previous</a>
+                {% endif %}
+                {% if page < pages %}
+                    <a class="btn btn-secondary btn-sm" href="{{ path('automation_downloads', filters|merge({page: page + 1})) }}">Next</a>
+                {% endif %}
+            </span>
+        </div>
+    {% endif %}
+</section>
+
+{% if recent_runs is not empty %}
+<section class="card" style="margin-top:1rem;">
+    <h2 class="downloads-card-title">Recent intent runs</h2>
+    <p class="downloads-card-subtitle">Release resolution history. Notifications are grouped per run.</p>
+    <div class="downloads-table-wrap" style="margin-top:.9rem;">
+        <table class="downloads-table">
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Status</th>
+                    <th>Seen</th>
+                    <th>Queued</th>
+                    <th>No source</th>
+                    <th>Error</th>
+                    <th>Queue depth</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in recent_runs %}
+                    <tr>
+                        <td>{{ run.started_at }}</td>
+                        <td><span class="badge {{ run.status == 'success' ? 'badge-success' : (run.status == 'error' ? 'badge-danger' : 'badge-warning') }}">{{ run.status }}</span></td>
+                        <td>{{ run.intents_seen }}</td>
+                        <td>{{ run.intents_queued }}</td>
+                        <td>{{ run.intents_no_source }}</td>
+                        <td>{{ run.intents_error }}</td>
+                        <td>{{ run.queue_depth }}</td>
+                        <td>{{ run.duration is not null ? run.duration ~ 's' : '—' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+<dialog class="downloads-dialog" id="intent-sources-dialog">
+    <div class="downloads-dialog-header">
+        <div>
+            <h2 class="downloads-dialog-title" id="intent-sources-title">Sources</h2>
+            <p class="downloads-dialog-subtitle" id="intent-sources-subtitle"></p>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="button" id="intent-sources-close">Close</button>
+    </div>
+    <div class="downloads-dialog-body">
+        <div id="intent-sources-details"></div>
+        <div class="downloads-hint" style="margin-bottom:.6rem;">
+            Manual selection bypasses the quality profile filters. Filtered candidates are shown with their reasons.
+        </div>
+        <div id="intent-sources-state" class="downloads-empty">Loading sources…</div>
+        <div id="intent-sources-list"></div>
+    </div>
+    <div class="downloads-dialog-actions">
+        <button class="btn btn-secondary" type="button" id="intent-sources-dismiss">Close</button>
+    </div>
+</dialog>
+
+{% endblock %}
+
+{% block javascripts %}
+<script>
+    const downloadsQueueRoute = "{{ path('automation_downloads_queue') }}";
+    const downloadsQueueEpisodesRoute = "{{ path('automation_downloads_queue_episodes') }}";
+    const downloadsRunAllRoute = "{{ path('automation_downloads_run_all') }}";
+    const downloadsRetryRoute = "{{ path('automation_downloads_intent_retry') }}";
+    const downloadsIgnoreRoute = "{{ path('automation_downloads_intent_ignore') }}";
+    const downloadsDeleteIntentRoute = "{{ path('automation_downloads_intent_delete') }}";
+    const downloadsRestoreIgnoredRoute = "{{ path('automation_downloads_intent_restore_ignored') }}";
+    const downloadsCsrfToken = "{{ csrf_token|e('js') }}";
+    const downloadsStatusRoute = "{{ path('automation_downloads_status') }}";
+    const dryRunRoute = "{{ path('automation_downloads_dry_run') }}";
+    const dryRunStatusRoute = "{{ path('automation_downloads_dry_run_status') }}";
+    const intentSourcesRoute = "{{ path('automation_downloads_intent_sources') }}";
+    const intentDownloadRoute = "{{ path('automation_downloads_intent_download') }}";
+    let intentSourceCandidates = [];
+    let intentSourceIntentId = null;
+    let dryRunRequestedAt = {{ dry_run.status in ['requested', 'running'] ? 'Date.now()' : '0' }};
+    const dryRunCollapseKey = 'automation-dry-run-collapsed';
+
+    function setDryRunCollapsed(collapsed, persist = true) {
+        const section = document.querySelector('[data-dry-run-section]');
+        if (!section) return;
+        section.classList.toggle('is-collapsed', collapsed);
+        const body = section.querySelector('[data-dry-run-body]');
+        if (body) body.hidden = collapsed;
+        const button = section.querySelector('[data-dry-run-toggle]');
+        if (button) {
+            button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            button.title = collapsed ? 'Expand dry-run' : 'Collapse dry-run';
+            const icon = button.querySelector('.dry-run-toggle-icon');
+            if (icon) icon.textContent = collapsed ? '▼' : '▲';
+        }
+        if (persist) {
+            try {
+                localStorage.setItem(dryRunCollapseKey, collapsed ? '1' : '0');
+            } catch (error) {
+                // Ignore unavailable storage.
+            }
+        }
+    }
+
+    document.addEventListener('click', function (event) {
+        const head = event.target.closest('[data-dry-run-head]');
+        if (!head) return;
+        if (event.target.closest('button[onclick*="startReleaseDryRun"]')) return;
+        const section = head.closest('[data-dry-run-section]');
+        if (!section) return;
+        setDryRunCollapsed(!section.classList.contains('is-collapsed'));
+    });
+
+    function escapeSourceHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        }[char]));
+    }
+
+    function renderIntentSourceDetails(details, identity, intent) {
+        const container = document.getElementById('intent-sources-details');
+        if (!container) return;
+        const title = (details && details.title) || (identity && identity.title) || (intent && intent.title) || 'Title';
+        const year = (details && details.year) || (identity && identity.year) || (intent && intent.year) || '';
+        const originalTitle = details && details.original_title ? details.original_title : '';
+        const genres = details && Array.isArray(details.genres) ? details.genres.join(' · ') : '';
+        const rating = details && details.rating ? details.rating + '/10' : '';
+        const imdb = (details && details.imdb_id) || (identity && identity.imdb_id) || '';
+        const overview = details && details.overview ? details.overview : 'No TMDB overview available.';
+        const poster = details && details.poster
+            ? '<img class="source-details-poster" src="' + escapeSourceHtml(details.poster) + '" alt="">'
+            : '<div class="source-details-poster"></div>';
+        const meta = [originalTitle, year ? '(' + year + ')' : null, genres, rating, imdb]
+            .filter(Boolean)
+            .map(escapeSourceHtml)
+            .join(' · ');
+        container.innerHTML =
+            '<div class="source-details">' + poster +
+                '<div>' +
+                    '<div class="source-details-title">' + escapeSourceHtml(title) + '</div>' +
+                    '<div class="source-details-meta">' + meta + '</div>' +
+                    '<div class="source-details-overview">' + escapeSourceHtml(overview) + '</div>' +
+                '</div>' +
+            '</div>';
+    }
+
+    function renderIntentSourceCandidates(candidates, message) {
+        const state = document.getElementById('intent-sources-state');
+        const list = document.getElementById('intent-sources-list');
+        if (!state || !list) return;
+        list.innerHTML = '';
+        intentSourceCandidates = candidates || [];
+
+        if (!intentSourceCandidates.length) {
+            state.style.display = 'block';
+            state.textContent = message || 'No source available.';
+            return;
+        }
+
+        state.style.display = 'none';
+        const rows = intentSourceCandidates.map((candidate, index) => {
+            const accepted = !!candidate.accepted;
+            const cache = candidate.kind === 'direct'
+                ? 'Direct'
+                : (candidate.metadata && candidate.metadata.cached === true
+                    ? 'Cached'
+                    : (candidate.metadata && candidate.metadata.cached === false ? 'Uncached' : 'Unknown'));
+            const failures = Array.isArray(candidate.failures) && candidate.failures.length
+                ? '<div class="downloads-row-sub">' + escapeSourceHtml(candidate.failures.join(', ')) + '</div>'
+                : '';
+            return '<tr>' +
+                '<td>' + escapeSourceHtml(candidate.addon || '—') + '<div class="downloads-row-sub">' + escapeSourceHtml(candidate.kind || '') + '</div></td>' +
+                '<td><span class="badge ' + (accepted ? 'badge-success' : 'badge-warning') + '">' + (accepted ? 'Profile OK' : 'Filtered') + '</span></td>' +
+                '<td>' + escapeSourceHtml(candidate.score || 0) + '</td>' +
+                '<td>' + escapeSourceHtml(cache) + '</td>' +
+                '<td><div>' + escapeSourceHtml(candidate.explanation || '') + '</div>' + failures + '</td>' +
+                '<td class="right"><button class="btn btn-secondary btn-sm" type="button" data-source-queue="' + index + '">' + (accepted ? 'Queue' : 'Queue anyway') + '</button></td>' +
+            '</tr>';
+        }).join('');
+
+        list.innerHTML = '<div class="downloads-table-wrap"><table class="downloads-table"><thead><tr>' +
+            '<th>Addon</th><th>Profile</th><th>Score</th><th>Cache</th><th>Release</th><th class="right">Action</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    async function openIntentSources(intentId) {
+        const dialog = document.getElementById('intent-sources-dialog');
+        const title = document.getElementById('intent-sources-title');
+        const subtitle = document.getElementById('intent-sources-subtitle');
+        const details = document.getElementById('intent-sources-details');
+        const state = document.getElementById('intent-sources-state');
+        const list = document.getElementById('intent-sources-list');
+        intentSourceIntentId = intentId;
+        if (title) title.textContent = 'Loading sources…';
+        if (subtitle) subtitle.textContent = '';
+        if (details) details.innerHTML = '';
+        if (list) list.innerHTML = '';
+        if (state) {
+            state.style.display = 'block';
+            state.textContent = 'Loading sources from configured addons…';
+        }
+        if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+
+        try {
+            const response = await fetch(intentSourcesRoute, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf: downloadsCsrfToken, intent_id: intentId })
+            });
+            const data = await response.json();
+            const intent = data.intent || {};
+            let episodeLabel = (intent.season !== null && intent.season !== undefined && intent.episode !== null && intent.episode !== undefined)
+                ? ' · S' + String(intent.season).padStart(2, '0') + 'E' + String(intent.episode).padStart(2, '0')
+                : '';
+            if (intent.release_season !== null && intent.release_season !== undefined
+                && intent.release_episode !== null && intent.release_episode !== undefined
+                && (intent.release_season !== intent.season || intent.release_episode !== intent.episode)) {
+                episodeLabel += ' → S' + String(intent.release_season).padStart(2, '0') + 'E' + String(intent.release_episode).padStart(2, '0');
+            }
+            if (title) title.textContent = ((data.details && data.details.title) || (data.intent && data.intent.title) || 'Sources') + episodeLabel;
+            if (subtitle) subtitle.textContent = (data.streams_count || 0) + ' stream' + ((data.streams_count || 0) === 1 ? '' : 's') + ' from configured addons' + episodeLabel;
+            renderIntentSourceDetails(data.details || null, data.identity || null, data.intent || null);
+            renderIntentSourceCandidates(data.candidates || [], data.message || null);
+        } catch (error) {
+            if (state) {
+                state.style.display = 'block';
+                state.textContent = error.message;
+            }
+        }
+    }
+
+    async function queueIntentSource(index) {
+        const candidate = intentSourceCandidates[index];
+        if (!candidate || !intentSourceIntentId) return;
+        const button = document.querySelector('[data-source-queue="' + index + '"]');
+        if (button) button.disabled = true;
+        try {
+            const data = await postDownloadsJson(intentDownloadRoute, {
+                intent_id: intentSourceIntentId,
+                candidate
+            });
+            if (window.notify) window.notify('success', data.message || 'Source added to the download queue.');
+            const dialog = document.getElementById('intent-sources-dialog');
+            if (dialog) dialog.close();
+            setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function postDownloadsJson(url, payload) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csrf: downloadsCsrfToken, ...payload })
+        });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Request failed.');
+        }
+        return data;
+    }
+
+    async function queueMissingMovies() {
+        try {
+            const data = await postDownloadsJson(downloadsQueueRoute, {});
+            if (window.notify) window.notify('success', data.message || 'Missing movies queued.');
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function queueMissingEpisodes() {
+        try {
+            const data = await postDownloadsJson(downloadsQueueEpisodesRoute, {});
+            if (window.notify) window.notify('success', data.message || 'Missing episodes queued.');
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function restoreAllIgnored() {
+        const count = {{ counts.ignored }};
+        if (!confirm(`Restore ${count} ignored intent${count === 1 ? '' : 's'}?`)) return;
+        try {
+            const data = await postDownloadsJson(downloadsRestoreIgnoredRoute, {});
+            if (window.notify) window.notify('success', data.message || 'Ignored intents restored.');
+            setTimeout(() => window.location.reload(), 800);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function startReleaseDryRun() {
+        try {
+            const data = await postDownloadsJson(dryRunRoute, {});
+            if (window.notify) window.notify('success', data.message || 'Release dry-run requested.');
+            dryRunRequestedAt = Date.now();
+            setDryRunCollapsed(false);
+            setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    async function pollDryRunStatus() {
+        try {
+            const response = await fetch(dryRunStatusRoute);
+            const data = await response.json();
+            const state = data.dry_run || {};
+            const status = String(state.status || '');
+            if (status === 'requested' || status === 'running') {
+                const panel = document.getElementById('dry-run-state');
+                if (panel) {
+                    panel.hidden = false;
+                    panel.classList.remove('is-waiting', 'is-stale');
+                    const total = Number(state.total || 0);
+                    const processed = Number(state.processed || 0);
+                    const requestedAtMs = Date.parse(String(state.requested_at || state.started_at || '').replace(' ', 'T'));
+                    const waited = requestedAtMs ? Math.round((Date.now() - requestedAtMs) / 1000) : 0;
+
+                    if (status === 'requested' && waited >= 60) {
+                        panel.classList.add('is-stale');
+                        const title = document.getElementById('dry-run-state-title');
+                        const meta = document.getElementById('dry-run-state-meta');
+                        if (title) title.textContent = 'Dry-run not started';
+                        if (meta) meta.textContent = 'Requested ' + waited + 's ago. Retry, or check automation_release_dry_run.log.';
+                        document.querySelectorAll('button[onclick*="startReleaseDryRun"]').forEach(button => { button.disabled = false; });
+                        setTimeout(pollDryRunStatus, 5000);
+                        return;
+                    }
+
+                    panel.classList.toggle('is-waiting', status === 'requested');
+                    const title = document.getElementById('dry-run-state-title');
+                    const meta = document.getElementById('dry-run-state-meta');
+                    if (title) title.textContent = status === 'running' ? 'Dry-run in progress' : 'Dry-run requested';
+                    if (meta) {
+                        meta.textContent = total > 0
+                            ? processed + ' / ' + total + ' previewed · ' + Math.round((processed / total) * 100) + '% · ' + Number(state.ok || 0) + ' with a release · ' + Number(state.no_source || 0) + ' without source'
+                            : 'Collecting missing movies…';
+                    }
+                    const bar = document.getElementById('dry-run-progress-bar');
+                    if (bar) {
+                        bar.classList.toggle('is-indeterminate', status === 'requested' || total === 0);
+                        bar.style.width = total > 0 ? Math.round((processed / total) * 100) + '%' : '';
+                    }
+                    const current = document.getElementById('dry-run-state-current');
+                    if (current) current.textContent = state.current ? 'Current: ' + state.current : '';
+                    const events = document.getElementById('dry-run-state-events');
+                    if (events) {
+                        events.textContent = (state.events || []).slice(-4).map(event => event.time + ' · ' + event.message).join('\n');
+                    }
+                }
+                setTimeout(pollDryRunStatus, 1500);
+                return;
+            }
+            if (dryRunRequestedAt > 0) {
+                window.location.reload();
+            }
+        } catch (error) {
+            setTimeout(pollDryRunStatus, 5000);
+        }
+    }
+
+    let intentRunWasActive = {{ (run_requested or running_run) ? 'true' : 'false' }};
+
+    async function pollIntentRunStatus() {
+        try {
+            const response = await fetch(downloadsStatusRoute);
+            const data = await response.json();
+            const active = !!(data.run_requested || data.running_run);
+            const panel = document.getElementById('intent-run-state');
+            if (active) {
+                intentRunWasActive = true;
+                if (panel) panel.hidden = false;
+                const title = document.getElementById('intent-run-title');
+                const meta = document.getElementById('intent-run-meta');
+                const run = data.running_run || null;
+                if (title) title.textContent = run ? 'Automation run in progress' : 'Automation run requested';
+                if (meta) {
+                    meta.textContent = run
+                        ? Number(run.intents_seen || 0) + ' seen · ' + Number(run.intents_queued || 0) + ' queued · ' + Number(run.intents_no_source || 0) + ' no source · ' + Number(run.intents_error || 0) + ' error'
+                        : 'Waiting for the automation worker or the background command.';
+                }
+                setTimeout(pollIntentRunStatus, 2500);
+                return;
+            }
+            if (intentRunWasActive) {
+                window.location.reload();
+            }
+        } catch (error) {
+            setTimeout(pollIntentRunStatus, 5000);
+        }
+    }
+
+    async function runDownloadAutomation() {
+        try {
+            const data = await postDownloadsJson(downloadsRunAllRoute, {});
+            if (window.notify) window.notify('success', data.message || 'Download automation requested.');
+            intentRunWasActive = true;
+            setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+        }
+    }
+
+    document.addEventListener('click', async function (event) {
+        const sources = event.target.closest('[data-intent-sources]');
+        if (sources) {
+            await openIntentSources(Number(sources.getAttribute('data-intent-sources')));
+            return;
+        }
+
+        const sourceQueue = event.target.closest('[data-source-queue]');
+        if (sourceQueue) {
+            await queueIntentSource(Number(sourceQueue.getAttribute('data-source-queue')));
+            return;
+        }
+
+        const retry = event.target.closest('[data-intent-retry]');
+        if (retry) {
+            retry.disabled = true;
+            try {
+                await postDownloadsJson(downloadsRetryRoute, { id: Number(retry.getAttribute('data-intent-retry')) });
+                window.location.reload();
+            } catch (error) {
+                if (window.notify) window.notify('error', error.message);
+                retry.disabled = false;
+            }
+            return;
+        }
+
+        const deleteIntent = event.target.closest('[data-intent-delete]');
+        if (deleteIntent) {
+            if (!confirm('Delete this ignored intent permanently?')) return;
+            deleteIntent.disabled = true;
+            try {
+                await postDownloadsJson(downloadsDeleteIntentRoute, { id: Number(deleteIntent.getAttribute('data-intent-delete')) });
+                if (window.notify) window.notify('success', 'Ignored intent deleted.');
+                window.location.reload();
+            } catch (error) {
+                if (window.notify) window.notify('error', error.message);
+                deleteIntent.disabled = false;
+            }
+            return;
+        }
+
+        const ignore = event.target.closest('[data-intent-ignore]');
+        if (!ignore) return;
+        ignore.disabled = true;
+        try {
+            await postDownloadsJson(downloadsIgnoreRoute, {
+                id: Number(ignore.getAttribute('data-intent-ignore')),
+                ignored: ignore.getAttribute('data-intent-ignored') !== '1'
+            });
+            window.location.reload();
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            ignore.disabled = false;
+        }
+    });
+
+    (function initDryRunCollapse() {
+        let collapsed = true;
+        try {
+            const stored = localStorage.getItem(dryRunCollapseKey);
+            collapsed = stored === null ? true : stored === '1';
+        } catch (error) {
+            collapsed = true;
+        }
+        setDryRunCollapsed(collapsed, false);
+    })();
+
+    const intentSourcesDialog = document.getElementById('intent-sources-dialog');
+    if (intentSourcesDialog) {
+        const closeIntentSources = () => intentSourcesDialog.close();
+        document.getElementById('intent-sources-close')?.addEventListener('click', closeIntentSources);
+        document.getElementById('intent-sources-dismiss')?.addEventListener('click', closeIntentSources);
+        intentSourcesDialog.addEventListener('click', event => {
+            if (event.target === intentSourcesDialog) intentSourcesDialog.close();
+        });
+    }
+
+    {% if run_requested or running_run %}
+    setTimeout(pollIntentRunStatus, 1200);
+    {% endif %}
+    {% if dry_run.status in ['requested', 'running'] %}
+    setTimeout(pollDryRunStatus, 1200);
+    {% endif %}
+</script>
+{% endblock %}

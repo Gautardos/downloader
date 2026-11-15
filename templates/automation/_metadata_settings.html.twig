@@ -1,0 +1,37 @@
+<article class="card config-card is-collapsed" id="config-metadata" data-config-card="metadata">
+    <div class="config-card-head">
+        <div>
+            <h2 class="config-card-title">Metadata titles</h2>
+            <p class="config-card-subtitle">Language used for movie titles in automated downloads and for the English title refresh.</p>
+        </div>
+        <button class="config-collapse-btn" type="button" data-config-collapse aria-expanded="false" aria-controls="config-metadata-body" title="Expand configuration">
+            <span class="config-collapse-icon">▼</span>
+        </button>
+    </div>
+    <div class="config-card-body" id="config-metadata-body" data-config-body hidden>
+        <form method="post" action="{{ path('automation_config_metadata') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <div class="config-field">
+                <label for="metadata-title-language">Title language</label>
+                <select id="metadata-title-language" name="title_language">
+                    {% set titleLanguage = settings.metadata.title_language|default('en-US') %}
+                    {% for language, label in {
+                        'en-US': 'English (US)',
+                        'en-GB': 'English (UK)',
+                        'fr-FR': 'French',
+                        'de-DE': 'German',
+                        'es-ES': 'Spanish',
+                        'it-IT': 'Italian',
+                        'ja-JP': 'Japanese'
+                    } %}
+                        <option value="{{ language }}" {{ titleLanguage == language ? 'selected' : '' }}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="config-hint">Use <span class="mono">en-US</span> to name downloaded movies and refreshed library entries with their English title.</div>
+            </div>
+            <div class="config-actions">
+                <button class="btn btn-primary" type="submit">Save metadata language</button>
+            </div>
+        </form>
+    </div>
+</article>

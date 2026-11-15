@@ -1,0 +1,84 @@
+{% set current = app.request.attributes.get('_route') %}
+<style>
+    .automation-tabs {
+        display: flex;
+        align-items: center;
+        gap: .25rem;
+        padding: .28rem;
+        margin: 0 0 1.5rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 11px;
+        background: rgba(15, 23, 42, .42);
+        width: fit-content;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .automation-tab {
+        display: inline-flex;
+        align-items: center;
+        padding: .5rem .85rem;
+        border-radius: 8px;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        font-weight: 700;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+    .automation-tab:hover {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, .05);
+    }
+    .automation-tab.active {
+        color: var(--text-primary);
+        background: rgba(56, 189, 248, .12);
+    }
+    .automation-tab-busy[hidden] {
+        display: none;
+    }
+    .automation-tab-busy {
+        width: 7px;
+        height: 7px;
+        display: inline-block;
+        margin-left: .4rem;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 0 rgba(56, 189, 248, .55);
+        animation: automation-busy-pulse 1.3s ease-out infinite;
+    }
+    @keyframes automation-busy-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, .55); opacity: 1; }
+        70% { box-shadow: 0 0 0 7px rgba(56, 189, 248, 0); opacity: .55; }
+        100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); opacity: 1; }
+    }
+</style>
+<nav class="automation-tabs" aria-label="Automation sections">
+    <a class="automation-tab {{ current == 'automation' ? 'active' : '' }}" href="{{ path('automation') }}">Overview</a>
+    <a class="automation-tab {{ current in ['automation_library', 'automation_library_rename_preview', 'automation_library_rename_apply'] ? 'active' : '' }}" href="{{ path('automation_library') }}">Library Browser</a>
+    <a class="automation-tab {{ current in ['automation_lists', 'automation_lists_settings', 'automation_lists_sync', 'automation_lists_ignore'] ? 'active' : '' }}" href="{{ path('automation_lists') }}">Connected Lists</a>
+    <a class="automation-tab {{ current == 'automation_downloads' ? 'active' : '' }}" href="{{ path('automation_downloads') }}">Download Automations</a>
+    <a class="automation-tab {{ current in ['automation_config', 'automation_settings', 'automation_downloads_quality', 'automation_downloads_settings'] ? 'active' : '' }}" href="{{ path('automation_config') }}">Configuration</a>
+    <a class="automation-tab {{ current == 'automation_activity' ? 'active' : '' }}" href="{{ path('automation_activity') }}">Activity<span class="automation-tab-busy" data-automation-activity hidden aria-hidden="true"></span></a>
+</nav>
+<script>
+    (function () {
+        const dot = document.querySelector('[data-automation-activity]');
+        if (!dot) return;
+        const statusUrl = "{{ path('automation_status') }}";
+
+        async function refreshAutomationActivity() {
+            try {
+                const response = await fetch(statusUrl, { headers: { Accept: 'application/json' } });
+                if (!response.ok) throw new Error('Status unavailable');
+                const data = await response.json();
+                const busy = !!(data.scan_running || data.resolve_requested || data.list_running || data.list_sync_requested || data.intent_running || data.intent_run_requested);
+                dot.hidden = !busy;
+                dot.title = busy ? 'Automation task in progress' : '';
+            } catch (error) {
+                dot.hidden = true;
+            }
+        }
+
+        refreshAutomationActivity();
+        setInterval(refreshAutomationActivity, 5000);
+    })();
+</script>

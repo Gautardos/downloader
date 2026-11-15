@@ -29,6 +29,7 @@ A self-hosted media management platform built with Symfony & Python, packaged as
 - **Real-time tracker** — live download progress with polling and browser notifications.
 - **Full history** — detailed action logs with retention limit.
 - **Authentication** — simple login system with configurable credentials (default: `admin` / `admin`).
+- **Jellyfin-compatible API** — expose the indexed video library under `/jellyfin` so Nuvio can connect through its native Jellyfin integration.
 - **Adaptive UI** — navigation items are hidden automatically when their dependencies are not configured.
 - **JSON storage** — no SQL database needed; all configuration, history, and queue are stored as JSON files.
 
@@ -126,6 +127,23 @@ All settings are managed through the web UI at **Settings** (`/config`). Below i
 | **Admin User** | `admin` | Login username |
 | **Admin Password** | `admin` | Login password |
 | **History Retention** | `500` | Maximum number of entries kept in history |
+
+### 🎬 Jellyfin / Nuvio
+
+| Setting | Default | Description |
+| ------- | ------- | ----------- |
+| **Enable Jellyfin API** | Off | Exposes the Automation video library under `/jellyfin` |
+| **Server Name** | `Downloader` | Name shown in Nuvio |
+| **Jellyfin Username** | `jellyfin` | Dedicated username for Nuvio |
+| **Jellyfin Password** | *(empty)* | Dedicated password; login is disabled while empty |
+
+In Nuvio, add a Jellyfin server with the address
+`http://<your-host>:8000/jellyfin` (or simply `http://<your-host>:8000`, which
+redirects the Jellyfin discovery endpoint to `/jellyfin`) and the dedicated
+credentials above. The bridge serves the Automation library
+(`Movies`, `TV Shows`, `Anime`) in direct play mode and supports resume state,
+search, played status, TMDB artwork and external subtitles. Run a library scan
+from Automation first if the index is empty.
 
 ---
 

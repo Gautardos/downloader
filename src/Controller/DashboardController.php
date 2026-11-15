@@ -3,12 +3,16 @@
 namespace App\Controller;
 
 use App\Service\AiService;
+use App\Service\CsrfTokenService;
+use App\Service\Automation\QueueSizeResolver;
 use App\Service\AlldebridService;
 use App\Service\DebridHistoryService;
 use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
+use App\Service\LogRedactor;
 use App\Service\QueueManager;
+use App\Service\ServerNotificationService;
 use App\Service\SpotifyService;
 use App\Service\SpotifyUserService;
 use App\Service\TorrentDbService;
@@ -147,11 +151,11 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/queue-status', name: 'queue_status', methods: ['GET'])]
-    public function queueStatus(QueueManager $queueManager): Response
+    public function queueStatus(QueueManager $queueManager, QueueSizeResolver $sizeResolver): Response
     {
         return $this->json([
-            'queue' => $queueManager->getQueue(),
-            'active' => $queueManager->getActiveTask()
+            'queue' => $sizeResolver->enrich($queueManager->getQueue()),
+            'active' => ($active = $queueManager->getActiveTask()) ? $sizeResolver->enrichItem($active) : null
         ]);
     }
 
@@ -443,11 +447,11 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/queue', name: 'queue')]
-    public function queue(QueueManager $queueManager): Response
+    public function queue(QueueManager $queueManager, QueueSizeResolver $sizeResolver): Response
     {
         return $this->render('dashboard/queue.html.twig', [
-            'queue' => $queueManager->getQueue(),
-            'active' => $queueManager->getActiveTask()
+            'queue' => $sizeResolver->enrich($queueManager->getQueue()),
+            'active' => ($active = $queueManager->getActiveTask()) ? $sizeResolver->enrichItem($active) : null
         ]);
     }
 
@@ -528,7 +532,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/queue-active-log', name: 'queue_active_log', methods: ['GET'])]
-    public function queueActiveLog(QueueManager $queueManager, JsonStorage $storage): Response
+    public function queueActiveLog(QueueManager $queueManager, JsonStorage $storage, LogRedactor $redactor): Response
     {
         $active = $queueManager->getActiveTask();
         if (!$active || ($active['type'] ?? '') !== 'music') {
@@ -543,34 +547,47 @@ class DashboardController extends AbstractController
         // Return last 100 lines
         $lines = file($logFile);
         $lastLines = array_slice($lines, -100);
-        return $this->json(['log' => implode("", $lastLines)]);
+        return $this->json(['log' => $redactor->redact(implode("", $lastLines))]);
     }
 
     #[Route('/history-log/{downloadId}', name: 'history_log', methods: ['GET'])]
-    public function historyLog(string $downloadId, JsonStorage $storage): Response
+    public function historyLog(string $downloadId, JsonStorage $storage, LogRedactor $redactor): Response
     {
         $logFile = $storage->getStorageDir() . '/logs/history_' . $downloadId . '.log';
         if (!file_exists($logFile)) {
             return new Response('Log file not found.', 404);
         }
 
-        return new Response(file_get_contents($logFile), 200, [
+        return new Response($redactor->redact((string) file_get_contents($logFile)), 200, [
             'Content-Type' => 'text/plain'
         ]);
     }
 
     #[Route('/notifications-poll', name: 'notifications_poll', methods: ['GET'])]
-    public function notificationsPoll(JsonStorage $storage): Response
+    public function notificationsPoll(JsonStorage $storage, ServerNotificationService $notifications): Response
     {
-        $notifications = $storage->get('server_notifications', []);
+        return $this->json([
+            'notifications' => $notifications->all($storage),
+        ]);
+    }
 
-        // Clear them after reading
-        if (!empty($notifications)) {
-            $storage->set('server_notifications', []);
+    #[Route('/notifications-ack', name: 'notifications_ack', methods: ['POST'])]
+    public function notificationsAck(
+        Request $request,
+        JsonStorage $storage,
+        ServerNotificationService $notifications,
+        CsrfTokenService $csrf
+    ): Response {
+        if (!$csrf->isValid($request, $csrf->fromRequest($request))) {
+            return $this->json(['success' => false, 'message' => 'Invalid security token.'], 403);
         }
 
+        $payload = json_decode((string) $request->getContent(), true);
+        $ids = is_array($payload) && is_array($payload['ids'] ?? null) ? $payload['ids'] : [];
+
         return $this->json([
-            'notifications' => $notifications
+            'success' => true,
+            'acknowledged' => $notifications->acknowledge($storage, $ids),
         ]);
     }
 

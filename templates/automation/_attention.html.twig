@@ -1,0 +1,154 @@
+<style>
+    .attention-candidate {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: .7rem;
+        padding: .55rem .65rem;
+        border: 1px solid rgba(148, 163, 184, .2);
+        border-radius: 10px;
+        color: var(--text-primary);
+        background: rgba(15, 23, 42, .55);
+        text-align: left;
+        cursor: pointer;
+    }
+    .attention-candidate + .attention-candidate { margin-top: .5rem; }
+    .attention-candidate:hover { border-color: rgba(56, 189, 248, .45); }
+    .attention-candidate.is-selected {
+        border-color: rgba(56, 189, 248, .7);
+        background: rgba(56, 189, 248, .12);
+    }
+    .attention-candidate-poster {
+        width: 38px;
+        height: 56px;
+        flex: 0 0 auto;
+        display: block;
+        object-fit: cover;
+        border-radius: 6px;
+        background: rgba(148, 163, 184, .14);
+    }
+    .attention-candidate-main { min-width: 0; }
+    .attention-candidate-title { display: block; font-size: .82rem; font-weight: 700; }
+    .attention-candidate-meta { display: block; margin-top: .15rem; color: var(--text-secondary); font-size: .72rem; }
+    .collapsible-section-head { cursor: pointer; user-select: none; }
+    .collapsible-section.is-collapsed > :not(.collapsible-section-head) { display: none; }
+    .collapsible-chevron { color: var(--text-secondary); font-size: .7rem; line-height: 1; }
+</style>
+
+<section class="card collapsible-section" data-collapsible-section style="margin-bottom:1rem;">
+    <div class="collapsible-section-head" data-collapsible-head style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Needs attention</h2>
+            <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">Resolve each group with TMDB, or ignore it. Ignored groups are excluded from automatic resolution and deduplication.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+            <span class="badge badge-warning">{{ attention_groups|length }} group{{ attention_groups|length == 1 ? '' : 's' }} · {{ stats.ambiguous|default(0) }} entries</span>
+            <span class="collapsible-chevron" aria-hidden="true">▲</span>
+        </div>
+    </div>
+
+    {% if attention_groups is empty %}
+        <div class="library-empty">No ambiguous groups. The parser and TMDB resolution are confident about the current library.</div>
+    {% else %}
+        <div class="library-table-wrap">
+            <table class="library-table">
+                <thead>
+                    <tr>
+                        <th>Group</th>
+                        <th>Reason</th>
+                        <th>Entries</th>
+                        <th>Confidence</th>
+                        <th class="right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for group in attention_groups %}
+                        {% set groupJson = group|json_encode %}
+                        <tr>
+                            <td>
+                                <div style="font-weight:700;">{{ group.title }}{% if group.year %} ({{ group.year }}){% endif %}</div>
+                                <div style="margin-top:.2rem;color:var(--text-secondary);font-size:.7rem;word-break:break-word;">
+                                    {% if group.show_folder %}{{ group.show_folder }}{% else %}{{ group.sample_path }}{% endif %}
+                                </div>
+                            </td>
+                            <td>{{ group.reason }}</td>
+                            <td>{{ group.entries }}</td>
+                            <td>
+                                {% set confidence = (group.min_confidence * 100)|round %}
+                                <span class="badge {{ confidence >= 80 ? 'badge-success' : 'badge-warning' }}">{{ confidence }}%</span>
+                            </td>
+                            <td class="right">
+                                <button class="btn btn-secondary btn-sm" type="button" data-attention-action="resolve" data-group="{{ groupJson|e('html_attr') }}">Resolve</button>
+                                <button class="btn btn-ghost btn-sm" type="button" data-attention-action="ignore" data-group="{{ groupJson|e('html_attr') }}">Ignore</button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+
+{% if ignored_groups is not empty %}
+<section class="card collapsible-section" data-collapsible-section style="margin-bottom:1rem;">
+    <div class="collapsible-section-head" data-collapsible-head style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title" style="margin:0;font-size:1rem;">Ignored</h2>
+            <p style="margin:.35rem 0 0;color:var(--text-secondary);font-size:.8rem;">Ignored groups are hidden from automation. You can restore them or resolve them to TMDB.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+            <span class="badge badge-neutral">{{ ignored_groups|length }} group{{ ignored_groups|length == 1 ? '' : 's' }}</span>
+            <span class="collapsible-chevron" aria-hidden="true">▲</span>
+        </div>
+    </div>
+    <div class="library-table-wrap">
+        <table class="library-table">
+            <thead>
+                <tr>
+                    <th>Group</th>
+                    <th>Reason</th>
+                    <th>Entries</th>
+                    <th class="right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for group in ignored_groups %}
+                    {% set groupJson = group|json_encode %}
+                    <tr>
+                        <td>
+                            <div style="font-weight:700;">{{ group.title }}{% if group.year %} ({{ group.year }}){% endif %}</div>
+                            <div style="margin-top:.2rem;color:var(--text-secondary);font-size:.7rem;word-break:break-word;">
+                                {% if group.show_folder %}{{ group.show_folder }}{% else %}{{ group.sample_path }}{% endif %}
+                            </div>
+                        </td>
+                        <td>{{ group.reason }}</td>
+                        <td>{{ group.entries }}</td>
+                        <td class="right">
+                            <button class="btn btn-secondary btn-sm" type="button" data-attention-action="resolve" data-group="{{ groupJson|e('html_attr') }}">Resolve</button>
+                            <button class="btn btn-ghost btn-sm" type="button" data-attention-action="restore" data-group="{{ groupJson|e('html_attr') }}">Restore</button>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<dialog class="library-dialog" id="attention-dialog">
+    <div class="library-dialog-header">
+        <div>
+            <h2 class="library-dialog-title" id="attention-dialog-title">Resolve with TMDB</h2>
+            <p class="library-dialog-subtitle" id="attention-dialog-subtitle"></p>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="button" id="attention-dialog-close">Close</button>
+    </div>
+    <div class="library-dialog-body">
+        <div class="library-empty" id="attention-search-state">Searching TMDB…</div>
+        <div id="attention-results"></div>
+    </div>
+    <div class="library-dialog-actions">
+        <button class="btn btn-secondary" type="button" id="attention-dialog-cancel">Cancel</button>
+        <button class="btn btn-primary" type="button" id="attention-apply" disabled>Apply resolution</button>
+    </div>
+</dialog>

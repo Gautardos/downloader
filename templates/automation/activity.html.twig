@@ -1,0 +1,521 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Automation activity - Downloader{% endblock %}
+
+{% block body %}
+<style>
+    .activity-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .activity-stat {
+        padding: 1.1rem 1.15rem;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 14px;
+        background: rgba(30, 41, 59, .72);
+    }
+    .activity-stat-label {
+        color: var(--text-secondary);
+        font-size: .7rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+    }
+    .activity-stat-value {
+        margin-top: .55rem;
+        font-size: 1.4rem;
+        font-weight: 800;
+        letter-spacing: -.04em;
+    }
+    .activity-stat-meta {
+        margin-top: .35rem;
+        color: var(--text-secondary);
+        font-size: .75rem;
+    }
+    .activity-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    .activity-card-title { margin: 0; font-size: 1rem; }
+    .activity-card-subtitle {
+        margin: .35rem 0 0;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        line-height: 1.5;
+    }
+    .activity-kv { display: grid; gap: .55rem; margin-top: .9rem; }
+    .activity-kv-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding-bottom: .5rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .08);
+        font-size: .78rem;
+    }
+    .activity-kv-row:last-child { padding-bottom: 0; border-bottom: 0; }
+    .activity-kv-row span { color: var(--text-secondary); }
+    .activity-kv-row strong { text-align: right; }
+    .activity-table-wrap {
+        overflow-x: auto;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 12px;
+    }
+    .activity-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .79rem;
+    }
+    .activity-table th {
+        padding: .7rem .8rem;
+        color: var(--text-secondary);
+        font-size: .65rem;
+        font-weight: 800;
+        letter-spacing: .07em;
+        text-align: left;
+        text-transform: uppercase;
+        background: rgba(15, 23, 42, .42);
+        border-bottom: 1px solid rgba(148, 163, 184, .16);
+        white-space: nowrap;
+    }
+    .activity-table td {
+        padding: .72rem .8rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .08);
+        vertical-align: top;
+    }
+    .activity-table tr:last-child td { border-bottom: 0; }
+    .activity-table .right { text-align: right; }
+    .activity-empty {
+        padding: 1.2rem;
+        border: 1px dashed rgba(148, 163, 184, .28);
+        border-radius: 12px;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        text-align: center;
+    }
+    .activity-progress {
+        height: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, .14);
+        margin-top: .8rem;
+    }
+    .activity-progress-bar {
+        height: 100%;
+        width: 35%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--accent), #818cf8);
+        animation: activity-progress 1.2s ease-in-out infinite;
+    }
+    @keyframes activity-progress {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(320%); }
+    }
+    .activity-row-title { font-weight: 700; }
+    .activity-row-sub {
+        margin-top: .2rem;
+        color: var(--text-secondary);
+        font-size: .7rem;
+        word-break: break-all;
+    }
+    @media (max-width: 1020px) {
+        .activity-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+        .activity-stats, .activity-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Automation activity',
+    subtitle: 'Processing history for NAS scans, metadata resolution, and the automation worker.',
+    icon: 'automation'
+} %}
+    {% block actions %}
+        <span class="badge {{ worker_online ? 'badge-success' : 'badge-danger' }}">
+            {{ worker_online ? 'Worker online' : 'Worker offline' }}
+        </span>
+        <a class="btn btn-primary" href="{{ path('automation_activity') }}">Refresh</a>
+    {% endblock %}
+{% endembed %}
+
+{% include 'automation/_nav.html.twig' %}
+
+{% if scan_lock_error %}
+    <div class="alert alert-error"><strong>Scanner lock error:</strong> {{ scan_lock_error }}</div>
+{% endif %}
+
+<section class="activity-stats">
+    <article class="activity-stat">
+        <div class="activity-stat-label">Worker</div>
+        <div class="activity-stat-value">{{ worker_online ? 'Online' : 'Offline' }}</div>
+        <div class="activity-stat-meta">Heartbeat: {{ worker_heartbeat ? worker_heartbeat|date('Y-m-d H:i:s') : 'never' }}</div>
+    </article>
+    <article class="activity-stat">
+        <div class="activity-stat-label">Current scan</div>
+        <div class="activity-stat-value">{{ scan_running ? 'Running' : 'Idle' }}</div>
+        <div class="activity-stat-meta">
+            {% if running_scan %}
+                {{ running_scan.files_seen }} seen · {{ running_scan.files_indexed }} new · {{ running_scan.files_updated }} updated
+            {% elseif last_scan %}
+                Last: {{ last_scan.status }} · {{ last_scan.files_seen }} seen
+            {% else %}
+                No scan yet
+            {% endif %}
+        </div>
+    </article>
+    <article class="activity-stat">
+        <div class="activity-stat-label">Metadata resolution</div>
+        <div class="activity-stat-value">{{ resolve_requested ? 'Queued' : 'Idle' }}</div>
+        <div class="activity-stat-meta">
+            {% if last_resolution %}
+                Last: {{ last_resolution.groups_resolved|default(0) }} groups · {{ last_resolution.entries_resolved|default(0) }} entries
+            {% else %}
+                No resolution yet
+            {% endif %}
+        </div>
+    </article>
+    <article class="activity-stat">
+        <div class="activity-stat-label">List dry-run</div>
+        <div class="activity-stat-value">{{ list_running ? 'Running' : (list_sync_requested ? 'Queued' : 'Idle') }}</div>
+        <div class="activity-stat-meta">
+            {% if running_list_run %}
+                {{ running_list_run.items_seen }} items · {{ running_list_run.present }} present · {{ running_list_run.missing }} missing
+            {% elseif list_last_run %}
+                Last: {{ list_last_run.status }} · {{ list_last_run.items_seen }} items
+            {% else %}
+                No list run yet
+            {% endif %}
+        </div>
+    </article>
+    <article class="activity-stat">
+        <div class="activity-stat-label">Next library scan</div>
+        <div class="activity-stat-value">{{ next_scan_at ? next_scan_at|date('H:i') : '—' }}</div>
+        <div class="activity-stat-meta">{{ next_scan_at ? next_scan_at|date('Y-m-d') : 'not scheduled' }}</div>
+    </article>
+</section>
+
+{% if scan_running or resolve_requested or list_running or list_sync_requested %}
+<section class="activity-grid">
+    {% if scan_running %}
+        <article class="card">
+            <h2 class="activity-card-title">Scan in progress</h2>
+            <p class="activity-card-subtitle">The worker is indexing the configured NAS roots.</p>
+            <div class="activity-progress"><div class="activity-progress-bar"></div></div>
+            {% if running_scan %}
+                <div class="activity-kv">
+                    <div class="activity-kv-row"><span>Files seen</span><strong>{{ running_scan.files_seen }}</strong></div>
+                    <div class="activity-kv-row"><span>Inserted</span><strong>{{ running_scan.files_indexed }}</strong></div>
+                    <div class="activity-kv-row"><span>Updated</span><strong>{{ running_scan.files_updated }}</strong></div>
+                    <div class="activity-kv-row"><span>Missing</span><strong>{{ running_scan.files_missing }}</strong></div>
+                </div>
+            {% endif %}
+        </article>
+    {% endif %}
+    {% if resolve_requested %}
+        <article class="card">
+            <h2 class="activity-card-title">Metadata resolution queued</h2>
+            <p class="activity-card-subtitle">The automation worker will process TMDB resolution after the current job.</p>
+            <div class="activity-progress"><div class="activity-progress-bar"></div></div>
+            <p class="activity-card-subtitle" style="margin-top:.8rem;">If this stays queued for more than a minute, restart the automation worker process so it loads the current code.</p>
+        </article>
+    {% endif %}
+    {% if list_running or list_sync_requested %}
+        <article class="card">
+            <h2 class="activity-card-title">{{ list_running ? 'List dry-run in progress' : 'List dry-run queued' }}</h2>
+            <p class="activity-card-subtitle">Scrob/MDBList ingestion and NAS matching. No download is created by this run.</p>
+            <div class="activity-progress"><div class="activity-progress-bar"></div></div>
+            {% if running_list_run %}
+                <div class="activity-kv">
+                    <div class="activity-kv-row"><span>Items fetched</span><strong>{{ running_list_run.items_seen }}</strong></div>
+                    <div class="activity-kv-row"><span>Present</span><strong>{{ running_list_run.present }}</strong></div>
+                    <div class="activity-kv-row"><span>Missing</span><strong>{{ running_list_run.missing }}</strong></div>
+                    <div class="activity-kv-row"><span>Ambiguous</span><strong>{{ running_list_run.ambiguous }}</strong></div>
+                    <div class="activity-kv-row"><span>Ignored</span><strong>{{ running_list_run.ignored }}</strong></div>
+                </div>
+            {% elseif list_sync_requested %}
+                <p class="activity-card-subtitle" style="margin-top:.8rem;">Waiting for the automation worker. If this stays queued for more than a minute, restart the automation worker process so it loads the current code.</p>
+            {% endif %}
+        </article>
+    {% endif %}
+</section>
+{% endif %}
+
+<section class="card" style="margin-bottom:1rem;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title">Recent library scans</h2>
+            <p class="activity-card-subtitle">Last 12 scan runs, newest first.</p>
+        </div>
+        <span class="badge badge-neutral">{{ recent_scans|length }} runs</span>
+    </div>
+
+    {% if recent_scans is empty %}
+        <div class="activity-empty">No scan has run yet.</div>
+    {% else %}
+        <div class="activity-table-wrap">
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Status</th>
+                        <th>Seen</th>
+                        <th>Inserted</th>
+                        <th>Updated</th>
+                        <th>Missing</th>
+                        <th>Warnings</th>
+                        <th>Duration</th>
+                        <th>Finished</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scan in recent_scans %}
+                        <tr>
+                            <td>{{ scan.started_at }}</td>
+                            <td>
+                                {% set statusClass = scan.status == 'success' ? 'badge-success' : (scan.status == 'warning' ? 'badge-warning' : (scan.status == 'error' ? 'badge-danger' : 'badge-info')) %}
+                                <span class="badge {{ statusClass }}">{{ scan.status }}</span>
+                            </td>
+                            <td>{{ scan.files_seen }}</td>
+                            <td>{{ scan.files_indexed }}</td>
+                            <td>{{ scan.files_updated }}</td>
+                            <td>{{ scan.files_missing }}</td>
+                            <td>
+                                {% if scan.warnings|length > 0 %}
+                                    <span class="badge badge-warning" title="{{ scan.warnings|join(' | ') }}">{{ scan.warnings|length }}</span>
+                                {% else %}
+                                    <span class="muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ scan.duration is not null ? scan.duration ~ 's' : '—' }}</td>
+                            <td>{{ scan.finished_at ?: '—' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title">Recent metadata resolutions</h2>
+            <p class="activity-card-subtitle">Last 12 TMDB resolution runs, newest first.</p>
+        </div>
+        <span class="badge badge-neutral">{{ recent_resolutions|length }} runs</span>
+    </div>
+
+    {% if recent_resolutions is empty %}
+        <div class="activity-empty">No metadata resolution has run yet.</div>
+    {% else %}
+        <div class="activity-table-wrap">
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Status</th>
+                        <th>Groups seen</th>
+                        <th>Resolved</th>
+                        <th>Entries</th>
+                        <th>Skipped</th>
+                        <th>Lookups</th>
+                        <th>Duration</th>
+                        <th>Finished</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in recent_resolutions %}
+                        <tr>
+                            <td>{{ run.started_at }}</td>
+                            <td>
+                                {% set statusClass = run.status == 'success' ? 'badge-success' : (run.status == 'error' ? 'badge-danger' : 'badge-info') %}
+                                <span class="badge {{ statusClass }}">{{ run.status }}</span>
+                            </td>
+                            <td>{{ run.groups_seen }}</td>
+                            <td>{{ run.groups_resolved }}</td>
+                            <td>{{ run.entries_resolved }}</td>
+                            <td>{{ run.groups_skipped }}</td>
+                            <td>{{ run.lookups }}</td>
+                            <td>{{ run.duration is not null ? run.duration ~ 's' : '—' }}</td>
+                            <td>{{ run.finished_at ?: '—' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+
+<section class="card" style="margin-top:1rem;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title">Recent list dry-runs</h2>
+            <p class="activity-card-subtitle">Last 12 Scrob/MDBList ingestion and matching runs, newest first.</p>
+        </div>
+        <span class="badge badge-neutral">{{ recent_list_runs|length }} runs</span>
+    </div>
+
+    {% if recent_list_runs is empty %}
+        <div class="activity-empty">No list dry-run has run yet.</div>
+    {% else %}
+        <div class="activity-table-wrap">
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Source</th>
+                        <th>Status</th>
+                        <th>Seen</th>
+                        <th>Present</th>
+                        <th>Missing</th>
+                        <th>Ambiguous</th>
+                        <th>Ignored</th>
+                        <th>Duration</th>
+                        <th>Finished</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in recent_list_runs %}
+                        <tr>
+                            <td>{{ run.started_at }}</td>
+                            <td>{{ run.source_id }} <span class="muted">({{ run.provider }})</span></td>
+                            <td>
+                                {% set statusClass = run.status == 'success' ? 'badge-success' : (run.status == 'warning' ? 'badge-warning' : (run.status == 'error' ? 'badge-danger' : 'badge-info')) %}
+                                <span class="badge {{ statusClass }}">{{ run.status }}</span>
+                            </td>
+                            <td>{{ run.items_seen }}</td>
+                            <td>{{ run.present }}</td>
+                            <td>{{ run.missing }}</td>
+                            <td>{{ run.ambiguous }}</td>
+                            <td>{{ run.ignored }}</td>
+                            <td>{{ run.duration is not null ? run.duration ~ 's' : '—' }}</td>
+                            <td>{{ run.finished_at ?: '—' }}</td>
+                        </tr>
+                        {% if run.error %}
+                            <tr>
+                                <td colspan="10" class="muted">{{ run.error }}</td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+
+<section class="card" style="margin-top:1rem;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title">Recent movie intent runs</h2>
+            <p class="activity-card-subtitle">Last 12 release resolution runs. Queue depth guard: {{ intent_queue_depth }} download{{ intent_queue_depth == 1 ? '' : 's' }} currently waiting.</p>
+        </div>
+        <span class="badge badge-neutral">{{ recent_intent_runs|length }} runs</span>
+    </div>
+
+    {% if recent_intent_runs is empty %}
+        <div class="activity-empty">No movie intent run yet.</div>
+    {% else %}
+        <div class="activity-table-wrap">
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Status</th>
+                        <th>Seen</th>
+                        <th>Queued</th>
+                        <th>No source</th>
+                        <th>Error</th>
+                        <th>Queue depth</th>
+                        <th>Duration</th>
+                        <th>Finished</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in recent_intent_runs %}
+                        <tr>
+                            <td>{{ run.started_at }}</td>
+                            <td>
+                                {% set statusClass = run.status == 'success' ? 'badge-success' : (run.status == 'error' ? 'badge-danger' : 'badge-warning') %}
+                                <span class="badge {{ statusClass }}">{{ run.status }}</span>
+                            </td>
+                            <td>{{ run.intents_seen }}</td>
+                            <td>{{ run.intents_queued }}</td>
+                            <td>{{ run.intents_no_source }}</td>
+                            <td>{{ run.intents_error }}</td>
+                            <td>{{ run.queue_depth }}</td>
+                            <td>{{ run.duration is not null ? run.duration ~ 's' : '—' }}</td>
+                            <td>{{ run.finished_at ?: '—' }}</td>
+                        </tr>
+                        {% if run.error %}
+                            <tr>
+                                <td colspan="9" class="muted">{{ run.error }}</td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+
+<section class="card" style="margin-top:1rem;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <h2 class="activity-card-title">Recent rename runs</h2>
+            <p class="activity-card-subtitle">Last 12 bulk rename operations.</p>
+        </div>
+        <span class="badge badge-neutral">{{ recent_rename_runs|length }} runs</span>
+    </div>
+
+    {% if recent_rename_runs is empty %}
+        <div class="activity-empty">No bulk rename has run yet.</div>
+    {% else %}
+        <div class="activity-table-wrap">
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>Started</th>
+                        <th>Status</th>
+                        <th>Seen</th>
+                        <th>Renamed</th>
+                        <th>Skipped</th>
+                        <th>Failed</th>
+                        <th>Duration</th>
+                        <th>Finished</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in recent_rename_runs %}
+                        <tr>
+                            <td>{{ run.started_at }}</td>
+                            <td>
+                                {% set statusClass = run.status == 'success' ? 'badge-success' : (run.status == 'warning' ? 'badge-warning' : (run.status == 'error' ? 'badge-danger' : 'badge-info')) %}
+                                <span class="badge {{ statusClass }}">{{ run.status }}</span>
+                            </td>
+                            <td>{{ run.entries_seen }}</td>
+                            <td>{{ run.entries_renamed }}</td>
+                            <td>{{ run.entries_skipped }}</td>
+                            <td>{{ run.entries_failed }}</td>
+                            <td>{{ run.duration is not null ? run.duration ~ 's' : '—' }}</td>
+                            <td>{{ run.finished_at ?: '—' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+
+{% endblock %}
+
+{% block javascripts %}
+<script>
+    {% if scan_running or resolve_requested or list_running or list_sync_requested %}
+    setTimeout(() => window.location.reload(), 5000);
+    {% endif %}
+</script>
+{% endblock %}

@@ -1,0 +1,79 @@
+<article class="card config-card is-collapsed" id="config-roots" data-config-card="roots">
+    <div class="config-card-head">
+        <div>
+            <h2 class="config-card-title">Library roots and scanner</h2>
+            <p class="config-card-subtitle">Paths are internal container paths. The defaults match the standard Compose mounts.</p>
+        </div>
+        <button class="config-collapse-btn" type="button" data-config-collapse aria-expanded="false" aria-controls="config-roots-body" title="Expand configuration">
+            <span class="config-collapse-icon">▼</span>
+        </button>
+    </div>
+    <div class="config-card-body" id="config-roots-body" data-config-body hidden>
+        <form method="post" action="{{ path('automation_settings') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            {% for key, root in roots %}
+                <div class="config-row">
+                    <div class="config-field">
+                        <label for="root-{{ key }}">{{ root.label|default(key) }} path</label>
+                        <input id="root-{{ key }}" type="text" name="roots[{{ key }}][path]" value="{{ root.path|default('') }}" placeholder="/nas/Video/...">
+                    </div>
+                    <div class="config-field">
+                        <label>Enabled</label>
+                        <label class="config-check">
+                            <input type="checkbox" name="roots[{{ key }}][enabled]" value="1" {{ root.enabled ? 'checked' : '' }}>
+                            {{ root.label|default(key) }} enabled
+                        </label>
+                    </div>
+                </div>
+            {% endfor %}
+
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="extensions">Video extensions</label>
+                    <input id="extensions" type="text" name="extensions" value="{{ scanner.extensions|default([])|join(', ') }}">
+                    <div class="config-hint">Comma-separated list. Lowercase is applied automatically.</div>
+                </div>
+                <div class="config-field">
+                    <label for="min_size_mb">Minimum file size (MB)</label>
+                    <input id="min_size_mb" type="number" name="min_size_mb" min="0" value="{{ scanner.min_size_mb|default(20) }}">
+                </div>
+            </div>
+            <div class="config-row">
+                <div class="config-field">
+                    <label for="scan_interval">Automatic scan interval</label>
+                    <select id="scan_interval" name="scan_interval">
+                        <option value="3600" {{ scanner.scan_interval|default(21600) == 3600 ? 'selected' : '' }}>1 hour</option>
+                        <option value="10800" {{ scanner.scan_interval|default(21600) == 10800 ? 'selected' : '' }}>3 hours</option>
+                        <option value="21600" {{ scanner.scan_interval|default(21600) == 21600 ? 'selected' : '' }}>6 hours</option>
+                        <option value="43200" {{ scanner.scan_interval|default(21600) == 43200 ? 'selected' : '' }}>12 hours</option>
+                        <option value="86400" {{ scanner.scan_interval|default(21600) == 86400 ? 'selected' : '' }}>24 hours</option>
+                    </select>
+                </div>
+                <div class="config-field">
+                    <label>Scanner options</label>
+                    <label class="config-check">
+                        <input type="checkbox" name="skip_samples" value="1" {{ scanner.skip_samples|default(true) ? 'checked' : '' }}>
+                        Skip samples, trailers, and featurettes
+                    </label>
+                    <label class="config-check">
+                        <input type="checkbox" name="read_nfo" value="1" {{ scanner.read_nfo|default(true) ? 'checked' : '' }}>
+                        Read NFO metadata when available
+                    </label>
+                    <label class="config-check">
+                        <input type="checkbox" name="follow_symlinks" value="1" {{ scanner.follow_symlinks|default(false) ? 'checked' : '' }}>
+                        Follow symbolic links
+                    </label>
+                    <label class="config-check">
+                        <input type="checkbox" name="full_folder_tree" value="1" {{ scanner.full_folder_tree|default(false) ? 'checked' : '' }}>
+                        Load the full folder tree in one request
+                    </label>
+                    <div class="config-hint">Lazy loading is safer for large libraries. Full tree is fine for a few hundred entries but sends more HTML.</div>
+                </div>
+            </div>
+            <div class="config-actions">
+                <button class="btn btn-primary" type="submit">Save settings</button>
+                <button class="btn btn-secondary" type="button" onclick="startConfigScan()">Scan now with saved settings</button>
+            </div>
+        </form>
+    </div>
+</article>

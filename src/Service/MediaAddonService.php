@@ -14,12 +14,15 @@ class MediaAddonService
     private JsonStorage $storage;
     private CacheInterface $cache;
     private Client $client;
+    private SafeUrlGuard $urlGuard;
+    private array $metaAddonCache = [];
 
-    public function __construct(JsonStorage $storage, CacheInterface $cache)
+    public function __construct(JsonStorage $storage, CacheInterface $cache, ?SafeUrlGuard $urlGuard = null)
     {
         $this->storage = $storage;
         $this->cache = $cache;
         $this->client = new Client();
+        $this->urlGuard = $urlGuard ?? new SafeUrlGuard();
     }
 
     public function getAddons(): array
@@ -96,6 +99,123 @@ class MediaAddonService
         usort($targets, static fn ($a, $b) => ($a['priority'] ?? 100) <=> ($b['priority'] ?? 100));
 
         return ['addons' => $targets, 'errors' => $errors];
+    }
+
+    public function getEnabledMetaAddons(string $type): array
+    {
+        $cached = $this->metaAddonCache[$type] ?? null;
+        if (is_array($cached) && (time() - (int) ($cached['at'] ?? 0)) < 300) {
+            return $cached['result'];
+        }
+
+        $targets = [];
+        $errors = [];
+
+        foreach ($this->getAddons() as $addon) {
+            if (empty($addon['enabled'])) {
+                continue;
+            }
+
+            try {
+                $fetched = $this->fetchJson($addon['manifest_url']);
+                $manifest = $fetched['data'];
+                if (!$this->supportsMeta($manifest, $type)) {
+                    continue;
+                }
+
+                $targets[] = [
+                    ...$addon,
+                    'base_url' => $this->deriveBaseUrl($fetched['url']),
+                    'query' => (string) (parse_url($fetched['url'], PHP_URL_QUERY) ?? ''),
+                    'manifest' => $manifest,
+                ];
+            } catch (\Throwable $e) {
+                $errors[] = [
+                    'addon' => $addon['name'] ?: $addon['manifest_url'],
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        usort($targets, static fn ($a, $b) => ($a['priority'] ?? 100) <=> ($b['priority'] ?? 100));
+        $result = ['addons' => $targets, 'errors' => $errors];
+        $this->metaAddonCache[$type] = ['at' => time(), 'result' => $result];
+
+        return $result;
+    }
+
+    public function getMeta(string $type, string $id, array $preferredAddonIds = []): array
+    {
+        $id = trim($id);
+        if (!in_array($type, ['movie', 'series', 'anime'], true) || $id === '' || !preg_match('/^[a-z0-9_.:-]+$/i', $id)) {
+            return ['success' => false, 'message' => 'Invalid metadata request.', 'meta' => null, 'errors' => []];
+        }
+
+        $resolved = $this->getEnabledMetaAddons($type);
+        $targets = $resolved['addons'];
+        $errors = $resolved['errors'];
+        if ($preferredAddonIds) {
+            usort($targets, static function (array $a, array $b) use ($preferredAddonIds): int {
+                $aPreferred = in_array((string) ($a['manifest']['id'] ?? $a['id'] ?? ''), $preferredAddonIds, true);
+                $bPreferred = in_array((string) ($b['manifest']['id'] ?? $b['id'] ?? ''), $preferredAddonIds, true);
+                if ($aPreferred !== $bPreferred) {
+                    return $aPreferred ? -1 : 1;
+                }
+
+                return ((int) ($a['priority'] ?? 100)) <=> ((int) ($b['priority'] ?? 100));
+            });
+        }
+
+        foreach ($targets as $target) {
+            $url = rtrim($target['base_url'], '/') . '/meta/' . rawurlencode($type) . '/' . $this->encodePathId($id) . '.json';
+            if (!empty($target['query'])) {
+                $url .= '?' . $target['query'];
+            }
+
+            try {
+                $this->assertPublicHttpsUrl($url);
+                $response = $this->client->get($url, [
+                    'timeout' => max(3, min(20, (int) ($target['timeout'] ?? 10))),
+                    'connect_timeout' => 5,
+                    'allow_redirects' => false,
+                    'http_errors' => false,
+                    'headers' => ['Accept' => 'application/json'],
+                ]);
+                if ($response->getStatusCode() !== 200) {
+                    $errors[] = ['addon' => $target['name'], 'error' => 'HTTP ' . $response->getStatusCode()];
+                    continue;
+                }
+                $body = (string) $response->getBody();
+                if (strlen($body) > 8 * 1024 * 1024) {
+                    $errors[] = ['addon' => $target['name'], 'error' => 'Metadata response is too large.'];
+                    continue;
+                }
+                $data = json_decode($body, true);
+                $meta = is_array($data) ? ($data['meta'] ?? null) : null;
+                if (!is_array($meta)) {
+                    $errors[] = ['addon' => $target['name'], 'error' => 'Invalid metadata response.'];
+                    continue;
+                }
+
+                return [
+                    'success' => true,
+                    'message' => null,
+                    'meta' => $meta,
+                    'addon_id' => (string) ($target['manifest']['id'] ?? $target['id'] ?? ''),
+                    'addon_name' => (string) ($target['name'] ?? $target['manifest']['name'] ?? ''),
+                    'errors' => $errors,
+                ];
+            } catch (\Throwable $e) {
+                $errors[] = ['addon' => $target['name'], 'error' => $e->getMessage()];
+            }
+        }
+
+        return [
+            'success' => false,
+            'message' => $errors ? 'No metadata addon returned this title.' : 'No metadata addon is configured.',
+            'meta' => null,
+            'errors' => $errors,
+        ];
     }
 
     public function getEnabledAddon(string $addonId): ?array
@@ -270,7 +390,18 @@ class MediaAddonService
                 $infoHash = strtolower((string) ($stream['infoHash'] ?? $stream['info_hash'] ?? ''));
                 $hasTorrent = preg_match('/^[a-f0-9]{40}$/', $infoHash) === 1;
                 $streamUrl = isset($stream['url']) && is_string($stream['url']) ? trim($stream['url']) : '';
-                $hasUrl = preg_match('#^https?://#i', $streamUrl) === 1;
+                $hasUrl = false;
+                if ($streamUrl !== '') {
+                    $urlCheck = $this->urlGuard->validate($streamUrl);
+                    $hasUrl = (bool) ($urlCheck['allowed'] ?? false);
+                    if (!$hasUrl && !$hasTorrent) {
+                        $errors[] = [
+                            'addon' => $target['name'],
+                            'error' => 'Direct stream rejected: ' . (string) ($urlCheck['reason'] ?? 'invalid URL'),
+                        ];
+                        continue;
+                    }
+                }
 
                 if (!$hasTorrent && !$hasUrl) {
                     continue;
@@ -488,6 +619,33 @@ class MediaAddonService
         ];
     }
 
+    private function supportsMeta(array $manifest, string $type): bool
+    {
+        $manifestTypes = is_array($manifest['types'] ?? null) ? $manifest['types'] : [];
+
+        foreach ($manifest['resources'] ?? [] as $resource) {
+            if (is_string($resource) && $resource === 'meta') {
+                if (in_array($type, $manifestTypes, true) || in_array('all', $manifestTypes, true)) {
+                    return true;
+                }
+                continue;
+            }
+
+            if (!is_array($resource) || ($resource['name'] ?? '') !== 'meta') {
+                continue;
+            }
+
+            $types = $resource['types'] ?? $manifestTypes;
+            if (!in_array($type, $types, true) && !in_array('all', $types, true)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
     private function supportsStream(array $manifest, string $type): bool
     {
         $manifestTypes = is_array($manifest['types'] ?? null) ? $manifest['types'] : [];
@@ -573,40 +731,9 @@ class MediaAddonService
 
     private function assertPublicHttpsUrl(string $url): void
     {
-        $parts = parse_url($url);
-        if (($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
-            throw new \RuntimeException('Only public HTTPS addon URLs are allowed.');
-        }
-
-        $host = strtolower(trim((string) $parts['host'], '[]'));
-        if ($host === 'localhost' || str_ends_with($host, '.local')) {
-            throw new \RuntimeException('Local addon URLs are not allowed.');
-        }
-
-        $ips = [];
-        if (filter_var($host, FILTER_VALIDATE_IP)) {
-            $ips[] = $host;
-        } else {
-            foreach (gethostbynamel($host) ?: [] as $ip) {
-                $ips[] = $ip;
-            }
-            if (function_exists('dns_get_record')) {
-                foreach (dns_get_record($host, DNS_AAAA) ?: [] as $record) {
-                    if (!empty($record['ipv6'])) {
-                        $ips[] = $record['ipv6'];
-                    }
-                }
-            }
-        }
-
-        if (empty($ips)) {
-            throw new \RuntimeException('Could not resolve addon host.');
-        }
-
-        foreach (array_unique($ips) as $ip) {
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-                throw new \RuntimeException('Private or reserved addon addresses are not allowed.');
-            }
+        $result = $this->urlGuard->validateHttps($url);
+        if (empty($result['allowed'])) {
+            throw new \RuntimeException((string) ($result['reason'] ?? 'Addon URL is not allowed.'));
         }
     }
 

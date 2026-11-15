@@ -1,0 +1,82 @@
+{% macro table(entries, namingMap) %}
+<div class="library-table-wrap">
+    <table class="library-table">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Type</th>
+                <th>Identity</th>
+                <th>Match</th>
+                <th>Naming</th>
+                <th>Confidence</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+                <tr>
+                    <td>
+                        <div class="library-row-title">{{ entry.filename }}</div>
+                        <div class="library-row-sub">{{ entry.relative_path }}</div>
+                    </td>
+                    <td>{{ entry.media_type|capitalize }}</td>
+                    <td>
+                        <div class="library-identity">
+                            {{ entry.title }}{% if entry.year %} ({{ entry.year }}){% endif %}
+                        </div>
+                        {% if entry.season is not null and entry.episode is not null %}
+                            <div class="library-identity-sub">S{{ '%02d'|format(entry.season) }}E{{ '%02d'|format(entry.episode) }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% set matchGroup = {
+                            group_key: entry.media_type ~ '|' ~ entry.title_normalized ~ '|' ~ (entry.year ?: 'unknown') ~ '|' ~ (entry.show_folder ?: ''),
+                            media_type: entry.media_type,
+                            title: entry.title,
+                            title_normalized: entry.title_normalized,
+                            year: entry.year,
+                            show_folder: entry.show_folder,
+                            scope: entry.media_type in ['series', 'anime'] ? 'show_folder' : 'entry'
+                        } %}
+                        <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
+                            {% if entry.tmdb_id %}
+                                <span class="badge badge-success">TMDB {{ entry.tmdb_id }}</span>
+                            {% elseif entry.imdb_id %}
+                                <span class="badge badge-success">IMDb {{ entry.imdb_id }}</span>
+                            {% else %}
+                                <span class="badge badge-warning">Unmatched</span>
+                            {% endif %}
+                            <button class="btn btn-ghost btn-sm" type="button"
+                                    data-match-action="open"
+                                    data-match-group="{{ matchGroup|json_encode|e('html_attr') }}"
+                                    data-match-type="{{ entry.media_type == 'movie' ? 'movie' : 'series' }}"
+                                    data-match-id="{{ entry.tmdb_id ?: '' }}"
+                                    data-match-title="{{ entry.title|e('html_attr') }}">{{ entry.tmdb_id or entry.imdb_id ? 'Fix' : 'Match' }}</button>
+                        </div>
+                    </td>
+                    <td>
+                        {% set naming = namingMap[entry.id]|default({label: 'Skipped', badge: 'badge-neutral', reason: 'Not analyzed'}) %}
+                        <span class="badge {{ naming.badge }}" title="{{ naming.reason }}">{{ naming.label }}</span>
+                    </td>
+                    <td>
+                        {% set confidence = (entry.confidence * 100)|round %}
+                        <span class="badge {{ confidence >= 80 ? 'badge-success' : 'badge-warning' }}">{{ confidence }}%</span>
+                    </td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;">
+                            {% if entry.status == 'missing' %}
+                                <span class="badge badge-danger">Missing</span>
+                                <button class="btn btn-ghost btn-sm" type="button" data-remove-entry="{{ entry.id }}">Remove</button>
+                            {% elseif entry.ignored_at %}
+                                <span class="badge badge-neutral">Ignored</span>
+                            {% else %}
+                                <span class="badge badge-success">Active</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endmacro %}

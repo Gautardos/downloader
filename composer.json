@@ -64,7 +64,32 @@
         "post-update-cmd": [
             "@auto-scripts"
         ],
-        "test:automation": "php tests/automation_smoke.php"
+        "test:automation": "php tests/automation_smoke.php",
+        "test:jellyfin": "php tests/jellyfin_smoke.php",
+        "test:security": "php tests/session_secrets_smoke.php",
+        "test:ssrf": "php tests/ssrf_smoke.php",
+        "test:csrf": "php tests/csrf_smoke.php",
+        "test:backfill": "php tests/backfill_smoke.php",
+        "test:auth": "php tests/auth_security_smoke.php",
+        "test:http-auth": "php tests/http_auth_smoke.php",
+        "test:security:all": [
+            "@test:auth",
+            "@test:security",
+            "@test:csrf",
+            "@test:ssrf"
+        ],
+        "test:functional": [
+            "php tests/functional_flow_smoke.php",
+            "@test:automation",
+            "@test:backfill",
+            "@test:jellyfin"
+        ],
+        "test:all": [
+            "@test:security:all",
+            "@test:functional",
+            "php bin/console lint:twig templates",
+            "php bin/console lint:container"
+        ]
     },
     "conflict": {
         "symfony/symfony": "*"
