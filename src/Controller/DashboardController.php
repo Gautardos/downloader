@@ -243,7 +243,8 @@ class DashboardController extends AbstractController
                         'mtime' => (int) $rf['mtime'],
                         'rel_path' => $rf['rel_path'],
                         'genre' => $rf['genre'] ?? '',
-                        'has_lyrics' => $rf['lyrics'] ?? false
+                        'has_lyrics' => $rf['lyrics'] ?? false,
+                        'lyrics_synced' => $rf['lyrics_synced'] ?? false,
                     ];
                 }
 

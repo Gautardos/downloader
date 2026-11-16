@@ -58,7 +58,7 @@
         </thead>
         <tbody>
             {% for file in files %}
-            <tr class="music-file-row" data-file-path="{{ file.path|e('html_attr') }}" data-file-name="{{ file.name|e('html_attr') }}" data-has-lyrics="{{ file.has_lyrics ? '1' : '0' }}" style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+            <tr class="music-file-row" data-file-path="{{ file.path|e('html_attr') }}" data-file-name="{{ file.name|e('html_attr') }}" data-has-lyrics="{{ file.has_lyrics ? '1' : '0' }}" data-lyrics-synced="{{ file.lyrics_synced ? '1' : '0' }}" style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 1rem; font-weight: 500;">{{ file.name }}</td>
                 <td class="hide-mobile" style="padding: 1rem; color: var(--text-secondary); font-size: 0.85rem;" title="{{ file.path }}">
                     {{ file.rel_path }}
@@ -68,7 +68,7 @@
                 </td>
                 <td class="hide-mobile" style="padding: 1rem; text-align: center; font-size: 1.2rem;">
                     {% if file.has_lyrics %}
-                        <span title="Lyrics Present">📝</span>
+                        <span class="lyrics-badge {{ file.lyrics_synced ? 'is-synced' : 'is-unsynced' }}" title="{{ file.lyrics_synced ? 'Synced lyrics' : 'Unsynced lyrics' }}">📝</span>
                     {% else %}
                         <span title="No Lyrics" style="opacity: 0.3; filter: grayscale(1);">❌</span>
                     {% endif %}
@@ -130,8 +130,8 @@
 
     .music-player {
         position: sticky;
-        top: 0.75rem;
-        z-index: 60;
+        top: var(--music-player-top, 4.75rem);
+        z-index: 900;
         margin-bottom: 1rem;
         padding: 1rem 1.25rem;
         background: var(--bg-secondary);
@@ -190,6 +190,14 @@
         background: rgba(56, 189, 248, 0.08) !important;
     }
 
+    .lyrics-badge.is-synced {
+        color: #22c55e;
+    }
+
+    .lyrics-badge.is-unsynced {
+        color: #f59e0b;
+    }
+
     .btn-play {
         border-color: rgba(56, 189, 248, 0.35);
         color: var(--accent);
@@ -205,7 +213,6 @@
         }
 
         .music-player {
-            top: 0.25rem;
             padding: 0.75rem;
         }
 
@@ -370,7 +377,15 @@
 </div>
 
 <script>
+function syncMusicPlayerTop() {
+    const nav = document.querySelector('nav');
+    const height = nav ? Math.ceil(nav.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--music-player-top', (height + 12) + 'px');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    syncMusicPlayerTop();
+
     // Check if Add Lyrics button should be enabled
     const filesMissingLyrics = Array.from(document.querySelectorAll('td span[title="No Lyrics"]')).length;
     const btnLyrics = document.getElementById('btn-lyrics');
@@ -380,6 +395,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnLyrics.title = 'All files already have lyrics.';
     }
 });
+
+window.addEventListener('resize', syncMusicPlayerTop);
 
 const musicStreamUrl = "{{ path('music_stream') }}";
 const musicAudio = document.getElementById('music-audio');
@@ -613,9 +630,7 @@ function applyBatchRowSideEffects(action, item, result) {
     }
 
     if (action === 'lyrics' && (result.status === 'found' || result.lyrics)) {
-        const lyricsCell = item.row.children[3];
-        if (lyricsCell) lyricsCell.innerHTML = '<span title="Lyrics Present">📝</span>';
-        item.row.dataset.hasLyrics = '1';
+        setMusicRowLyrics(item.row, true, result.type === 'synced');
     }
 
     if (action === 'move' && result.final_path) {
@@ -1194,12 +1209,11 @@ async function saveTags() {
         
         const data = await res.json();
         if (data.success) {
+            updateMusicRowGenre(currentFilePath, tagsToUpdate.genre || '');
             window.notify('success', 'Metadata updated successfully!');
             btn.disabled = false;
             btn.innerHTML = '💾 Save';
             closeDetails();
-            // Optional: refresh page after a short delay if we want to show updated list
-            // setTimeout(() => window.location.reload(), 500);
         } else {
             alert('Failed to save tags: ' + data.message);
             btn.disabled = false;
@@ -1223,6 +1237,21 @@ function updateMusicRowGenre(path, genre) {
     if (!row) return;
     const genreCell = row.children[2];
     if (genreCell) genreCell.textContent = genre || '-';
+}
+
+function setMusicRowLyrics(row, hasLyrics, synced) {
+    if (!row) return;
+    row.dataset.hasLyrics = hasLyrics ? '1' : '0';
+    row.dataset.lyricsSynced = synced ? '1' : '0';
+    const lyricsCell = row.children[3];
+    if (!lyricsCell) return;
+    if (!hasLyrics) {
+        lyricsCell.innerHTML = '<span title="No Lyrics" style="opacity: 0.3; filter: grayscale(1);">❌</span>';
+        return;
+    }
+    const label = synced ? 'Synced lyrics' : 'Unsynced lyrics';
+    const className = synced ? 'is-synced' : 'is-unsynced';
+    lyricsCell.innerHTML = '<span class="lyrics-badge ' + className + '" title="' + label + '">📝</span>';
 }
 
 async function fetchAiGenre(btn) {
@@ -1323,11 +1352,7 @@ async function clearLyrics(btn, lyricsText) {
         const row = Array.from(document.querySelectorAll('.music-file-row'))
             .find(candidate => candidate.dataset.filePath === currentFilePath);
         if (row) {
-            row.dataset.hasLyrics = '0';
-            const lyricsCell = row.children[3];
-            if (lyricsCell) {
-                lyricsCell.innerHTML = '<span title="No Lyrics" style="opacity: 0.3; filter: grayscale(1);">❌</span>';
-            }
+            setMusicRowLyrics(row, false, false);
         }
 
         window.notify('success', 'Lyrics cleared.');
@@ -1368,9 +1393,7 @@ async function fetchLyricsForDetails(btn, lyricsText) {
             const row = Array.from(document.querySelectorAll('.music-file-row'))
                 .find(candidate => candidate.dataset.filePath === currentFilePath);
             if (row) {
-                row.dataset.hasLyrics = '1';
-                const lyricsCell = row.children[3];
-                if (lyricsCell) lyricsCell.innerHTML = '<span title="Lyrics Present">📝</span>';
+                setMusicRowLyrics(row, true, fileResult.type === 'synced');
             }
 
             if (fileResult.status === 'found') {

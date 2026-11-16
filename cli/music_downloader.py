@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import re
 import subprocess
 
 def load_config():
@@ -13,6 +14,15 @@ def load_config():
         with open(config_path, 'r') as f:
             return json.load(f)
     return {}
+
+def lyrics_are_synced(lyrics):
+    if not lyrics:
+        return False
+    for line in str(lyrics).splitlines():
+        if re.match(r'^\s*\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]', line):
+            return True
+    return False
+
 
 def verify_directory(directory, recursive=False):
     import music_tag
@@ -34,6 +44,7 @@ def verify_directory(directory, recursive=False):
                     # Check for lyrics within ID3 tags
                     lyrics = str(f['lyrics']).strip()
                     has_lyrics = len(lyrics) > 0 and lyrics.lower() != 'none'
+                    lyrics_synced = has_lyrics and lyrics_are_synced(lyrics)
 
                     # Normalize artist delimiters
                     artist = str(f['artist'])
@@ -50,7 +61,8 @@ def verify_directory(directory, recursive=False):
                         'size': os.path.getsize(file_path),
                         'mtime': os.path.getmtime(file_path),
                         'genre': str(f['genre']),
-                        'lyrics': has_lyrics
+                        'lyrics': has_lyrics,
+                        'lyrics_synced': lyrics_synced
                     })
                 except Exception as e:
                     continue
