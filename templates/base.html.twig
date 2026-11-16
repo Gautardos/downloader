@@ -28,11 +28,13 @@
             margin: 0;
             padding: 0;
             min-height: 100vh;
-            overflow-x: hidden; /* Prevent menu overflow */
+            overflow-x: hidden; /* Fallback for older browsers */
+            overflow-x: clip; /* Prevent menu overflow without breaking sticky positioning */
         }
 
         html {
             overflow-x: hidden;
+            overflow-x: clip;
         }
 
         @media (max-width: 768px) {
