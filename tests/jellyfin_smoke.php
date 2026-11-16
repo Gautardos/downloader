@@ -131,6 +131,7 @@ final class JellyfinFakeNumberingService extends EpisodeNumberingService
             'imdb_id' => 'tt9000001',
             'title' => 'Split Show',
             'source' => 'manual',
+            'source_ref' => 'tvdb:900001',
             'status' => 'ok',
             'jellyfin_mode' => 'tmdb',
             'target_mode' => 'local',
@@ -340,8 +341,15 @@ $seriesPage = $library->items(['parentId' => $seriesViewId, 'includeItemTypes' =
 eq(1, $seriesPage['TotalRecordCount'], 'series library returns one grouped series');
 $series = $seriesPage['Items'][0];
 eq('Series', $series['Type'], 'series item has the Series type');
+eq(JellyfinIds::series('series', 'tmdb:1396'), $series['Id'], 'series id is stable through TMDB identity');
 $episodes = $library->episodes($series['Id'], 'user', 1);
 eq(2, $episodes['TotalRecordCount'], 'series exposes two episodes for season 1');
+$legacyEpisodes = $library->episodes(JellyfinIds::series('series', 'folder:The Sopranos'), 'user', 1);
+eq(2, $legacyEpisodes['TotalRecordCount'], 'legacy folder series id still resolves after the id migration');
+$seriesSearchFallback = $library->items(['parentId' => $seriesViewId, 'includeItemTypes' => 'Series', 'searchTerm' => 'Titre japonais introuvable'], 'user');
+eq(1, $seriesSearchFallback['TotalRecordCount'], 'series search returns candidates for external-id verification when the title differs');
+$movieSearchFallback = $library->items(['parentId' => $movieViewId, 'includeItemTypes' => 'Movie', 'searchTerm' => 'Titre japonais introuvable'], 'user');
+eq(0, $movieSearchFallback['TotalRecordCount'], 'movie search does not return unrelated candidates');
 eq(1, $episodes['Items'][0]['IndexNumber'], 'episode number is exposed');
 eq($series['Id'], $episodes['Items'][0]['SeriesId'], 'episode links back to its series');
 
@@ -382,7 +390,16 @@ $numberedLibrary = new JellyfinLibraryService(
     new JellyfinFakeMetadataService(),
     new JellyfinFakeNumberingService()
 );
-$splitSeriesId = JellyfinIds::series('series', 'folder:Split Show (2024)');
+$splitSeriesId = JellyfinIds::series('series', 'tmdb:900001');
+$splitSeriesPage = $numberedLibrary->items(['parentId' => JellyfinIds::library('series'), 'includeItemTypes' => 'Series'], 'user');
+$splitSeriesItem = null;
+foreach ($splitSeriesPage['Items'] as $candidate) {
+    if (($candidate['Name'] ?? '') === 'Split Show') {
+        $splitSeriesItem = $candidate;
+        break;
+    }
+}
+eq('900001', $splitSeriesItem['ProviderIds']['Tvdb'] ?? null, 'series item exposes its TVDB id when a TVDB profile exists');
 $splitSeasonOne = $numberedLibrary->episodes($splitSeriesId, 'user', 1);
 eq(1, $splitSeasonOne['TotalRecordCount'], 'Jellyfin exposes the local release episode under the TMDB season');
 eq(1, $splitSeasonOne['Items'][0]['ParentIndexNumber'], 'Jellyfin parent index follows TMDB numbering');

@@ -93,9 +93,16 @@ class JellyfinLibraryService
 
         if ($searchTerm !== '') {
             $needle = mb_strtolower($searchTerm);
+            $allGroups = $groups;
             $groups = array_values(array_filter($groups, static function (array $group) use ($needle): bool {
                 return str_contains(mb_strtolower((string) ($group['title'] ?? '')), $needle);
             }));
+            if ($groups === []
+                && ($parent['kind'] ?? '') === 'library'
+                && in_array('series', $includeItemTypes, true)
+            ) {
+                $groups = array_values(array_filter($allGroups, static fn (array $group): bool => ($group['kind'] ?? '') === 'series'));
+            }
         }
 
         $sortBy = $this->queryString($query, 'sortBy');
@@ -389,7 +396,7 @@ class JellyfinLibraryService
             'Name' => $name,
             'Type' => 'Series',
             'ProductionYear' => $group['year'] !== null ? (int) $group['year'] : null,
-            'ProviderIds' => $this->providerIds($group['tmdb_id'] ?? null, $group['imdb_id'] ?? null),
+            'ProviderIds' => $this->providerIds($group['tmdb_id'] ?? null, $group['imdb_id'] ?? null, $group['tvdb_id'] ?? null),
             'Status' => 'Continuing',
             'SortName' => $name,
         ];
@@ -589,7 +596,22 @@ class JellyfinLibraryService
             return null;
         }
 
-        return $this->seriesGroups($rootKey)[$key] ?? null;
+        $groups = $this->seriesGroups($rootKey);
+        if (isset($groups[$key])) {
+            return $groups[$key];
+        }
+
+        if (str_starts_with($key, 'folder:') || str_starts_with($key, 'title:')) {
+            foreach ($groups as $group) {
+                foreach ($group['entries'] as $entry) {
+                    if ($this->legacySeriesKey($entry) === $key) {
+                        return $group;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     private function movieGroups(string $rootKey): array
@@ -704,6 +726,7 @@ class JellyfinLibraryService
     private function applySeriesNumbering(array &$group): void
     {
         $profile = $this->seriesNumberingProfile($group);
+        $group['tvdb_id'] = $this->tvdbIdFromProfile($profile);
         $mode = (string) ($profile['jellyfin_mode'] ?? 'local');
         foreach ($group['entries'] as &$entry) {
             $entry = $this->decorateEntry($entry, $group, $profile, $mode);
@@ -756,6 +779,18 @@ class JellyfinLibraryService
     }
 
     private function seriesKey(array $entry): string
+    {
+        if (!empty($entry['tmdb_id'])) {
+            return 'tmdb:' . (int) $entry['tmdb_id'];
+        }
+        if (!empty($entry['imdb_id'])) {
+            return 'imdb:' . (string) $entry['imdb_id'];
+        }
+
+        return $this->legacySeriesKey($entry);
+    }
+
+    private function legacySeriesKey(array $entry): string
     {
         $showFolder = trim((string) ($entry['show_folder'] ?? ''));
         if ($showFolder !== '') {
@@ -823,7 +858,17 @@ class JellyfinLibraryService
         return $filename !== '' ? pathinfo($filename, PATHINFO_FILENAME) : 'Episode';
     }
 
-    private function providerIds($tmdbId, $imdbId): array
+    private function tvdbIdFromProfile(?array $profile): ?int
+    {
+        $sourceRef = trim((string) ($profile['source_ref'] ?? ''));
+        if (preg_match('/^tvdb:(\d+)$/i', $sourceRef, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function providerIds($tmdbId, $imdbId, $tvdbId = null): array
     {
         $ids = [];
         if ($tmdbId !== null && (int) $tmdbId > 0) {
@@ -831,6 +876,9 @@ class JellyfinLibraryService
         }
         if (!empty($imdbId)) {
             $ids['Imdb'] = (string) $imdbId;
+        }
+        if ($tvdbId !== null && (int) $tvdbId > 0) {
+            $ids['Tvdb'] = (string) (int) $tvdbId;
         }
 
         return $ids;

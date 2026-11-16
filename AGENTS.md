@@ -1772,7 +1772,12 @@ vérité reste `library_entries` dans `var/db/automation.db`.
   exposées, y compris les groupes `ignored_at`.
 - Les IDs Jellyfin sont encodés en base64url et préfixés (`lib_`, `mov_`,
   `ser_`, `ep_`) par `App\Service\Jellyfin\JellyfinIds`.
-- `ProviderIds` expose `Tmdb` et `Imdb` pour le matching Nuvio/Trakt.
+- Les IDs de séries sont stables : `series:tmdb:<id>` puis
+  `series:imdb:<id>`, avec fallback `folder:`/`title:`. Les anciens IDs
+  `folder:` restent résolus pour éviter de casser une bibliothèque Nuvio
+  déjà synchronisée après un renommage.
+- `ProviderIds` expose `Tmdb`, `Imdb` et `Tvdb` (quand un profil de
+  numérotation TVDB existe) pour le matching Nuvio/Trakt.
 - Les métadonnées et affiches sont enrichies via `TmdbService` uniquement si
   `fields` contient `Overview`/`Genres`/`People`/`Studios` ou si les images
   sont demandées. Les appels restent soumis au cache TMDB existant.
