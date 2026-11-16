@@ -204,72 +204,66 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/music-files', name: 'music_files')]
-    public function musicFiles(JsonStorage $storage, KernelInterface $kernel): Response
+    public function musicFiles(): Response
     {
-        if (!$storage->hasMusicPath()) {
-            return $this->render('dashboard/locked.html.twig', [
-                'title' => 'Music Configuration Required',
-                'message' => 'The music file management screen requires a valid and accessible download path.',
-                'requirements' => [
-                    'Music Download Path (Settings > Music Settings)'
-                ]
-            ]);
-        }
-
-        $config = $storage->get('config', []);
-        $root = $config['music_root_path'] ?? '';
-        $files = [];
-
-        if (!empty($root) && is_dir($root)) {
-            $venvPath = $config['music_venv_path'] ?? '/opt/venv';
-            $script = $kernel->getProjectDir() . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'music_downloader.py';
-
-            $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-            $activate = $isWindows ? "call \"$venvPath\\Scripts\\activate\"" : ". \"$venvPath/bin/activate\"";
-
-            // Run verification with recursion support
-            $cmd = "($activate && python3 " . escapeshellarg($script) . " --verify " . escapeshellarg($root) . " --recursive)";
-
-            $process = Process::fromShellCommandline($cmd);
-            $process->run();
-
-            if ($process->isSuccessful()) {
-                $rawFiles = json_decode($process->getOutput(), true) ?: [];
-                foreach ($rawFiles as $rf) {
-                    $files[] = [
-                        'name' => $rf['filename'],
-                        'path' => $rf['full_path'],
-                        'size' => $rf['size'],
-                        'mtime' => (int) $rf['mtime'],
-                        'rel_path' => $rf['rel_path'],
-                        'genre' => $rf['genre'] ?? '',
-                        'has_lyrics' => $rf['lyrics'] ?? false,
-                        'lyrics_synced' => $rf['lyrics_synced'] ?? false,
-                    ];
-                }
-
-                // Sort by mtime descending
-                usort($files, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
-            }
-        }
-
-        return $this->render('dashboard/music_files.html.twig', [
-            'files' => $files,
-            'root' => $root
-        ]);
+        return $this->redirectToRoute('music_library', ['root' => 'downloads']);
     }
 
     #[Route('/music/stream', name: 'music_stream', methods: ['GET'])]
     public function musicStream(Request $request, JsonStorage $storage): Response
     {
         $config = $storage->get('config', []);
-        $root = $config['music_root_path'] ?? '';
-        $rootReal = $root ? realpath($root) : false;
-        $target = (string) $request->query->get('path', '');
-        $targetReal = $target !== '' ? realpath($target) : false;
-        $rootPrefix = $rootReal ? rtrim($rootReal, '/\\') . DIRECTORY_SEPARATOR : null;
+        $libraryRoot = $config['music_library_path'] ?? '';
+        $downloadRoot = $config['music_root_path'] ?? '';
+        $libraryReal = $libraryRoot ? realpath($libraryRoot) : false;
+        $downloadReal = $downloadRoot ? realpath($downloadRoot) : false;
+        $rootMap = [
+            'downloads' => $downloadReal && is_dir($downloadReal) ? $downloadReal : null,
+            'library' => $libraryReal && is_dir($libraryReal) ? $libraryReal : null,
+        ];
+        $requestedRoot = $request->query->get('root', '');
+        $requestedRoot = is_string($requestedRoot) ? $requestedRoot : '';
+        $primaryRoot = $requestedRoot !== ''
+            ? ($rootMap[$requestedRoot] ?? null)
+            : ($rootMap['library'] ?? $rootMap['downloads']);
 
-        if (!$rootPrefix || !$targetReal || !is_file($targetReal) || !str_starts_with($targetReal, $rootPrefix)) {
+        $target = (string) $request->query->get('path', '');
+        if ($target !== '' && $primaryRoot) {
+            $isAbsolute = str_starts_with($target, '/')
+                || str_starts_with($target, '\\\\')
+                || preg_match('#^[A-Za-z]:[\\\\/]#', $target) === 1;
+            if (!$isAbsolute) {
+                $relative = ltrim(str_replace('\\', '/', $target), '/');
+                $suffix = str_replace('/', DIRECTORY_SEPARATOR, $relative);
+                $target = $primaryRoot . DIRECTORY_SEPARATOR . $suffix;
+                if ($requestedRoot === '' && !is_file($target) && $rootMap['downloads'] && $rootMap['downloads'] !== $primaryRoot) {
+                    $fallback = $rootMap['downloads'] . DIRECTORY_SEPARATOR . $suffix;
+                    if (is_file($fallback)) {
+                        $target = $fallback;
+                    }
+                }
+            }
+        }
+
+        $targetReal = $target !== '' ? realpath($target) : false;
+        $allowedRoots = [];
+        foreach ([$libraryReal, $downloadReal] as $allowed) {
+            if ($allowed && is_dir($allowed)) {
+                $allowedRoots[] = rtrim($allowed, '/\\') . DIRECTORY_SEPARATOR;
+            }
+        }
+
+        $isAllowed = false;
+        if ($targetReal !== false) {
+            foreach ($allowedRoots as $prefix) {
+                if (str_starts_with($targetReal, $prefix)) {
+                    $isAllowed = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$isAllowed || !$targetReal || !is_file($targetReal)) {
             return new Response('File not found.', 404);
         }
 
@@ -966,17 +960,28 @@ class DashboardController extends AbstractController
         }
 
         $config = $storage->get('config', []);
-        $root = $config['music_root_path'] ?? '';
-        $rootReal = $root ? realpath($root) : false;
+        $allowedRoots = [];
+        foreach ([$config['music_root_path'] ?? '', $config['music_library_path'] ?? ''] as $root) {
+            $real = $root ? realpath($root) : false;
+            if ($real !== false && is_dir($real)) {
+                $allowedRoots[] = rtrim($real, '/\\') . DIRECTORY_SEPARATOR;
+            }
+        }
         $targetReal = realpath((string) $data['path']);
 
-        if (!$rootReal || !$targetReal || !is_file($targetReal)) {
+        if ($allowedRoots === [] || !$targetReal || !is_file($targetReal)) {
             return ['requested' => true, 'path' => null, 'error' => 'Invalid file path specified.'];
         }
 
-        $rootPrefix = rtrim($rootReal, '/\\') . DIRECTORY_SEPARATOR;
-        if (!str_starts_with($targetReal, $rootPrefix)) {
-            return ['requested' => true, 'path' => null, 'error' => 'File path is outside the music root directory.'];
+        $allowed = false;
+        foreach ($allowedRoots as $rootPrefix) {
+            if (str_starts_with($targetReal, $rootPrefix)) {
+                $allowed = true;
+                break;
+            }
+        }
+        if (!$allowed) {
+            return ['requested' => true, 'path' => null, 'error' => 'File path is outside the music roots.'];
         }
 
         if (!is_writable($targetReal)) {

@@ -14,14 +14,16 @@ A self-hosted media management platform built with Symfony & Python, packaged as
 - **Batch folder creation** — one-click creation of all missing directories during bulk import.
 - **AI-assisted renaming** — Grok suggests clean, normalized file names (✨ button, hidden when no Grok key).
 
-### 🎵 Music (Music Explorer)
+### 🎵 Music (Music Explorer & Music Library)
 - **Spotify search** — search tracks/albums directly from the UI using the Spotify Web API.
 - **High-quality downloads** — powered by CLI tools (zotify/spotdl) with configurable quality up to `very_high`.
-- **Full ID3 tag editor** — Artist, Album, Title, Year, Genre, Track Number.
-- **Lyrics** — automatic fetching of synced LRC lyrics (LRCLib) and plain-text lyrics (Genius).
-- **AI genre classification** — automatic genre tagging via Grok with a fully customizable expert prompt.
-- **Regex genre mapping** — alternative rule-based genre classification with configurable JSON patterns.
+- **Unified Music Library** — browse `Downloads` and `Library` roots in one folder tree, with genre, lyrics state and metadata.
+- **Full tag editor** — edit title, artist, album, album artist, year, genre, track/disc numbers, comment and lyrics, single or in bulk.
+- **Lyrics** — synced lyrics via LRCLIB (exact + scored search), unsynced fallback via Genius and lyrics.ovh, per-track or batch fetch.
+- **Lyrics audit** — read-only folder-level detection for encoding, timestamps, junk, repetition, abnormal length and missing lyrics.
+- **AI genre classification** — Grok-powered genre tagging with a customizable prompt, plus regex mapping.
 - **Library automation** — move, rename, and organize files into `Artist/Artist - Album - Track - Title.ext`.
+- **Simple audio player** — play a track or the current folder with seek, volume and queue controls.
 - **Spotify authentication** — generate Spotify credentials directly from Settings via the built-in `librespot-auth` binary.
 
 ### 🛠️ System
@@ -245,7 +247,7 @@ supervisord.conf    → Process manager configuration
 | Script | Purpose |
 | ------ | ------- |
 | `music_downloader.py` | Music download engine (wraps zotify/spotdl) |
-| `lyrics_fetcher.py` | Fetches and embeds lyrics from LRCLib/Genius |
+| `lyrics_fetcher.py` | Fetches and embeds lyrics from LRCLIB/Genius/lyrics.ovh |
 | `tag_rename_move.py` | Tags, renames, and moves files to the organized library |
 
 ---

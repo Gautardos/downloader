@@ -5,6 +5,7 @@ import argparse
 import json
 import re
 import unicodedata
+from mutagen import File as MutagenFile
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import USLT, ID3
 from mutagen.mp4 import MP4, MP4FreeForm
@@ -17,6 +18,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from bs4 import BeautifulSoup  # Ajout pour parser les pages Genius
 from difflib import SequenceMatcher
+from urllib.parse import quote
 
 colorama.init()
 
@@ -28,6 +30,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(SCRIPT_DIR), 'var', 'storage', 'confi
 # Sources API possibles
 SOURCES = {
     'lrclib': 'https://lrclib.net/api/',
+    'lyrics_ovh': 'https://api.lyrics.ovh/v1/',
     'genius': 'https://api.genius.com/',
     'spotify': 'https://api.spotify.com/v1/'
 }
@@ -56,6 +59,81 @@ def text_similarity(first, second):
     if not first or not second:
         return 0.0
     return SequenceMatcher(None, first, second).ratio()
+
+def get_track_duration(file_path):
+    try:
+        audio = MutagenFile(file_path)
+        if audio and getattr(audio, 'info', None):
+            length = getattr(audio.info, 'length', None)
+            if length:
+                return float(length)
+    except Exception:
+        pass
+    return None
+
+
+def candidate_title(item):
+    return str(item.get('trackName') or item.get('title') or '')
+
+
+def candidate_artist(item):
+    artist = item.get('artistName')
+    if isinstance(artist, str):
+        return artist
+    artist = item.get('artist')
+    if isinstance(artist, dict):
+        return str(artist.get('name') or '')
+    return str(artist or '')
+
+
+def candidate_album(item):
+    album = item.get('albumName')
+    if isinstance(album, str):
+        return album
+    album = item.get('album')
+    if isinstance(album, dict):
+        return str(album.get('title') or '')
+    return str(album or '')
+
+
+def score_lyrics_candidate(title, artist, album, duration, item):
+    query_title = normalize_match_text(title)
+    query_artist = normalize_match_text(artist)
+    query_album = normalize_match_text(album)
+
+    item_title = normalize_match_text(candidate_title(item))
+    item_artist = normalize_match_text(candidate_artist(item))
+    item_album = normalize_match_text(candidate_album(item))
+
+    title_score = text_similarity(query_title, item_title)
+    if query_title and (query_title in item_title or item_title in query_title):
+        title_score = max(title_score, 0.9)
+
+    artist_score = text_similarity(query_artist, item_artist)
+    if query_artist and (query_artist in item_artist or item_artist in query_artist):
+        artist_score = max(artist_score, 0.9)
+
+    album_score = text_similarity(query_album, item_album) if query_album and item_album else 0.5
+
+    duration_score = 0.5
+    item_duration = item.get('duration')
+    if duration and item_duration:
+        try:
+            item_duration = float(item_duration)
+            duration = float(duration)
+            duration_score = max(0.0, 1.0 - (abs(item_duration - duration) / max(duration, 30.0)))
+        except (TypeError, ValueError):
+            pass
+
+    combined = title_score * 0.60 + artist_score * 0.30 + album_score * 0.05 + duration_score * 0.05
+    return combined, title_score, artist_score
+
+
+def candidate_matches(title_score, artist_score, combined):
+    if title_score < 0.55:
+        return False
+    return artist_score >= 0.35 or combined >= 0.55
+
 
 def score_genius_hit(hit, title, artist):
     result = hit.get('result', {}) if isinstance(hit, dict) else {}
@@ -109,22 +187,84 @@ class LyricsFetcher:
                 pass
         return {}
 
-    def fetch_synced_lyrics(self, title, artist):
+    def fetch_lrclib_lyrics(self, title, artist, album=None, duration=None):
+        token = self.config.get("lrclib_token")
+        headers = {'Authorization': f'Bearer {token}'} if token else {}
+        include_unsynced = self.add_unsync
+
+        params = {
+            'track_name': title,
+            'artist_name': artist
+        }
+        if album:
+            params['album_name'] = album
+        if duration:
+            params['duration'] = str(int(round(duration)))
+
         try:
-            params = {
+            response = requests.get(f"{SOURCES['lrclib']}get", params=params, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, dict):
+                    synced = data.get('syncedLyrics')
+                    plain = data.get('plainLyrics')
+                    if synced:
+                        return synced, True, 'LRCLIB', 0.98
+                    if plain and include_unsynced:
+                        return plain, False, 'LRCLIB', 0.95
+        except Exception:
+            pass
+
+        try:
+            search_params = {
                 'track_name': title,
                 'artist_name': artist
             }
-            token = self.config.get("lrclib_token")
-            headers = {'Authorization': f'Bearer {token}'} if token else {}
-            response = requests.get(f"{SOURCES['lrclib']}get", params=params, headers=headers, timeout=10)
-            data = response.json()
-            if data.get('syncedLyrics'):
-                return data['syncedLyrics'], True
-        except Exception as e:
-            pass # Silently fail for fetchers
+            if album:
+                search_params['album_name'] = album
 
-        return None, False
+            response = requests.get(f"{SOURCES['lrclib']}search", params=search_params, headers=headers, timeout=10)
+            response.raise_for_status()
+            candidates = response.json()
+            if not isinstance(candidates, list):
+                return None, False, None, 0.0
+
+            scored = []
+            for item in candidates:
+                if not isinstance(item, dict) or item.get('instrumental'):
+                    continue
+                combined, title_score, artist_score = score_lyrics_candidate(title, artist, album, duration, item)
+                if candidate_matches(title_score, artist_score, combined):
+                    scored.append((combined, item))
+
+            scored.sort(key=lambda entry: entry[0], reverse=True)
+            for confidence, item in scored[:8]:
+                synced = item.get('syncedLyrics')
+                plain = item.get('plainLyrics')
+                if synced:
+                    return synced, True, 'LRCLIB', round(confidence, 2)
+                if plain and include_unsynced:
+                    return plain, False, 'LRCLIB', round(confidence, 2)
+        except Exception as exc:
+            print(f"LRCLIB search failed: {exc}", file=sys.stderr)
+
+        return None, False, None, 0.0
+
+    def fetch_lyrics_ovh(self, title, artist):
+        try:
+            response = requests.get(
+                f"{SOURCES['lyrics_ovh']}{quote(artist)}/{quote(title)}",
+                headers={'User-Agent': BROWSER_USER_AGENT},
+                timeout=10
+            )
+            if response.status_code == 200:
+                lyrics = str((response.json() or {}).get('lyrics') or '')
+                lyrics = lyrics.replace('\r\n', '\n').replace('\r', '\n').strip()
+                if lyrics and len(lyrics) >= 20:
+                    return lyrics, 'lyrics.ovh', 0.55
+        except Exception as exc:
+            print(f"lyrics.ovh failed: {exc}", file=sys.stderr)
+        return None, None, 0.0
 
     def fetch_unsynced_lyrics(self, title, artist):
         try:
@@ -237,13 +377,8 @@ class LyricsFetcher:
     def has_synced_lyrics(self, lyrics):
         if not lyrics: return False
         for line in lyrics.split('\n'):
-            line = line.strip()
-            if line.startswith('[') and ']' in line:
-                content = line.split(']')[0][1:]
-                try:
-                    parts = content.split(':')
-                    if len(parts) >= 2: return True
-                except: continue
+            if re.match(r'^\s*(?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]|<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>)', line):
+                return True
         return False
 
     def get_genre(self, file_path):
@@ -293,13 +428,32 @@ class LyricsFetcher:
                     if not (self.force_dl_unsync and not is_existing_synced):
                         return {**report_data, 'status': 'skipped', 'reason': 'already present'}
 
-            lyrics, is_synced = self.fetch_synced_lyrics(title, artist)
+            duration = get_track_duration(file_path)
+            provider = None
+            confidence = 0.0
+
+            lyrics, is_synced, provider, confidence = self.fetch_lrclib_lyrics(title, artist, album, duration)
             if not lyrics and self.add_unsync:
                 lyrics, is_synced = self.fetch_unsynced_lyrics(title, artist)
+                if lyrics:
+                    provider = 'Genius'
+                    confidence = 0.60
+                else:
+                    lyrics, provider, confidence = self.fetch_lyrics_ovh(title, artist)
+                    is_synced = False
 
             if lyrics:
-                return {**report_data, 'status': 'found', 'lyrics': lyrics, 'synced': is_synced}
-            return {**report_data, 'status': 'not_found'}
+                return {
+                    **report_data,
+                    'status': 'found',
+                    'lyrics': lyrics,
+                    'synced': is_synced,
+                    'provider': provider or 'Unknown',
+                    'confidence': confidence,
+                }
+
+            reason = 'No lyrics found on LRCLIB, Genius or lyrics.ovh' if self.add_unsync else 'No synced lyrics found on LRCLIB'
+            return {**report_data, 'status': 'not_found', 'reason': reason}
         except Exception as e:
             return {'file': os.path.basename(file_path), 'status': 'error', 'message': str(e)}
 
@@ -332,6 +486,7 @@ class LyricsFetcher:
                 try:
                     if file_path.lower().endswith('.mp3'):
                         audio = ID3(file_path)
+                        audio.delall('USLT')
                         audio.add(USLT(encoding=3, lang='eng', text=result['lyrics']))
                         audio.save()
                         saved_count += 1
@@ -373,7 +528,9 @@ def main():
                     'title': res.get('title'),
                     'status': res.get('status'),
                     'type': 'synced' if res.get('synced') else ('unsynced' if res.get('status') == 'found' else 'none'),
-                    'reason': res.get('reason')
+                    'reason': res.get('reason'),
+                    'provider': res.get('provider'),
+                    'confidence': res.get('confidence'),
                 })
         print(json.dumps(summary))
     else:
@@ -386,6 +543,8 @@ def main():
                 if status == 'found':
                     color = Fore.GREEN if res.get('synced') else Fore.YELLOW
                     msg = "Synced" if res.get('synced') else "Unsynced"
+                    if res.get('provider'):
+                        msg += f" via {res.get('provider')}"
                 elif status == 'skipped':
                     color = Style.DIM
                     msg = f"Skipped ({res.get('reason')})"

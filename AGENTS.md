@@ -463,13 +463,19 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 | POST | `/music-add` | `music_add` | Métadonnées Spotify + enqueue musique |
 | GET | `/music/spotify/playlists` | `spotify_playlists` | Liste les playlists du compte (privées incluses) via token Zotify |
 | GET | `/music/spotify/search` | `spotify_search` | Recherche publique Spotify (titres, albums, playlists) |
-| GET | `/music-files` | `music_files` | Liste des fichiers audio + tags |
-| GET | `/music/stream` | `music_stream` | Streaming audio avec support des requêtes HTTP Range |
+| GET | `/music-files` | `music_files` | Redirection vers `/music-library?root=downloads` |
+| GET | `/music/stream` | `music_stream` | Streaming audio (`root=downloads|library` + chemin relatif, ou chemin absolu sous une racine) avec requêtes HTTP Range |
 | POST | `/file-tags` | `file_tags` | Extrait les tags d'un fichier |
 | POST | `/update-tags` | `update_tags` | Met à jour des tags |
 | POST | `/music/update-genres` | `music_update_genres` | Lance `tag_rename_move.py --tags-only` |
 | POST | `/music/fetch-lyrics` | `fetch_lyrics` | Lance `lyrics_fetcher.py` |
 | POST | `/music/move-to-library` | `move_to_library` | Lance `tag_rename_move.py` (déplacement) |
+| GET | `/music-library` | `music_library` | Navigateur dossier de la bibliothèque musicale |
+| GET | `/music-library/folder` | `music_library_folder` | Liste JSON des sous-dossiers et fichiers d'un dossier |
+| POST | `/music-library/tags` | `music_library_tags` | Lit les tags d'un fichier |
+| POST | `/music-library/update-tags` | `music_library_update_tags` | Met à jour une liste blanche de tags (tags only) |
+| POST | `/music-library/fetch-lyrics` | `music_library_fetch_lyrics` | Récupère les lyrics d'une piste (fetch unitaire) |
+| POST | `/music-library/lyrics-audit` | `music_library_lyrics_audit` | Audit lecture seule des lyrics d'un dossier |
 
 ### Configuration / debug
 | Méthode | URL | Nom | Rôle |
@@ -649,23 +655,48 @@ Wrapper autour de `music_binary` (Zotify). Modes :
 
 | Invocation | Comportement |
 | --- | --- |
-| `--verify <dir> [--recursive]` | Parcourt les fichiers audio, lit les tags via `music_tag`, retourne un JSON (artist, album, song_name, filename, rel_path, full_path, size, mtime, genre, lyrics). Normalise les séparateurs d'artistes (`/`, `;` → `,`). |
-| `--tags <file>` | Retourne un JSON de tous les tags d'un fichier. |
-| `--update-tags <file> --<tag> <value>...` | Met à jour les tags via `music_tag`. |
+| `--verify <dir> [--recursive]` | Parcourt les fichiers audio, lit les tags via `music_tag`, retourne un JSON (artist, album, albumartist, song_name, filename, rel_path, full_path, size, mtime, genre, year, tracknumber, discnumber, comment, lyrics, lyrics_synced). Normalise les séparateurs d'artistes (`/`, `;` → `,`). |
+| `--tags <file>` | Retourne un JSON de tous les tags d'un fichier, dont `albumartist`. |
+| `--update-tags <file> --<tag> <value>...` | Met à jour les tags via `music_tag`. Une valeur vide sur `year`/`tracknumber`/`discnumber` efface le tag (`None`). |
 | `<args...>` | Exécute `music_binary <args...>` en héritant stdout/stderr, propage le code retour. |
 
 > `music_tag` est importé dans `verify_directory` mais **absent de
 > `requirements.txt`** (il est probablement fourni par Zotify ou installé dans
 > l'environnement). À vérifier lors d'un rebuild.
 
+### `lyrics_audit.py`
+
+- Invocation : `--root <music_root> --path <folder> [--recursive]`.
+- Audit **lecture seule** : aucune écriture dans les fichiers audio ni dans les
+  tags.
+- Détections : mojibake/encodage, timestamps LRC invalides ou non monotones
+  (métadonnées `[offset:]`/`[length:]` et timestamps enhanced `<mm:ss.xx>`
+  gérés), HTML/JSON/URL/boilerplate, répétition/lignes dupliquées, longueur
+  anormale (trop court ou pavé trop long), lyrics manquantes.
+- Les symlinks sont ignorés pour rester confiné à la racine.
+- Sortie JSON : `counts` agrégés (`ok`, `warning`, `error`, `missing`,
+  `flagged`, `by_type`) et `files` avec `issues` (type, severity, message,
+  excerpt).
+- `MusicLibraryService` met le résultat en cache dans
+  `var/storage/music_library_audits.json` pour afficher les compteurs par
+  dossier sans relancer le scan.
+
 ### `lyrics_fetcher.py`
 
-- Sources : LRCLib (`/get`, token optionnel), Genius (`/search` puis scraping
-  HTML `data-lyrics-container`), Spotify (spotipy, optionnel).
-- Lit/écrit MP3 (`ID3`/`USLT`) et M4A (`MP4` `©lyr`).
-- Détecte les paroles synchronisées (timestamps `[mm:ss.xx]`).
+- Chaîne de providers : LRCLIB (`/get` puis `/search`), Genius, puis lyrics.ovh
+  en dernier recours. Deezer n'est pas utilisé : son endpoint lyrics public
+  exige désormais OAuth.
+- LRCLIB `/search` score les candidats sur titre, artiste, album et durée, avec
+  un seuil de confiance pour éviter les mauvais matches. Le provider et la
+  confiance sont exposés dans le JSON.
+- Lit/écrit MP3 (`ID3`/`USLT`) et M4A (`MP4` `©lyr`). Sur MP3, l'ancien frame
+  `USLT` est supprimé avant écriture pour éviter les doublons.
+- Détecte les paroles synchronisées de façon stricte (`[mm:ss.xx]` ou
+  `<mm:ss.xx>`), sans confondre les en-têtes `[Refrain :]`.
 - Options : `--recursive`, `--force-save`, `--force-dl-all`,
   `--force-dl-unsync`, `--add-unsync`, `--json`.
+- `--force-dl-unsync` permet de retenter une piste dont les lyrics existants
+  sont unsynced.
 - Ignore les genres contenant `instrumental` ou `ambiance`.
 - Sortie JSON (avec `--json`) consommée par `/music/fetch-lyrics`.
 
@@ -726,11 +757,29 @@ permet de recréer l'arborescence.
    `SpotifyService`.
 2. Worker : `music_downloader.py` → Zotify télécharge dans `music_root_path`.
 3. Vérification `--verify` et calcul succès/warning/erreur + retries.
-4. `/music-files` liste les fichiers (tags, genre, paroles présentes).
-5. Actions UI : édition tags, `update-genres` (tags only), `fetch-lyrics`,
-   `move-to-library`.
-6. `move-to-library` déplace dans `music_library_path` avec la nomenclature
-   `Artist/Artist - Album - N - Titre.ext`, historise et émet une notification.
+4. `/music-library` fusionne l'ancien Music Downloads et le navigateur de
+   bibliothèque. Deux racines au même niveau : `downloads`
+   (`music_root_path`) et `library` (`music_library_path`). Chaque racine est
+   affichée si elle est définie, lisible et accessible.
+5. Actions UI : édition de tags par fichier ou en masse (liste blanche),
+   `Fetch lyrics` et `Fetch genre` sur la sélection courante, lecture audio
+   simple (flux `/music/stream` avec `root` + chemin relatif), audit lyrics à
+   la demande par dossier (`lyrics_audit.py`, lecture seule), colonne genre sur
+   tous les dossiers. `Fetch lyrics` ignore les lyrics déjà synced, mais retente
+   les lyrics unsynced avec `--force-dl-unsync` (le fetch unitaire fait de même).
+   `lyrics_fetcher.py` remplace l'ancien frame USLT au lieu d'en ajouter un
+   second.
+6. `Move to library` n'apparaît que sur le dossier racine `downloads`. Il
+   réutilise `move-to-library` et déplace dans `music_library_path` avec la
+   nomenclature `Artist/Artist - Album - N - Titre.ext`, historise et émet une
+   notification.
+7. `music_library_path` prime comme racine par défaut ; les chemins sont
+   confinés à leur racine respective (realpath + rejet des traversées et des
+   liens sortants). Le fetch lyrics unitaire, l'AI genre et `Clear lyrics` sont
+   disponibles dans la popup d'édition. Une mise à jour de tags ou un fetch
+   lyrics invalide l'audit lyrics du fichier et recalcule les compteurs des
+   scopes concernés (cache préfixé par racine). Aucun endpoint de cette section
+   ne supprime, déplace ou renomme un fichier en dehors de `Move to library`.
 
 ### 11.3 Génération des credentials Spotify
 

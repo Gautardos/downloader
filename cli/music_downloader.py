@@ -15,13 +15,24 @@ def load_config():
             return json.load(f)
     return {}
 
+NUMERIC_TAGS = {'year', 'tracknumber', 'discnumber', 'totaltracks', 'totaldiscs'}
+
+
 def lyrics_are_synced(lyrics):
     if not lyrics:
         return False
     for line in str(lyrics).splitlines():
-        if re.match(r'^\s*\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]', line):
+        if re.match(r'^\s*(?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]|<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>)', line):
             return True
     return False
+
+
+def safe_tag(handle, name):
+    try:
+        value = handle[name]
+        return '' if value is None else str(value)
+    except Exception:
+        return ''
 
 
 def verify_directory(directory, recursive=False):
@@ -42,25 +53,30 @@ def verify_directory(directory, recursive=False):
                     f = music_tag.load_file(file_path)
                     
                     # Check for lyrics within ID3 tags
-                    lyrics = str(f['lyrics']).strip()
+                    lyrics = safe_tag(f, 'lyrics').strip()
                     has_lyrics = len(lyrics) > 0 and lyrics.lower() != 'none'
                     lyrics_synced = has_lyrics and lyrics_are_synced(lyrics)
 
                     # Normalize artist delimiters
-                    artist = str(f['artist'])
+                    artist = safe_tag(f, 'artist')
                     artist = artist.replace(' / ', ', ').replace(' /', ', ').replace('/ ', ', ').replace('/', ', ')
                     artist = artist.replace('; ', ', ').replace(';', ', ')
 
                     results.append({
                         'artist': artist,
-                        'album': str(f['album']),
-                        'song_name': str(f['title']),
+                        'album': safe_tag(f, 'album'),
+                        'albumartist': safe_tag(f, 'albumartist'),
+                        'song_name': safe_tag(f, 'title'),
                         'filename': filename,
                         'rel_path': os.path.relpath(file_path, directory),
                         'full_path': file_path,
                         'size': os.path.getsize(file_path),
                         'mtime': os.path.getmtime(file_path),
-                        'genre': str(f['genre']),
+                        'genre': safe_tag(f, 'genre'),
+                        'year': safe_tag(f, 'year'),
+                        'tracknumber': safe_tag(f, 'tracknumber'),
+                        'discnumber': safe_tag(f, 'discnumber'),
+                        'comment': safe_tag(f, 'comment'),
                         'lyrics': has_lyrics,
                         'lyrics_synced': lyrics_synced
                     })
@@ -100,7 +116,10 @@ def main():
                 if arg.startswith('--') and i + 1 < len(sys.argv):
                     tag_name = arg[2:]
                     tag_value = sys.argv[i+1]
-                    f[tag_name] = tag_value
+                    if tag_name in NUMERIC_TAGS and tag_value == '':
+                        f[tag_name] = None
+                    else:
+                        f[tag_name] = tag_value
                     updated = True
                     i += 2
                 else:
@@ -127,17 +146,18 @@ def main():
             f = music_tag.load_file(file_path)
             # Comprehensive tag extraction
             tags = {
-                'title': str(f['title']),
-                'artist': str(f['artist']),
-                'album': str(f['album']),
-                'year': str(f['year']),
-                'genre': str(f['genre']),
-                'tracknumber': str(f['tracknumber']),
-                'totaltracks': str(f['totaltracks']),
-                'comment': str(f['comment']),
-                'lyrics': str(f['lyrics']),
-                'composer': str(f['composer']),
-                'discnumber': str(f['discnumber'])
+                'title': safe_tag(f, 'title'),
+                'artist': safe_tag(f, 'artist'),
+                'album': safe_tag(f, 'album'),
+                'albumartist': safe_tag(f, 'albumartist'),
+                'year': safe_tag(f, 'year'),
+                'genre': safe_tag(f, 'genre'),
+                'tracknumber': safe_tag(f, 'tracknumber'),
+                'totaltracks': safe_tag(f, 'totaltracks'),
+                'comment': safe_tag(f, 'comment'),
+                'lyrics': safe_tag(f, 'lyrics'),
+                'composer': safe_tag(f, 'composer'),
+                'discnumber': safe_tag(f, 'discnumber')
             }
             print(json.dumps(tags))
         except Exception as e:

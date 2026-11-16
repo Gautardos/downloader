@@ -72,6 +72,10 @@
         "test:backfill": "php tests/backfill_smoke.php",
         "test:auth": "php tests/auth_security_smoke.php",
         "test:http-auth": "php tests/http_auth_smoke.php",
+        "test:music-library": [
+            "php tests/music_library_smoke.php",
+            "python3 tests/lyrics_audit_smoke.py"
+        ],
         "test:security:all": [
             "@test:auth",
             "@test:security",
@@ -82,7 +86,8 @@
             "php tests/functional_flow_smoke.php",
             "@test:automation",
             "@test:backfill",
-            "@test:jellyfin"
+            "@test:jellyfin",
+            "@test:music-library"
         ],
         "test:all": [
             "@test:security:all",

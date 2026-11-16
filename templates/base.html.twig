@@ -720,7 +720,7 @@
             <div class="nav-links" id="nav-links">
                 {% if storage.isConfigured() %}
                     <a href="{{ path('music') }}" class="{{ current_route == 'music' ? 'active' : '' }}">Music</a>
-                    <a href="{{ path('music_files') }}" class="{{ current_route == 'music_files' ? 'active' : '' }}">Music Downloads</a>
+                    <a href="{{ path('music_library') }}" class="{{ current_route starts with 'music_library' or current_route == 'music_files' ? 'active' : '' }}">Music Library</a>
                     <a href="{{ path('torrent') }}" class="{{ current_route == 'torrent' ? 'active' : '' }}">Debrid</a>
                     <a href="{{ path('media_index') }}" class="{{ current_route == 'media_index' ? 'active' : '' }}">Discover</a>
                     <a href="{{ path('automation') }}" class="{{ current_route starts with 'automation' ? 'active' : '' }}">Media Library</a>
