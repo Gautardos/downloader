@@ -117,6 +117,9 @@ RUN { \
     echo 'redis.session.lock_wait_time = 10000'; \
     } > /usr/local/etc/php/conf.d/zz-redis-sessions.ini
 
+# Raise the web SAPI execution limit (CLI workers already run without a time limit).
+RUN echo 'max_execution_time = 300' > /usr/local/etc/php/conf.d/zz-app.ini
+
 # MPM prefork tuning
 RUN echo '' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
     && echo '    KeepAlive On' >> /etc/apache2/mods-enabled/mpm_prefork.conf \

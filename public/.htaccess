@@ -20,6 +20,10 @@ DirectoryIndex index.php
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Block hidden files and directories (secret scans) before Symfony handles them.
+    # .well-known is kept available for ACME/Let's Encrypt challenges.
+    RewriteRule (^|/)\.(?!well-known/) - [F,L,NC]
+
     # Determine the RewriteBase automatically and set it as environment variable.
     # If you are using Apache aliases to do mass virtual hosting or installed the
     # project in a subdirectory, the base path will be prepended to allow proper

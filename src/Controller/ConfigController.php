@@ -270,6 +270,9 @@ class ConfigController extends AbstractController
     #[Route('/config/update-hash-db', name: 'config_update_hash_db', methods: ['POST'])]
     public function updateHashDb(KernelInterface $kernel): Response
     {
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
         try {
             $projectDir = $kernel->getProjectDir();
             $composerHome = $projectDir . '/var/composer_home';
@@ -431,7 +434,7 @@ class ConfigController extends AbstractController
                 'message' => 'Torrent database updated successfully!' . $summary,
                 'diagnostics' => $diagnostics
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return $this->json(['success' => false, 'message' => $e->getMessage()]);
         }
     }

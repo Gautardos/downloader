@@ -417,7 +417,7 @@
                             <h4 style="margin: 0 0 0.5rem 0;">Update Torrent Database</h4>
                             <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">
                                 Triggers a <code>composer update gautardos/hash-db</code> to fetch the latest torrent hashes from the repository. 
-                                This operation might take several minutes depending on your connection.
+                                This operation might take several minutes depending on your connection. If it fails or times out, retry: already imported hashes are skipped.
                             </p>
                         </div>
                         <button type="button" id="btn-update-hash-db" class="btn btn-secondary" style="min-width: 200px; background: #17a2b8;">
@@ -797,8 +797,20 @@ document.getElementById('btn-update-hash-db').addEventListener('click', async fu
             }
         });
         
-        const result = await response.json();
-        
+        const raw = await response.text();
+        let result;
+        try {
+            result = JSON.parse(raw);
+        } catch (parseError) {
+            statusDiv.style.background = 'rgba(220, 53, 69, 0.1)';
+            statusDiv.style.color = 'var(--danger)';
+            statusDiv.style.border = '1px solid var(--danger)';
+            statusDiv.innerText = '❌ The server returned a non-JSON response (HTTP ' + response.status + ').\n'
+                + 'The update may have completed anyway — reload and check the database, then retry safely (already imported hashes are skipped).\n\n'
+                + 'Server response:\n' + raw.slice(0, 500);
+            return;
+        }
+
         if (result.success) {
             statusDiv.style.background = 'rgba(40, 167, 69, 0.1)';
             statusDiv.style.color = 'var(--success)';
