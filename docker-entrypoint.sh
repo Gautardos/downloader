@@ -49,6 +49,7 @@ if [ -d "$storage_dir" ]; then
             legacy_name=$(basename "$legacy_log")
             if [ -f "$legacy_log" ] && [ ! -e "$storage_dir/logs/$legacy_name" ]; then
                 mv "$legacy_log" "$storage_dir/logs/$legacy_name" 2>/dev/null || true
+                chgrp --reference="$storage_dir/logs" "$storage_dir/logs/$legacy_name" 2>/dev/null || true
             fi
         done
         shopt -u nullglob
@@ -66,7 +67,8 @@ if [ -d "$storage_dir" ]; then
         if [ -d "$storage_dir/logs" ] && [ "$(stat -c '%U' "$storage_dir/logs")" = "www-data" ]; then
             chmod 2750 "$storage_dir/logs" 2>/dev/null || true
             touch "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
-            chown www-data: "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
+            chown www-data "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
+            chgrp --reference="$storage_dir/logs" "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
             chmod 640 "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
         fi
         while IFS= read -r -d '' file; do
