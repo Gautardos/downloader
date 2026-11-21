@@ -1,76 +1,191 @@
-# Downloader App
+# Downloader
 
-A self-hosted media management platform built with Symfony & Python, packaged as a single Docker image. It handles video/torrent downloads via Alldebrid and provides a complete music pipeline — from Spotify search to tagged, organized files in your library.
+A self-hosted media management platform built with Symfony & Python and shipped as a single Docker image. It handles video, torrent and direct-link downloads through Alldebrid, a complete music pipeline from Spotify search to a tagged library, a TMDB/Stremio discovery interface, and an automation engine that keeps your NAS library in sync with external lists.
+
+**Version:** 2.7
+
+| Resource | Link |
+| -------- | ---- |
+| Application source | https://github.com/Gautardos/downloader |
+| Containerized deployment (Docker Compose) | https://github.com/Gautardos/docker-downloader |
+| Docker image | `gautardos/downloader-app` |
 
 ---
 
 ## ✨ Features
 
-### 🎬 Videos & Torrents
+### 🎬 Videos, Torrents & Direct Links
 - **Magnet & `.torrent` upload** with Alldebrid cloud debridding.
-- **Built-in search engine** — local CSV database for searching torrents by title and auto-filling magnets.
+- **Torrent search** backed by a local SQLite database (`hash-db`), with title search, categories and magnet auto-fill.
 - **Magnet preview** — inspect file list, sizes and Alldebrid status before committing.
 - **Pack grouping** — automatic detection of series/albums with recursive folder creation.
 - **Batch folder creation** — one-click creation of all missing directories during bulk import.
-- **AI-assisted renaming** — Grok suggests clean, normalized file names (✨ button, hidden when no Grok key).
+- **Direct links** — send a list of HTTP links to the download queue.
+- **AI-assisted renaming** — clean, normalized file names suggested by your configured AI model (the ✨ button is hidden when no AI key is configured).
+- **Recent downloads** — paginated Alldebrid history with cached responses.
 
-### 🎵 Music (Music Explorer & Music Library)
-- **Spotify search** — search tracks/albums directly from the UI using the Spotify Web API.
-- **High-quality downloads** — powered by CLI tools (zotify/spotdl) with configurable quality up to `very_high`.
-- **Unified Music Library** — browse `Downloads` and `Library` roots in one folder tree, with genre, lyrics state and metadata.
-- **Full tag editor** — edit title, artist, album, album artist, year, genre, track/disc numbers, comment and lyrics, single or in bulk.
-- **Lyrics** — synced lyrics via LRCLIB (exact + scored search), unsynced fallback via Genius and lyrics.ovh, per-track or batch fetch.
+### 🔎 Discover (TMDB + Addons)
+- **TMDB search** for movies and series, with details, seasons and episodes.
+- **Stremio/Nuvio addons** used as stream sources (public HTTPS manifests only).
+- **Nuvio collections import** with catalog/dossier mapping and per-addon activation.
+- **One-click debrid** — pick a source and send the torrent to Alldebrid and the queue.
+- **TMDB artwork and metadata** exposed to the Jellyfin bridge.
+
+### 🎵 Music
+- **Spotify search** for tracks, albums and playlists, including private playlists through the librespot token.
+- **High-quality downloads** powered by Zotify, with configurable quality up to `very_high`.
+- **Unified Music Library** — browse `Downloads` (`music_root_path`) and `Library` (`music_library_path`) roots in a single folder tree.
+- **Full tag editor** — title, artist, album, album artist, year, genre, track/disc numbers, comment and embedded lyrics, single or bulk.
+- **Lyrics** — LRCLIB (synced + scored search), Genius and lyrics.ovh fallback, per-track or batch fetch.
 - **Lyrics audit** — read-only folder-level detection for encoding, timestamps, junk, repetition, abnormal length and missing lyrics.
-- **AI genre classification** — Grok-powered genre tagging with a customizable prompt, plus regex mapping.
-- **Library automation** — move, rename, and organize files into `Artist/Artist - Album - Track - Title.ext`.
+- **AI genre classification** — configurable model and prompt, plus regex mapping.
+- **Library automation** — move, rename and organize files into `Artist/Artist - Album - Track - Title.ext`.
 - **Simple audio player** — play a track or the current folder with seek, volume and queue controls.
-- **Spotify authentication** — generate Spotify credentials directly from Settings via the built-in `librespot-auth` binary.
+- **Spotify authentication** — generate credentials from Settings with the built-in `librespot-auth` binary.
+
+### 🤖 Automations (NAS library)
+- **Library index** for Movies, TV Shows and Anime roots, with incremental scans and NFO support.
+- **Library Browser** — Flat, Folders and Discovery views with TMDB metadata, posters and naming status.
+- **Metadata resolution** — match ambiguous entries to TMDB, fix matches manually or ignore groups.
+- **Jellyfin renaming** — preview and apply `Title (Year)` / `SxxExx` naming, with sidecar handling and undo.
+- **Connected Lists** — import Scrob and MDBList lists, dry-run matching against the NAS, and ignore items.
+- **Quality profile** — resolution, codecs, HDR, audio languages, seeders, size limits and addon priority.
+- **Automatic downloads** — create intents for missing movies and episodes, resolve releases, send to Alldebrid and track download status.
+- **Series numbering** — align TMDB episodes with TVDB/Cinemeta/TVmaze/AIOMetadata numbering.
+- **Dry-run** — preview release selection without contacting Alldebrid or queueing anything.
+- **Activity** — scan, resolution, list and intent history.
+- **In-app help** — a complete guide is available at `/automation/help`.
+
+### 📺 Jellyfin / Nuvio
+- **Jellyfin-compatible API** under `/jellyfin`, read-only and direct-play only.
+- **Nuvio integration** — add `http://<host>:8000/jellyfin` as a Jellyfin server (the root URL also redirects discovery).
+- **Resume state, played status, search, TMDB artwork and external subtitles.**
 
 ### 🛠️ System
 - **Download queue** — sequential processing via a background worker (Supervisor-managed).
-- **Real-time tracker** — live download progress with polling and browser notifications.
-- **Full history** — detailed action logs with retention limit.
-- **Authentication** — simple login system with configurable credentials (default: `admin` / `admin`).
-- **Jellyfin-compatible API** — expose the indexed video library under `/jellyfin` so Nuvio can connect through its native Jellyfin integration.
+- **Automation worker** — scans, list syncs and release intents in the background.
+- **Real-time tracker** — live progress with polling and browser notifications.
+- **Full history** — detailed action logs with a configurable retention limit.
+- **Authentication** — simple login with configurable credentials (default: `admin` / `admin`) and CSRF protection.
+- **AI provider** — OpenRouter (default) with xAI fallback and a model per usage (default, renaming, music genre).
 - **Adaptive UI** — navigation items are hidden automatically when their dependencies are not configured.
-- **JSON storage** — no SQL database needed; all configuration, history, and queue are stored as JSON files.
+- **File-based storage** — JSON for configuration/queue/history, SQLite for the torrent DB and automation index; no external SQL server required.
 
 ---
 
-## � Installation (Docker)
+## 📸 Screenshots
 
-The application is distributed as a pre-built Docker image. No need to clone this repository to run it.
+| Music Library | Automations — Library Browser |
+| ------------- | ----------------------------- |
+| ![Music Library](screenshots/v2.7/01-music-library-overview.png) | ![Library Browser](screenshots/v2.6/04-automations-library-folders.png) |
+
+| Discover | Automations — Downloads |
+| -------- | ----------------------- |
+| ![Discover collections](screenshots/nouveautes/05-discover-collections.png) | ![Download automations](screenshots/v2.6/07-automations-downloads.png) |
+
+---
+
+## 🐳 Installation (Docker)
+
+The application is distributed as a pre-built Docker image. The recommended way to deploy it is the dedicated Compose repository: **https://github.com/Gautardos/docker-downloader**.
 
 ### Prerequisites
-- **Docker** and **Docker Compose** installed on a Linux host.
-- An **Alldebrid** account (for video/torrent features).
-- A **Spotify** developer account (for music features).
-- Optionally, a **Grok** API key (for AI renaming and genre detection).
 
-### 1. Create the project directory
+- **Docker** and **Docker Compose v2** on a Linux host (or Docker Desktop on Windows/macOS).
+- An **Alldebrid** account for video/torrent features.
+- A **Spotify** developer account and a Spotify session for music features.
+- Optional: a **TMDB** API key (Discover), an **OpenRouter** or **xAI** key (AI features), **Scrob/MDBList** credentials (Automations), a **Jellyfin/Nuvio** client (streaming).
+
+> [!IMPORTANT]
+> The Compose file uses `network_mode: host`. On Docker Desktop for Windows this requires **Docker Desktop ≥ 4.34** with Linux containers (see the Windows section of the [container repository](https://github.com/Gautardos/docker-downloader)).
+
+### 1. Get the Compose files
 
 ```bash
-mkdir -p ~/downloader-app/var/home
-mkdir -p ~/downloader-app/var/storage
+git clone https://github.com/Gautardos/docker-downloader.git ~/downloader-app
+cd ~/downloader-app
+cp .env.example .env
 ```
 
-- `var/home/` — persistent home directory for the application (Spotify credentials, archive logs).
-- `var/storage/` — persistent application data (configuration, download queue, history).
+### 2. Create the data directories
 
-### 2. Modify `docker-compose.yml`
+```bash
+mkdir -p var/{db,home,storage}
+mkdir -p downloads music nas
+```
 
-### 3. Start the container
+- `var/db/` — SQLite databases (torrent search, automation index).
+- `var/home/` — persistent home (Spotify credentials, Zotify archive).
+- `var/storage/` — configuration, queue, history, logs and caches.
+- `downloads/`, `music/`, `nas/` — media mounts. Adapt them to your disks or NFS/SMB shares.
+
+### 3. Configure `.env`
+
+```env
+IMAGE_TAG=latest
+PORT=8000
+DATA_DIR=./var
+DOWNLOADS_DIR=./downloads
+MUSIC_DIR=./music
+NAS_DIR=./nas
+```
+
+Use an explicit version (for example `IMAGE_TAG=2.7.0`) if you want reproducible deployments. Paths are **host** paths; they are mounted to fixed container paths.
+
+> [!NOTE]
+> The image serves HTTP on port **8000**. Keep `PORT=8000` unless you customize the image; with `network_mode: host`, the application is reachable on that port.
+
+### 4. Create the application secret
+
+Secrets must never be stored in the Compose file or in `.env`. Create `var/.env.local`:
+
+```bash
+printf 'APP_ENV=prod\nAPP_DEBUG=0\nAPP_SECRET=%s\n' "$(openssl rand -hex 32)" > var/.env.local
+```
+
+This file is mounted read-only at `/var/www/html/.env.local`.
+
+### 5. Start the container
 
 ```bash
 cd ~/downloader-app
 docker compose up -d
 ```
 
-The application is now accessible at **`http://<your-ip>:8000`**.
+The application is then available at **`http://<your-ip>:8000`**.
 
-### 4. First login
+<details>
+<summary>Compose reference (already included in the container repository)</summary>
 
-Open the application in your browser. The default credentials are:
+```yaml
+services:
+  downloader:
+    image: gautardos/downloader-app:${IMAGE_TAG:-latest}
+    container_name: downloader-container
+    network_mode: host
+    environment:
+      - PORT=${PORT:-8000}
+    volumes:
+      - ${DATA_DIR:-./var}/.env.local:/var/www/html/.env.local:ro
+      - ${DATA_DIR:-./var}/db:/var/www/html/var/db
+      - ${DATA_DIR:-./var}/home:/var/www/html/var/home
+      - ${DATA_DIR:-./var}/storage:/var/www/html/var/storage
+      - ${DOWNLOADS_DIR:-./downloads}:/downloads
+      - ${MUSIC_DIR:-./music}:/music
+      - ${NAS_DIR:-./nas}:/nas
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+</details>
+
+### 6. First login
+
+Open the application in your browser. Default credentials:
 
 | Field    | Value   |
 | -------- | ------- |
@@ -78,49 +193,80 @@ Open the application in your browser. The default credentials are:
 | Password | `admin` |
 
 > [!TIP]
-> Change these immediately in **Settings → Admin User / Admin Password**.
+> Change these immediately in **Settings → App Security**.
+
+### Windows
+
+The container repository contains a dedicated Windows guide (Docker Desktop version requirements, host networking, PowerShell paths and volume syntax). In short:
+
+1. Create the data directories (`var\db`, `var\home`, `var\storage`) under `%USERPROFILE%\downloader-app`.
+2. Copy `.env.example` to `.env` and adapt drive paths (for example `D:\downloads`).
+3. Start with `docker compose up -d` from PowerShell.
+
+With host networking disabled, replace `network_mode: host` with `ports: ["8000:8000"]`.
+
+### Update
+
+```bash
+cd ~/downloader-app
+docker compose pull
+docker compose up -d
+```
+
+To pin a version, set `IMAGE_TAG=2.7.0` in `.env` before pulling. No manual migration is required; existing storage paths keep working.
 
 ---
 
 ## ⚙️ Configuration
 
-All settings are managed through the web UI at **Settings** (`/config`). Below is a reference of every configurable option.
+Settings are managed through the web UI at **Settings** (`/config`), except TMDB/addons (Discover drawer) and Automations (dedicated **Automations → Configuration** page). See [`.env` / `.env.local`](#4-create-the-application-secret) for runtime secrets.
 
-### 🔑 API Keys
+### 🔑 API Keys & AI
 
 | Setting | Purpose | Required for |
 | ------- | ------- | ------------ |
-| **Alldebrid API Key** | Debridding and downloading torrents/magnets | Videos & Torrents |
-| **Grok API Key** | AI-assisted renaming and genre detection | AI features (optional) |
-| **Grok Model** | Model to use (default: `grok-4-fast-non-reasoning`) | AI features |
-| **Spotify Client ID** | Spotify Web API authentication | Music search |
-| **Spotify Client Secret** | Spotify Web API authentication | Music search |
-| **Genius API Token** | Plain-text lyrics fetching | Lyrics (optional) |
-| **LRCLib Token** | Synced LRC lyrics fetching | Lyrics (optional) |
+| **Alldebrid API Key** | Debridding and downloading torrents/magnets | Videos, Torrents, Discover |
+| **AI Provider** | `openrouter` (default) or `xai` | AI features (optional) |
+| **OpenRouter API Key** | AI renaming, genre detection and other AI usages | AI features (optional) |
+| **Default / Renaming / Music genre model** | Model per usage, chosen from the OpenRouter catalog | AI features |
+| **xAI API Key** | Fallback provider when no OpenRouter key is set | AI features (optional) |
+| **Spotify Client ID / Secret** | Spotify Web API metadata search | Music search |
+| **Genius API Token** | Plain-text lyrics | Lyrics (optional) |
+| **LRCLib Token** | Synced LRC lyrics | Lyrics (optional) |
+| **TMDB API Key** | Search, metadata and artwork | Discover, Jellyfin metadata (configured in the Discover drawer) |
+
+> [!NOTE]
+> The AI provider is resolved per usage: a usage-specific model, then the default model, then the xAI fallback. Without any AI key, AI buttons are hidden.
 
 ### 📂 Paths
 
 | Setting | Default (Docker) | Description |
 | ------- | ---------------- | ----------- |
-| **Default Torrent Path** | `/downloads` | Where torrent/video files are saved |
-| **Music Root Path** | `/music` | Temporary download directory for music |
-| **Library Path** | *(empty)* | Final organized music library (e.g., `/nas/Music`) |
+| **Default Torrent Download Path** | `/downloads` | Where torrent/video files are saved |
+| **Music Download Root** | `/music` | Temporary download directory for music (`Downloads` root) |
+| **Library Target Path** | *(empty)* | Final organized music library (`Library` root), e.g. `/nas/Music` |
 | **JSON Credentials Path** | `/var/www/html/var/home/.local/credentials.json` | Spotify auth credentials file |
-| **Music Archive** | `/var/www/html/var/home/log/archive.txt` | Already-downloaded track log |
+| **History Archive File** | `/var/www/html/var/home/log/archive.txt` | Already-downloaded track log |
 | **Venv Path** | `/opt/venv` | Python virtual environment (pre-configured in Docker) |
-| **Music Binary** | `zotify` | CLI tool for music downloads |
-| **Librespot Auth Binary** | `/var/www/html/var/librespot-auth/target/release/librespot-auth` | Path to the Spotify auth generator |
+| **Music Command Binary** | `zotify` | CLI tool for music downloads |
+| **Librespot Auth Binary** | `/var/www/html/var/librespot-auth/target/release/librespot-auth` | Spotify auth generator |
 
-### 🎵 Music Settings
+> [!WARNING]
+> All paths in Settings are **container-internal** paths. With `NAS_DIR=./nas` mounted at `/nas`, use `/nas/...` in Automations — never the host path.
+
+### 🎵 Music
 
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
-| **Output Format** | `{artist} - {album} - {song_name}.{ext}` | File naming template |
-| **Audio Format** | `mp3` | Output format (`mp3`, `ogg`, `flac`) |
+| **Output Template** | `{artist} - {album} - {song_name}.{ext}` | File naming template |
+| **Format** | `mp3` | Output format (`mp3`, `ogg`, `flac`, …) |
 | **Quality** | `very_high` | Audio quality level |
-| **Skip Existing** | Off | Skip tracks already in archive |
-| **Download Lyrics** | Off | Fetch and embed lyrics automatically |
-| **Genre Tagging Mode** | `AI` | `AI` (Grok-based) or `Mapping` (regex-based) |
+| **Skip Existing** | Off | Skip tracks already in the archive |
+| **Download Lyrics** | Off | Fetch and embed lyrics with Zotify |
+| **Retry Attempts** | `3` | Network retries |
+| **Genre Tagging Mode** | `AI` | `AI` (OpenRouter/xAI) or `Mapping` (regex) |
+| **Use Spotify artist genres** | On | Use Spotify genres as a signal before AI |
+| **Regex Genre Mapping** | — | JSON `{"genre_patterns": {"regex": "Genre"}}` |
 
 ### 🔐 Admin
 
@@ -134,47 +280,55 @@ All settings are managed through the web UI at **Settings** (`/config`). Below i
 
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
-| **Enable Jellyfin API** | Off | Exposes the Automation video library under `/jellyfin` |
+| **Enable Jellyfin API** | Off | Exposes the Automation library under `/jellyfin` |
 | **Server Name** | `Downloader` | Name shown in Nuvio |
 | **Jellyfin Username** | `jellyfin` | Dedicated username for Nuvio |
 | **Jellyfin Password** | *(empty)* | Dedicated password; login is disabled while empty |
 
-In Nuvio, add a Jellyfin server with the address
-`http://<your-host>:8000/jellyfin` (or simply `http://<your-host>:8000`, which
-redirects the Jellyfin discovery endpoint to `/jellyfin`) and the dedicated
-credentials above. The bridge serves the Automation library
-(`Movies`, `TV Shows`, `Anime`) in direct play mode and supports resume state,
-search, played status, TMDB artwork and external subtitles. Run a library scan
-from Automation first if the index is empty.
+In Nuvio, add a Jellyfin server with the address `http://<your-host>:8000/jellyfin` (or simply `http://<your-host>:8000`, which redirects the discovery endpoint) and the dedicated credentials. Run a library scan from Automations first if the index is empty.
+
+### 🤖 Automations
+
+Configured in **Automations → Configuration** (stored in `var/db/automation.db`, not `config.json`):
+
+- **Library roots and scanner** — movies, TV shows and anime paths under `/nas`, scan interval, NFO parsing.
+- **Quality profile** — resolution order, codecs, HDR, audio languages, minimum seeders, max movie/episode size, excluded tags, addon priority.
+- **Limits and guardrails** — max intents per run, queue guard, retries/backoff.
+- **Connected Lists** — Scrob and MDBList sources, credentials and list selection (page **Connected Lists**).
+- **Metadata** — title language, TMDB lookups budget and cache.
+
+The built-in guide at **Automations → Aide** (`/automation/help`) documents the full workflow.
 
 ---
 
 ## 🎵 Spotify Setup
 
-The music features require two independent Spotify configurations:
+The music features require two independent Spotify configurations.
 
-### 1. Spotify API Credentials (for metadata search)
+### 1. Spotify API credentials (metadata search)
 
 1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Log in and click **"Create app"**.
-3. Fill in a name (e.g., `My Downloader`) and a redirect URI (e.g., `http://localhost:8000/callback`).
-4. Save, then go to **Settings** on the app page.
-5. Copy the **Client ID** and **Client Secret** into the application's Settings page.
+2. Log in and click **Create app**.
+3. Fill in a name (e.g. `My Downloader`) and a redirect URI (e.g. `http://localhost:8000/callback`).
+4. Save, then open **Settings** on the app page.
+5. Copy the **Client ID** and **Client Secret** into the application's Settings.
 
-### 2. Spotify Authentication (for music downloads)
+### 2. Spotify authentication (music downloads)
 
 The download engine needs a valid Spotify session stored as a `credentials.json` file.
 
 **Option A — From the UI (recommended):**
+
 1. Go to **Settings**.
-2. Click the **⚡ Auth** button next to "JSON Credentials Path".
-3. Open Spotify on your phone/desktop and select the device named `Speaker <timestamp>` as output.
-4. The credentials file is generated, transformed, and stored automatically.
+2. Click the **⚡ Auth** button next to **JSON Credentials Path**.
+3. Open Spotify on your phone/desktop and select the device named `Speaker <timestamp>` as output (both devices must be on the same network).
+4. The credentials file is generated, transformed and stored automatically.
 
 > [!NOTE]
 > The ⚡ Auth button only appears when no credentials file exists at the configured path.
 
-**Option B — Manual (from inside the container):**
+**Option B — Manual (inside the container):**
+
 ```bash
 docker exec -it downloader-container bash
 export HOME='/var/www/html/var'
@@ -185,46 +339,60 @@ cd /var/www/html/var
 ```
 
 Then copy/transform the file to the expected path:
+
 ```bash
 cp /var/www/html/var/credentials.json /var/www/html/var/home/.local/credentials.json
 ```
 
 ---
 
+## 🔎 Discover Setup
+
+1. Open **Discover** and click the settings/addons drawer.
+2. Add a **TMDB API key** (or v4 read token) and choose the metadata language.
+3. Add one or more **Stremio/Nuvio addon manifests** (public HTTPS URLs only).
+4. Optionally import a **Nuvio collections** JSON export; sources are activated automatically when their addon is configured.
+5. Search a movie/series, pick a source, then send it to Alldebrid.
+
+---
+
 ## 🏗️ Architecture
 
-The Docker container runs three services managed by **Supervisor**:
+The container runs four services managed by **Supervisor**:
 
 | Service | Role |
 | ------- | ---- |
 | **Apache** | Serves the Symfony application on port 8000 |
 | **Redis** | Stores PHP sessions (prevents session lock contention) |
-| **Download Worker** | Background process that sequentially processes the download queue |
+| **Download Worker** | Sequentially processes the download queue (`app:download-worker`) |
+| **Automation Worker** | Runs scheduled scans, list syncs and release intents (`app:automation-worker`) |
 
 ### Volume mapping explained
 
 ```
 Host                                    → Container
 ────────────────────────────────────────────────────────────────
-~/downloader-app/var/home               → /var/www/html/var/home        (Spotify creds, logs)
-~/downloader-app/var/storage            → /var/www/html/var/storage     (config, queue, history)
-/downloads                              → /downloads                    (torrent/video output)
-/music                                  → /music                        (music output)
+~/downloader-app/var/db                 → /var/www/html/var/db         (SQLite databases)
+~/downloader-app/var/home               → /var/www/html/var/home       (Spotify creds, archive)
+~/downloader-app/var/storage            → /var/www/html/var/storage    (config, queue, history, logs)
+~/downloader-app/downloads              → /downloads                   (torrent/video output)
+~/downloader-app/music                  → /music                       (music downloads)
+~/downloader-app/nas                    → /nas                         (NAS library, read/write)
 ```
 
 > [!WARNING]
-> Paths configured in the Settings page refer to **container-internal** paths. If you mount `/music` on the host, set `Music Root Path` to `/music` in Settings — not the host path.
+> Paths configured in Settings and Automations refer to **container-internal** paths. If you mount a host directory at `/music`, set **Music Download Root** to `/music` — not the host path.
 
 ---
 
-## � How Alldebrid Works
+## 🔧 How Alldebrid Works
 
 The application is **not** a BitTorrent client. It delegates P2P downloads to the [Alldebrid](https://alldebrid.com) cloud service:
 
-1. **Submit** — magnet link or `.torrent` file uploaded via the dashboard.
+1. **Submit** — magnet link or `.torrent` file uploaded via the UI (Debrid or Discover).
 2. **Cloud download** — Alldebrid fetches the content on its high-speed servers.
-3. **Link extraction** — the API returns direct HTTP links for each file in the torrent once ready.
-4. **Debridding** — each link is "unlocked" for full-speed direct download.
+3. **Link extraction** — the API returns direct HTTP links for each file once ready.
+4. **Debridding** — each link is unlocked for full-speed direct download.
 5. **Local transfer** — the background worker downloads files to your local storage directory.
 
 ---
@@ -232,13 +400,15 @@ The application is **not** a BitTorrent client. It delegates P2P downloads to th
 ## 📂 Project Structure
 
 ```
-src/                → Symfony controllers and services
+src/                → Symfony controllers, services, commands and subscribers
 templates/          → Twig views (UI)
-cli/                → Python scripts (download engine, lyrics, tag/rename/move)
+cli/                → Python scripts (download engine, lyrics, tagging/rename/move, audit)
 public/             → Web entry point and static assets
-var/storage/        → JSON data files (config, queue, history)
+var/db/             → SQLite databases (torrent search, automation)
+var/storage/        → JSON data (config, queue, history, caches, logs)
 var/home/           → Persistent home (Spotify credentials, archive)
 Dockerfile          → Container build definition
+docker-entrypoint.sh→ Runtime permissions and startup
 supervisord.conf    → Process manager configuration
 ```
 
@@ -246,9 +416,11 @@ supervisord.conf    → Process manager configuration
 
 | Script | Purpose |
 | ------ | ------- |
-| `music_downloader.py` | Music download engine (wraps zotify/spotdl) |
-| `lyrics_fetcher.py` | Fetches and embeds lyrics from LRCLIB/Genius/lyrics.ovh |
-| `tag_rename_move.py` | Tags, renames, and moves files to the organized library |
+| `music_downloader.py` | Music download engine (wraps Zotify, verify/tags modes) |
+| `lyrics_fetcher.py` | Fetches and embeds lyrics (LRCLIB/Genius/lyrics.ovh) |
+| `lyrics_audit.py` | Read-only lyrics audit |
+| `tag_rename_move.py` | Tags, renames and moves files to the organized library |
+| `spotify_user.py` | Private playlists and metadata through the librespot token |
 
 ---
 
@@ -257,27 +429,44 @@ supervisord.conf    → Process manager configuration
 ### View logs
 
 ```bash
-# Application logs (Apache)
+# Apache
 docker exec -it downloader-container cat /var/log/apache2_error.log
 
-# Worker logs
+# Download worker
 docker exec -it downloader-container cat /var/log/worker.log
 
-# Supervisor logs
+# Automation worker
+docker exec -it downloader-container cat /var/log/automation_worker.log
+
+# Supervisor
 docker exec -it downloader-container cat /var/log/supervisord.log
 ```
 
 ### Restart services
 
 ```bash
-# Restart the entire container
+# Restart the whole container
 docker compose restart
 
 # Restart only the download worker
 docker exec -it downloader-container supervisorctl restart worker
+
+# Restart only the automation worker
+docker exec -it downloader-container supervisorctl restart automation-worker
 ```
 
-### Update the application
+### Backup & restore
+
+Back up these directories (they contain all state):
+
+- `var/storage/` — configuration, queue, history, caches.
+- `var/db/` — torrent search and automation databases.
+- `var/home/` — Spotify credentials and Zotify archive.
+- `var/.env.local` — application secret.
+
+The **Settings → Backup & Restore** panel can export/import the configuration as a ZIP (`config.json` + credentials).
+
+### Update
 
 ```bash
 docker compose pull
@@ -286,8 +475,19 @@ docker compose up -d
 
 ---
 
-## 📝 Notes
+## 📝 Notes & Limits
 
-- The application uses a file-based JSON storage system (`JsonStorage`) which avoids the need for any SQL database. All data persists in the `var/storage/` directory.
-- Redis is used **only** for PHP session storage to prevent session lock contention during Ajax polling.
-- The `librespot-auth` binary is compiled from Rust source during the Docker image build. It is included in the image and does not need to be installed separately.
+- Configuration, queue and history use JSON files (`JsonStorage`) under `var/storage/`; SQLite is used for the torrent search database and the automation index. Redis is used **only** for PHP sessions.
+- The `librespot-auth` binary is compiled during the image build and does not need to be installed separately.
+- Automations never delete NAS files: missing files are marked `missing`, and only explicit actions (rename, prune empty folders) move things.
+- The Jellyfin bridge is **direct play only** (no transcoding) and exposes video only.
+- Lyrics fetching supports MP3 and M4A; the audit is read-only and synchronous.
+- Paths configured in the UI are container-internal. Keep the host mount layout stable across upgrades.
+
+---
+
+## 🔗 Related Repositories
+
+- **Application:** https://github.com/Gautardos/downloader
+- **Containerized deployment (Compose, Windows guide, release compose):** https://github.com/Gautardos/docker-downloader
+- **Release notes:** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md)
