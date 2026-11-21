@@ -11,6 +11,7 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.m4a', '.opus', '.ogg', '.wav'}
 LRC_TIMESTAMP_RE = re.compile(r'\[\s*(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\s*\]')
 LRC_ENHANCED_RE = re.compile(r'<\s*(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\s*>')
 LRC_METADATA_RE = re.compile(r'^\s*\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\s*$')
+TIMESTAMP_LIKE_RE = re.compile(r'^\s*\d+\s*[:.]')
 SECTION_RE = re.compile(r'^\s*\[[^\]]+\]\s*$')
 HTML_RE = re.compile(r'<[^>]{1,200}>')
 ENTITY_RE = re.compile(r'&(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);')
@@ -23,21 +24,27 @@ JSON_SHAPE_RE = re.compile(r'"(?:[^"\\]|\\.)*"\s*:', re.IGNORECASE)
 
 BOILERPLATE = (
     'read more',
-    'embed',
-    'share',
-    'lyrics powered',
+    'lyrics powered by',
     'powered by',
     'submit lyrics',
     'you might also like',
     'contributors',
-    'translation',
-    'paroles',
-    'letra',
-    'genius',
+    'share this',
+    'share on facebook',
+    'share on twitter',
+    'embed code',
+    'embed this',
+    'translation provided by',
+    'paroles fournies par',
+    'letra proporcionada por',
+    'genius lyrics',
     'musixmatch',
     'songtexte',
-    'letras',
-    'textes',
+)
+
+BOILERPLATE_RE = re.compile(
+    r'(?<!\w)(?:' + '|'.join(re.escape(phrase) for phrase in BOILERPLATE) + r')(?!\w)',
+    re.IGNORECASE,
 )
 
 SEVERITY_RANK = {'ok': 0, 'info': 1, 'warning': 2, 'error': 3}
@@ -101,7 +108,7 @@ def parse_timestamps(lyrics):
         stripped = raw.strip()
         if stripped.startswith('[') and ']' in stripped:
             inner = stripped[1:stripped.index(']')]
-            if re.search(r'\d', inner) and ':' in inner:
+            if TIMESTAMP_LIKE_RE.match(inner):
                 invalid.append(stripped[:40])
 
     return stamps, invalid
@@ -198,15 +205,13 @@ def detect_issues(lyrics):
         })
 
     lowered = text.lower()
-    boilerplate = [phrase for phrase in BOILERPLATE if phrase in lowered]
-    if boilerplate:
-        phrase = boilerplate[0]
-        start = lowered.find(phrase)
+    boilerplate_match = BOILERPLATE_RE.search(text)
+    if boilerplate_match:
         issues.append({
             'type': 'junk',
             'severity': 'warning',
-            'message': f'Scraper boilerplate found: "{phrase}"',
-            'excerpt': excerpt(text, start),
+            'message': f'Scraper boilerplate found: "{boilerplate_match.group(0)}"',
+            'excerpt': excerpt(text, boilerplate_match.start()),
         })
 
     lines = content_lines(text)

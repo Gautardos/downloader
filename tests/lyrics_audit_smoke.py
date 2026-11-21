@@ -80,6 +80,36 @@ expect(stats['lyrics_synced'] is True, 'enhanced LRC timestamps count as synced'
 issues, _ = module.detect_issues('{"lyrics": "Hello world this is a JSON payload with enough words to avoid the length rule"}')
 expect('junk' in issue_types(issues), 'JSON-like payloads are flagged as junk')
 
+numbered_section = (
+    '[Verse 1: Chris Webby]\n'
+    '[00:01.00] Hello world this is a real line\n'
+    '[00:02.00] Another real line here\n'
+    '[00:03.00] And one more line to be safe\n'
+    '[00:04.00] Four lines of lyrics now'
+)
+issues, _ = module.detect_issues(numbered_section)
+expect('timestamps' not in issue_types(issues), 'numbered section headers are not invalid timestamps')
+
+inline_share = (
+    "[Verse]\n"
+    "And ramble some shit quick, so the fans'll click and like and reshare the clips\n"
+    "I spend the lion share to reinvest up in this music shit\n"
+    "I never let it steer me on this verbal path of excellence\n"
+    "And still, I'm hardly credited, mentioned, to get respect for this\n"
+    "I've lost relationships so I could keep on chasin' this\n"
+    "Respected all my elders during every step I take in this\n"
+    "Let others have the turn while I would wait for this\n"
+    "So now I'll kill you with my bare hands if you in the way of this"
+)
+issues, _ = module.detect_issues(inline_share)
+expect('junk' not in issue_types(issues), 'share inside a word or a common phrase is not boilerplate')
+
+issues, _ = module.detect_issues('Read the full lyrics and share this page with your friends')
+expect('junk' in issue_types(issues), 'explicit share boilerplate is still detected')
+
+issues, _ = module.detect_issues('[00:1] Hello world this is a real line\n[00:02.00] Another real line here')
+expect('timestamps' in issue_types(issues), 'malformed timestamps are still detected')
+
 with tempfile.TemporaryDirectory() as root_dir, tempfile.TemporaryDirectory() as outside_dir:
     real_file = os.path.join(root_dir, 'track.mp3')
     with open(real_file, 'w', encoding='utf-8') as handle:
