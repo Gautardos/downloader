@@ -130,7 +130,7 @@ MUSIC_DIR=./music
 NAS_DIR=./nas
 ```
 
-Utilisez une version explicite (par exemple `IMAGE_TAG=2.7.1`) pour un déploiement reproductible. Les chemins sont des chemins **hôte** ; ils sont montés vers des chemins conteneur fixes.
+Utilisez une version explicite (par exemple `IMAGE_TAG=2.7.2`) pour un déploiement reproductible. Les chemins sont des chemins **hôte** ; ils sont montés vers des chemins conteneur fixes.
 
 > [!NOTE]
 > L'image sert le HTTP sur le port **8000**. Conservez `PORT=8000` sauf si vous personnalisez l'image ; avec `network_mode: host`, l'application est accessible sur ce port.
@@ -213,7 +213,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Pour épingler une version, définissez `IMAGE_TAG=2.7.1` dans `.env` avant le pull. Aucune migration manuelle n'est nécessaire ; les chemins de stockage existants continuent de fonctionner.
+Pour épingler une version, définissez `IMAGE_TAG=2.7.2` dans `.env` avant le pull. Aucune migration manuelle n'est nécessaire ; les chemins de stockage existants continuent de fonctionner.
 
 ---
 
@@ -512,4 +512,4 @@ docker compose up -d
 
 - **Application :** https://github.com/Gautardos/downloader
 - **Déploiement conteneurisé (Compose, guide Windows, compose de release) :** https://github.com/Gautardos/docker-downloader
-- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md)
+- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md)
