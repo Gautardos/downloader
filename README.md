@@ -2,7 +2,7 @@
 
 A self-hosted media management platform built with Symfony & Python and shipped as a single Docker image. It handles video, torrent and direct-link downloads through Alldebrid, a complete music pipeline from Spotify search to a tagged library, a TMDB/Stremio discovery interface, and an automation engine that keeps your NAS library in sync with external lists.
 
-**Version:** 2.7
+**Version:** 2.7.1
 
 | Resource | Link |
 | -------- | ---- |
@@ -130,7 +130,7 @@ MUSIC_DIR=./music
 NAS_DIR=./nas
 ```
 
-Use an explicit version (for example `IMAGE_TAG=2.7.0`) if you want reproducible deployments. Paths are **host** paths; they are mounted to fixed container paths.
+Use an explicit version (for example `IMAGE_TAG=2.7.1`) if you want reproducible deployments. Paths are **host** paths; they are mounted to fixed container paths.
 
 > [!NOTE]
 > The image serves HTTP on port **8000**. Keep `PORT=8000` unless you customize the image; with `network_mode: host`, the application is reachable on that port.
@@ -213,7 +213,7 @@ docker compose pull
 docker compose up -d
 ```
 
-To pin a version, set `IMAGE_TAG=2.7.0` in `.env` before pulling. No manual migration is required; existing storage paths keep working.
+To pin a version, set `IMAGE_TAG=2.7.1` in `.env` before pulling. No manual migration is required; existing storage paths keep working.
 
 ---
 
@@ -506,4 +506,4 @@ docker compose up -d
 
 - **Application:** https://github.com/Gautardos/downloader
 - **Containerized deployment (Compose, Windows guide, release compose):** https://github.com/Gautardos/docker-downloader
-- **Release notes:** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md)
+- **Release notes:** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md)

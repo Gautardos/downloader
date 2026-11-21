@@ -2,7 +2,7 @@
 
 Une plateforme self-hosted de gestion de médias, développée avec Symfony & Python et livrée sous forme d'image Docker unique. Elle gère les téléchargements vidéo, torrents et liens directs via Alldebrid, un pipeline musical complet de la recherche Spotify à la bibliothèque taguée, une interface de découverte TMDB/Stremio, et un moteur d'automatisation qui synchronise votre bibliothèque NAS avec des listes externes.
 
-**Version :** 2.7
+**Version :** 2.7.1
 
 | Ressource | Lien |
 | --------- | ---- |
@@ -130,7 +130,7 @@ MUSIC_DIR=./music
 NAS_DIR=./nas
 ```
 
-Utilisez une version explicite (par exemple `IMAGE_TAG=2.7.0`) pour un déploiement reproductible. Les chemins sont des chemins **hôte** ; ils sont montés vers des chemins conteneur fixes.
+Utilisez une version explicite (par exemple `IMAGE_TAG=2.7.1`) pour un déploiement reproductible. Les chemins sont des chemins **hôte** ; ils sont montés vers des chemins conteneur fixes.
 
 > [!NOTE]
 > L'image sert le HTTP sur le port **8000**. Conservez `PORT=8000` sauf si vous personnalisez l'image ; avec `network_mode: host`, l'application est accessible sur ce port.
@@ -213,7 +213,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Pour épingler une version, définissez `IMAGE_TAG=2.7.0` dans `.env` avant le pull. Aucune migration manuelle n'est nécessaire ; les chemins de stockage existants continuent de fonctionner.
+Pour épingler une version, définissez `IMAGE_TAG=2.7.1` dans `.env` avant le pull. Aucune migration manuelle n'est nécessaire ; les chemins de stockage existants continuent de fonctionner.
 
 ---
 
@@ -506,4 +506,4 @@ docker compose up -d
 
 - **Application :** https://github.com/Gautardos/downloader
 - **Déploiement conteneurisé (Compose, guide Windows, compose de release) :** https://github.com/Gautardos/docker-downloader
-- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md)
+- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md)
