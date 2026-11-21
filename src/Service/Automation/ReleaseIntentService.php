@@ -3,6 +3,7 @@
 namespace App\Service\Automation;
 
 use App\Service\JsonStorage;
+use App\Service\LogRotator;
 use Symfony\Component\Process\Process;
 
 class ReleaseIntentService
@@ -1071,8 +1072,8 @@ class ReleaseIntentService
 
     private function log(string $message): void
     {
-        $file = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'automation_worker.log';
-        @file_put_contents($file, '[' . date('Y-m-d H:i:s') . '] ' . $message . "\n", FILE_APPEND);
+        $file = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'automation_worker.log';
+        LogRotator::append($file, '[' . date('Y-m-d H:i:s') . '] ' . $message . "\n");
     }
 
     private function episodeMediaKey(?int $tmdbId, string $imdbId, string $titleNormalized, ?int $year, int $season, int $episode): string

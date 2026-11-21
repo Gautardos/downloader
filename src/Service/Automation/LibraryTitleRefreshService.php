@@ -3,6 +3,7 @@
 namespace App\Service\Automation;
 
 use App\Service\JsonStorage;
+use App\Service\LogRotator;
 use App\Service\TmdbService;
 
 class LibraryTitleRefreshService
@@ -85,8 +86,10 @@ class LibraryTitleRefreshService
         if ($limit !== null && $limit > 0) {
             $command .= ' --limit=' . (int) $limit;
         }
-        $logFile = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'automation_title_refresh.log';
+        $logFile = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'automation_title_refresh.log';
         $command .= ' >> ' . escapeshellarg($logFile) . ' 2>&1 &';
+
+        LogRotator::append($logFile, '');
 
         try {
             @exec($command);

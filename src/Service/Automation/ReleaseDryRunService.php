@@ -3,6 +3,7 @@
 namespace App\Service\Automation;
 
 use App\Service\JsonStorage;
+use App\Service\LogRotator;
 class ReleaseDryRunService
 {
     private const STATE_KEY = 'automation_release_dry_run';
@@ -126,8 +127,10 @@ class ReleaseDryRunService
         if ($sourceId !== null && $sourceId !== '') {
             $command .= ' --source=' . escapeshellarg($sourceId);
         }
-        $logFile = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'automation_release_dry_run.log';
+        $logFile = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'automation_release_dry_run.log';
         $command .= ' >> ' . escapeshellarg($logFile) . ' 2>&1 &';
+
+        LogRotator::append($logFile, '');
 
         try {
             @exec($command);

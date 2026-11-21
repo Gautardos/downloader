@@ -7,6 +7,7 @@ use App\Service\Automation\LibraryIndexService;
 use App\Service\Automation\LibraryMetadataResolver;
 use App\Service\Automation\ListSyncService;
 use App\Service\Automation\ReleaseIntentService;
+use App\Service\LogRotator;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -66,10 +67,10 @@ class AutomationWorkerCommand extends Command
             return Command::SUCCESS;
         }
 
-        $logFile = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'automation_worker.log';
+        $logFile = $this->store->getStorageDir() . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'automation_worker.log';
         $log = static function (string $message) use ($logFile, $output): void {
             $line = '[' . date('Y-m-d H:i:s') . '] ' . $message . "\n";
-            @file_put_contents($logFile, $line, FILE_APPEND);
+            LogRotator::append($logFile, $line);
             $output->writeln($message);
         };
 

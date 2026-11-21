@@ -206,10 +206,19 @@ lock de session et éviter les blocages Apache prefork pendant le polling.
 
 Autres fichiers runtime (hors JsonStorage) :
 - `var/storage/worker.lock` : mutex `flock` du worker.
-- `var/storage/worker.log` : log texte du worker.
+- `var/storage/logs/worker.log` : log texte du worker (rotation 5 Mo / 5 sauvegardes via `LogRotator`).
+- `var/storage/logs/worker_error.log` : stderr du worker (rotation 5 Mo / 5 sauvegardes via Supervisor).
+- `var/storage/logs/automation_title_refresh.log` : sortie du refresh des titres (rotation via `LogRotator`).
+- `var/storage/logs/automation_release_dry_run.log` : sortie du dry-run des releases (rotation via `LogRotator`).
 - `var/storage/logs/active_worker.log` : log du téléchargement musique en cours.
 - `var/storage/logs/history_<downloadId>.log` : log détaillé par téléchargement.
 - `var/db/torrents.db` : base SQLite de recherche de torrents.
+
+> **Logs** : `var/storage/logs/` est le seul dossier lu par l'agent de logs de
+> l'hôte (2750 setgid sur l'hôte). Ne pas appeler `chmod`/`chgrp` sur ce dossier
+> depuis le code : les nouveaux fichiers héritent du groupe autorisé.
+> `App\Service\LogRotator` écrit avec un umask 027 et tourne à 5 Mo / 5
+> sauvegardes.
 
 > ⚠️ **Atomicité** : `get()` puis `set()` ne forment pas une transaction. Deux
 > écrivains concurrents peuvent perdre une mise à jour (ex. enqueue simultané,
@@ -850,8 +859,9 @@ emoji comme icônes. Éviter d'introduire une dépendance front sans nécessité
 
 ### Processus (`supervisord.conf`)
 - `redis` (priorité 1), `worker` (5), `apache2` (10).
-- Logs : `/var/log/redis*.log`, `/var/log/worker*.log`,
-  `/var/log/apache2*.log`, `/var/log/supervisord.log`.
+- Logs : `/var/log/redis*.log`, `/var/log/apache2*.log`,
+  `/var/log/supervisord.log` ; les logs worker/automation sont dans
+  `var/storage/logs/`.
 
 ### Volumes persistants attendus (côté hôte)
 - `var/storage` : config, queue, historique, logs applicatifs.
@@ -871,7 +881,7 @@ emoji comme icônes. Éviter d'introduire une dépendance front sans nécessité
 
 ### Commandes utiles
 ```bash
-docker exec -it <container> cat /var/log/worker.log
+docker exec -it <container> cat /var/www/html/var/storage/logs/worker.log
 docker exec -it <container> supervisorctl restart worker
 docker compose pull && docker compose up -d
 ```
@@ -1125,7 +1135,8 @@ de séries** (backfill par épisode, packs refusés, multi-épisodes parqués) s
   exponentiel) pour éviter les warnings `database is locked` pendant un scan
   concurrent avec une résolution.
 - `var/storage/automation_worker.lock` / `automation_scan.lock` : mutex.
-- `var/storage/automation_worker.log` : log du worker.
+- `var/storage/logs/automation_worker.log` : log du worker (rotation 5 Mo / 5 sauvegardes via `LogRotator`).
+- `var/storage/logs/automation_worker_error.log` : stderr du worker (rotation 5 Mo / 5 sauvegardes via Supervisor).
 - Les réglages sont stockés dans `settings` sous la clé
   `automation_settings` (JSON), pas dans `config.json`.
 

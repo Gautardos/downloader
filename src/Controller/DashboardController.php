@@ -11,6 +11,7 @@ use App\Service\DownloadManager;
 use App\Service\GrokService;
 use App\Service\JsonStorage;
 use App\Service\LogRedactor;
+use App\Service\LogRotator;
 use App\Service\QueueManager;
 use App\Service\ServerNotificationService;
 use App\Service\SpotifyService;
@@ -507,7 +508,7 @@ class DashboardController extends AbstractController
             $logContent = "--- Spotify Metadata Extraction ---\n";
             $logContent .= implode("\n", $metadataLogs) . "\n";
             $logContent .= str_repeat("-", 40) . "\n\n";
-            file_put_contents($historyLogFile, $logContent, FILE_APPEND);
+            LogRotator::append($historyLogFile, $logContent);
 
             $filename = $metadata ? 'Spotify: ' . $metadata['name'] : 'Music: ' . substr($url, -20);
             $expectedTracks = $metadata ? $metadata['tracks'] : [];
@@ -594,8 +595,9 @@ class DashboardController extends AbstractController
         if (is_dir($logsDir)) {
             $files = scandir($logsDir);
             foreach ($files as $file) {
-                if ($file === '.' || $file === '..' || $file === 'active_worker.log')
+                if (!preg_match('/^history_.+\.log$/', $file)) {
                     continue;
+                }
                 $logFiles[] = [
                     'name' => $file,
                     'path' => $file,

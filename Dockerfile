@@ -130,7 +130,7 @@ RUN echo '' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
 # ────────────────────────────────────────────────
 # 11. Dossiers de runtime (créés vides dans l’image)
 # ────────────────────────────────────────────────
-RUN mkdir -p var/storage var/sessions var/cache var/log var/composer_home \
+RUN mkdir -p var/storage/logs var/sessions var/cache var/log var/composer_home \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 var vendor \
     && find /var/www/html/var/librespot-auth -type f -name "librespot-auth" -exec chmod +x {} +

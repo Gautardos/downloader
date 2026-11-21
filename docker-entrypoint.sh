@@ -41,6 +41,19 @@ if [ -d "$db_dir" ]; then
 fi
 
 if [ -d "$storage_dir" ]; then
+    # Move legacy app logs into the host-visible logs directory when possible.
+    # Existing permissions are preserved; the entrypoint never chmods here.
+    if [ -d "$storage_dir/logs" ]; then
+        shopt -s nullglob
+        for legacy_log in "$storage_dir"/*.log; do
+            legacy_name=$(basename "$legacy_log")
+            if [ -f "$legacy_log" ] && [ ! -e "$storage_dir/logs/$legacy_name" ]; then
+                mv "$legacy_log" "$storage_dir/logs/$legacy_name" 2>/dev/null || true
+            fi
+        done
+        shopt -u nullglob
+    fi
+
     owner=$(stat -c '%U' "$storage_dir")
     if [ "$owner" = "www-data" ]; then
         echo "[Entrypoint] Tightening permissions for $storage_dir"
@@ -52,6 +65,9 @@ if [ -d "$storage_dir" ]; then
         done < <(find "$storage_dir" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null)
         if [ -d "$storage_dir/logs" ] && [ "$(stat -c '%U' "$storage_dir/logs")" = "www-data" ]; then
             chmod 2750 "$storage_dir/logs" 2>/dev/null || true
+            touch "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
+            chown www-data: "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
+            chmod 640 "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
         fi
         while IFS= read -r -d '' file; do
             if [ "$(stat -c '%U' "$file")" = "www-data" ]; then

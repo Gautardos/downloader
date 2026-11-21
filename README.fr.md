@@ -2,7 +2,7 @@
 
 Une plateforme self-hosted de gestion de médias, développée avec Symfony & Python et livrée sous forme d'image Docker unique. Elle gère les téléchargements vidéo, torrents et liens directs via Alldebrid, un pipeline musical complet de la recherche Spotify à la bibliothèque taguée, une interface de découverte TMDB/Stremio, et un moteur d'automatisation qui synchronise votre bibliothèque NAS avec des listes externes.
 
-**Version :** 2.7.1
+**Version :** 2.7.2
 
 | Ressource | Lien |
 | --------- | ---- |
@@ -448,14 +448,20 @@ supervisord.conf    → configuration du gestionnaire de processus
 docker exec -it downloader-container cat /var/log/apache2_error.log
 
 # Download worker
-docker exec -it downloader-container cat /var/log/worker.log
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/worker.log
 
 # Automation worker
-docker exec -it downloader-container cat /var/log/automation_worker.log
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/automation_worker.log
+
+# Erreurs fatales du worker
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/worker_error.log
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/automation_worker_error.log
 
 # Supervisor
 docker exec -it downloader-container cat /var/log/supervisord.log
 ```
+
+Les logs applicatifs sont dans `var/storage/logs/` et tournent à **5 Mo par fichier avec 5 sauvegardes** (`*.log.1` … `*.log.5`).
 
 ### Redémarrer les services
 

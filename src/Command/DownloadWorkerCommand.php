@@ -7,6 +7,7 @@ use App\Service\DownloadManager;
 use App\Service\QueueManager;
 use App\Service\JsonStorage;
 use App\Service\LogRedactor;
+use App\Service\LogRotator;
 use App\Service\ServerNotificationService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -50,11 +51,11 @@ class DownloadWorkerCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $storage = $this->queueManager->getStorage();
-        $logFile = $storage->getStorageDir() . '/worker.log';
+        $logFile = $storage->getStorageDir() . '/logs/worker.log';
         $log = function ($msg) use ($logFile, $output) {
             $safeMessage = $this->redactor->redact((string) $msg);
             $line = "[" . date('Y-m-d H:i:s') . "] $safeMessage\n";
-            file_put_contents($logFile, $line, FILE_APPEND);
+            LogRotator::append($logFile, $line);
             $output->writeln($safeMessage);
         };
 
@@ -222,8 +223,8 @@ class DownloadWorkerCommand extends Command
         }
 
         // Append to logs to preserve metadata logs from enqueue phase
-        file_put_contents($activeLogFile, "Executing Music Downloader:\n\"" . $this->redactor->redact($url) . "\" ...\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
-        file_put_contents($historyLogFile, "Executing Full Command:\n$logCmdStr\n" . str_repeat("-", 40) . "\n", FILE_APPEND);
+        LogRotator::append($activeLogFile, "Executing Music Downloader:\n\"" . $this->redactor->redact($url) . "\" ...\n" . str_repeat("-", 40) . "\n");
+        LogRotator::append($historyLogFile, "Executing Full Command:\n$logCmdStr\n" . str_repeat("-", 40) . "\n");
 
         $progressFile = $storage->getStorageDir() . '/progress_' . $downloadId . '.json';
 
@@ -259,8 +260,8 @@ class DownloadWorkerCommand extends Command
 
                 if ($buffer !== '') {
                     $safeBuffer = $this->redactor->redact($buffer);
-                    file_put_contents($activeLogFile, $safeBuffer, FILE_APPEND);
-                    file_put_contents($historyLogFile, $safeBuffer, FILE_APPEND);
+                    LogRotator::append($activeLogFile, $safeBuffer);
+                    LogRotator::append($historyLogFile, $safeBuffer);
 
                     $processOutput .= $buffer;
                     if (strlen($processOutput) > 2000000) {
@@ -287,16 +288,16 @@ class DownloadWorkerCommand extends Command
             $buffer = $process->getIncrementalOutput() . $process->getIncrementalErrorOutput();
             if ($buffer !== '') {
                 $safeBuffer = $this->redactor->redact($buffer);
-                file_put_contents($activeLogFile, $safeBuffer, FILE_APPEND);
-                file_put_contents($historyLogFile, $safeBuffer, FILE_APPEND);
+                LogRotator::append($activeLogFile, $safeBuffer);
+                LogRotator::append($historyLogFile, $safeBuffer);
                 $processOutput .= $buffer;
             }
 
         } catch (\Throwable $e) {
             $startupError = "Failed to start process: " . $e->getMessage();
             $safeStartupError = $this->redactor->redact($startupError);
-            file_put_contents($activeLogFile, "\n[STARTUP ERROR]\n" . $safeStartupError, FILE_APPEND);
-            file_put_contents($historyLogFile, "\n[STARTUP ERROR]\n" . $safeStartupError, FILE_APPEND);
+            LogRotator::append($activeLogFile, "\n[STARTUP ERROR]\n" . $safeStartupError);
+            LogRotator::append($historyLogFile, "\n[STARTUP ERROR]\n" . $safeStartupError);
             throw $e;
         }
 
@@ -308,8 +309,8 @@ class DownloadWorkerCommand extends Command
 
             // Log fatal error but DO NOT throw if we want to retry
             $safeErrorMsg = $this->redactor->redact($errorMsg);
-            file_put_contents($activeLogFile, "\n[FATAL ERROR]\n" . $safeErrorMsg, FILE_APPEND);
-            file_put_contents($historyLogFile, "\n[FATAL ERROR]\n" . $safeErrorMsg, FILE_APPEND);
+            LogRotator::append($activeLogFile, "\n[FATAL ERROR]\n" . $safeErrorMsg);
+            LogRotator::append($historyLogFile, "\n[FATAL ERROR]\n" . $safeErrorMsg);
 
             $log("Music download script failed. Marking as error to trigger retry check.");
             $finalStatus = 'error';
