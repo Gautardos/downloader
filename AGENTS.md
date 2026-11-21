@@ -320,7 +320,10 @@ Musique (créé dans `DashboardController::musicAdd`) :
    `failed_requeued`, incrémente `scheduled_retry_count`, positionne
    `not_before = now + 300` et ré-enqueue. Le worker ignore l’item pendant
    5 minutes ; Zotify skip ensuite les pistes déjà présentes. Maximum
-   `MAX_API_RETRIES = 5`.
+   `MAX_API_RETRIES = 5`. Si `music_quality` vaut `very_high` et que la sortie
+   contient `Audio key error`, le worker ajoute aux logs, à l’historique et à
+   la notification la consigne « 320 kbps requires Spotify Premium… » sans
+   modifier la logique de retry.
 7. Sinon, pour une erreur non-API : retry immédiat jusqu’à 3 tentatives
    (`retry_count < 2`).
 8. `recordHistory` avec pistes trouvées/manquantes.
@@ -348,13 +351,13 @@ valeurs par défaut).
 | `spotify_client_id` | — | Client ID Spotify |
 | `spotify_client_secret` | — | Client Secret Spotify |
 | `music_output` | `{artist} - {album} - {song_name}.{ext}` | Template de nom Zotify |
-| `music_format` | `mp3` | Format audio (`mp3`, `ogg`, `flac`, …) |
+| `music_format` | `mp3` | Format audio (`mp3`, `flac`, `m4a`, `opus`) |
 | `music_root_path` | — | Répertoire de dl musique (interne conteneur) |
 | `music_creds` | `/var/www/html/var/home/.local/credentials.json` | Credentials Spotify |
 | `music_archive` | `/var/www/html/var/home/log/archive.txt` | Archive Zotify (skip) |
-| `music_quality` | `very_high` | Qualité Zotify |
+| `music_quality` | `auto` | Qualité Zotify (`auto`, `normal`, `high`, `very_high`) ; `very_high` = 320 kbps Premium uniquement |
 | `music_skip_existing` | `false` | Skip déjà téléchargés |
-| `music_lyrics` | `false` | Télécharger les paroles via Zotify |
+| `music_lyrics` | `true` | Télécharger les paroles via Zotify |
 | `music_progress` | `false` | Progression Zotify |
 | `music_print_downloads` | `false` | Logs Zotify |
 | `music_progress_info` | `false` | Infos de progression détaillées |

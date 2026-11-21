@@ -33,7 +33,7 @@ Une plateforme self-hosted de gestion de médias, développée avec Symfony & Py
 
 ### 🎵 Musique
 - **Recherche Spotify** de titres, albums et playlists, y compris les playlists privées via le token librespot.
-- **Téléchargements haute qualité** propulsés par Zotify, avec une qualité configurable jusqu'à `very_high`.
+- **Téléchargements haute qualité** propulsés par Zotify. **Auto** (défaut) utilise la meilleure qualité autorisée par votre compte Spotify : **320 kbps avec Premium**, **160 kbps avec un compte gratuit**. 320 kbps nécessite Premium.
 - **Music Library unifiée** — parcourez les racines `Downloads` (`music_root_path`) et `Library` (`music_library_path`) dans un seul arbre de dossiers.
 - **Éditeur de tags complet** — titre, artiste, album, album artist, année, genre, numéros de piste/disque, commentaire et lyrics embarquées, à l'unité ou en masse.
 - **Lyrics** — LRCLIB (recherche synchronisée et scorée), Genius et fallback lyrics.ovh, récupération par piste ou par lot.
@@ -259,10 +259,10 @@ Les réglages se font via l'interface web dans **Settings** (`/config`), sauf TM
 | Réglage | Défaut | Description |
 | ------- | ------ | ----------- |
 | **Output Template** | `{artist} - {album} - {song_name}.{ext}` | Modèle de nommage des fichiers |
-| **Format** | `mp3` | Format de sortie (`mp3`, `ogg`, `flac`, …) |
-| **Quality** | `very_high` | Niveau de qualité audio |
+| **Format** | `mp3` | Format de sortie (`mp3`, `flac`, `m4a`, `opus`) |
+| **Quality** | `auto` | `auto` = meilleur autorisé (320 Premium / 160 gratuit) ; `normal` = 96 kbps ; `high` = 160 kbps ; `very_high` = 320 kbps (Premium uniquement) |
 | **Skip Existing** | Désactivé | Ignore les pistes déjà présentes dans l'archive |
-| **Download Lyrics** | Désactivé | Récupère et embarque les lyrics avec Zotify |
+| **Download Lyrics** | Activé | Récupère et embarque les lyrics avec Zotify |
 | **Retry Attempts** | `3` | Nombre de tentatives réseau |
 | **Genre Tagging Mode** | `AI` | `AI` (OpenRouter/xAI) ou `Mapping` (regex) |
 | **Use Spotify artist genres** | Activé | Utilise les genres Spotify comme signal avant l'IA |
@@ -343,6 +343,21 @@ Copiez ensuite le fichier vers le chemin attendu :
 ```bash
 cp /var/www/html/var/credentials.json /var/www/html/var/home/.local/credentials.json
 ```
+
+### 3. Qualité audio et type de compte Spotify
+
+Spotify applique la qualité audio côté serveur ; le client ne peut pas débloquer plus que ce que votre compte autorise.
+
+| Compte | Qualité maximale | Réglage recommandé |
+| ------ | ---------------- | ------------------ |
+| Gratuit | 160 kbps | `auto` ou `high` |
+| Premium | 320 kbps | `auto` |
+
+- **Auto** (défaut) sélectionne 320 kbps avec Premium et 160 kbps avec un compte gratuit.
+- **Very High** (320 kbps) nécessite Premium. Avec un compte gratuit, le téléchargement échoue avec `Audio key error` / `Failed fetching audio key` ; la tâche est réessayée avant d'échouer.
+- **Normal** = 96 kbps, **High** = 160 kbps, **Very High** = 320 kbps.
+- Le format de sortie (MP3/FLAC/M4A/Opus) n'augmente pas la qualité source : une source lossy reste lossy, et FLAC ne fait que grossir le fichier.
+- Utilisez les credentials du même compte Spotify que celui avec lequel vous téléchargez.
 
 ---
 
@@ -481,6 +496,7 @@ docker compose up -d
 - Le binaire `librespot-auth` est compilé lors du build de l'image et n'a pas besoin d'être installé séparément.
 - Les Automations ne suppriment jamais de fichiers du NAS : les fichiers absents sont marqués `missing`, et seules les actions explicites (renommage, nettoyage des dossiers vides) déplacent les choses.
 - La passerelle Jellyfin est **direct-play uniquement** (sans transcodage) et expose uniquement la vidéo.
+- La qualité audio Spotify dépend du compte : les comptes gratuits sont limités à 160 kbps ; 320 kbps nécessite Premium. Utilisez **Auto** pour éviter les erreurs `Audio key error` avec un compte gratuit.
 - La récupération des lyrics prend en charge MP3 et M4A ; l'audit est en lecture seule et synchrone.
 - Les chemins configurés dans l'UI sont internes au conteneur. Gardez la disposition des montages hôte stable entre les mises à jour.
 

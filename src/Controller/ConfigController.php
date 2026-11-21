@@ -72,6 +72,11 @@ class ConfigController extends AbstractController
                 $aiProvider = 'openrouter';
             }
 
+            $musicQuality = (string) $request->request->get('music_quality', 'auto');
+            if (!in_array($musicQuality, ['auto', 'normal', 'high', 'very_high'], true)) {
+                $musicQuality = 'auto';
+            }
+
             $storage->set('config', [
                 'api_key' => $apiKey,
                 'tmdb_api_key' => $tmdbApiKey,
@@ -91,7 +96,7 @@ class ConfigController extends AbstractController
                 'music_root_path' => $request->request->get('music_root_path', ''),
                 'music_creds' => $request->request->get('music_creds', '/var/www/html/var/home/.local/credentials.json'),
                 'music_archive' => $request->request->get('music_archive', '/var/www/html/var/home/log/archive.txt'),
-                'music_quality' => $request->request->get('music_quality', 'very_high'),
+                'music_quality' => $musicQuality,
                 'music_skip_existing' => $request->request->get('music_skip_existing') === '1',
                 'music_lyrics' => $request->request->get('music_lyrics') === '1',
                 'music_progress' => $request->request->get('music_progress') === '1',

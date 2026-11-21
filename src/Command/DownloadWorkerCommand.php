@@ -165,13 +165,18 @@ class DownloadWorkerCommand extends Command
         $url = $item['url'];
         unset($item['not_before']);
 
+        $quality = $config['music_quality'] ?? 'auto';
+        if (!in_array($quality, ['auto', 'normal', 'high', 'very_high'], true)) {
+            $quality = 'auto';
+        }
+
         $cmdArgs = [
             '--output' => $config['music_output'] ?? '{artist} - {album} - {song_name}.{ext}',
             '--download-format' => $config['music_format'] ?? 'mp3',
             '--root-path' => $config['music_root_path'] ?? '',
             '--credentials-location' => $config['music_creds'] ?? '',
             '--song-archive' => $config['music_archive'] ?? '',
-            '--download-quality' => $config['music_quality'] ?? 'very_high',
+            '--download-quality' => $quality,
             '--retry-attempts' => $config['music_retries'] ?? 3,
             '--skip-previously-downloaded' => ($config['music_skip_existing'] ?? false) ? 'True' : 'False',
             '--download-lyrics' => ($config['music_lyrics'] ?? true) ? 'True' : 'False',
@@ -363,6 +368,10 @@ class DownloadWorkerCommand extends Command
         retry_check:
         $apiErrorDetected = !empty($expectedTracks) && $this->hasSpotifyApiErrors($processOutput);
         $downloadErrorDetected = !empty($expectedTracks) && $this->hasSpotifyDownloadErrors($processOutput);
+        $audioKeyErrorDetected = $this->hasSpotifyAudioKeyErrors($processOutput);
+        $qualityHint = ($quality === 'very_high' && $audioKeyErrorDetected)
+            ? ' 320 kbps requires Spotify Premium. If you use a Free account, set Music Quality to Auto or High in Settings.'
+            : '';
         $shouldDelayRetry = ($finalStatus === 'error' && $apiErrorDetected)
             || ($finalStatus === 'warning' && $downloadErrorDetected);
 
@@ -371,12 +380,13 @@ class DownloadWorkerCommand extends Command
 
             if ($scheduledRetryCount < self::MAX_API_RETRIES) {
                 $attemptNum = $scheduledRetryCount + 1;
-                $log("Spotify API/audio key error detected. Scheduling retry in " . (self::API_RETRY_DELAY / 60) . " minutes (Attempt $attemptNum/" . self::MAX_API_RETRIES . ").");
+                $retryReason = $audioKeyErrorDetected ? 'Spotify audio key error detected' : 'Spotify API error detected';
+                $log($retryReason . ". Scheduling retry in " . (self::API_RETRY_DELAY / 60) . " minutes (Attempt $attemptNum/" . self::MAX_API_RETRIES . ")." . $qualityHint);
 
                 $this->queueManager->recordHistory($item, 'failed_requeued', $validatedCount, [
                     'downloaded_tracks' => $matchedTracks,
                     'missing_tracks' => $missingTracks,
-                    'message' => "Spotify API limit detected. Retry scheduled in " . (self::API_RETRY_DELAY / 60) . " minutes (attempt $attemptNum/" . self::MAX_API_RETRIES . ")."
+                    'message' => $retryReason . ". Retry scheduled in " . (self::API_RETRY_DELAY / 60) . " minutes (attempt $attemptNum/" . self::MAX_API_RETRIES . ")." . $qualityHint
                 ]);
 
                 $item['scheduled_retry_count'] = $attemptNum;
@@ -387,7 +397,7 @@ class DownloadWorkerCommand extends Command
                 $this->addServerNotification(
                     $storage,
                     'info',
-                    "Spotify API limit — retry scheduled in " . (self::API_RETRY_DELAY / 60) . " min",
+                    ($audioKeyErrorDetected ? 'Spotify audio key error' : 'Spotify API limit') . " — retry scheduled in " . (self::API_RETRY_DELAY / 60) . " min",
                     'Requeued',
                     $item['filename'] ?? 'Music',
                     'music'
@@ -396,7 +406,7 @@ class DownloadWorkerCommand extends Command
                 return 'requeued';
             }
 
-            $log("Spotify API retry limit reached (" . self::MAX_API_RETRIES . " attempts).");
+            $log("Spotify API retry limit reached (" . self::MAX_API_RETRIES . " attempts)." . $qualityHint);
         }
 
         // Retry Logic for non-API failures
@@ -429,7 +439,8 @@ class DownloadWorkerCommand extends Command
 
         $this->queueManager->recordHistory($item, $finalStatus, $validatedCount, [
             'downloaded_tracks' => $matchedTracks,
-            'missing_tracks' => $missingTracks
+            'missing_tracks' => $missingTracks,
+            'message' => $qualityHint !== '' ? trim($qualityHint) : null
         ]);
 
         return $finalStatus;
@@ -443,6 +454,15 @@ class DownloadWorkerCommand extends Command
         $value = preg_replace('/\s+/', ' ', $value) ?? $value;
 
         return mb_strtolower($value);
+    }
+
+    private function hasSpotifyAudioKeyErrors(string $output): bool
+    {
+        if ($output === '') {
+            return false;
+        }
+
+        return (bool) preg_match('/Audio key error|Failed fetching audio key/i', $output);
     }
 
     private function hasSpotifyApiErrors(string $output): bool

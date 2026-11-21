@@ -12,6 +12,24 @@
         badge: 'Session Zotify active'
     } %}{% endembed %}
 
+    {% set musicQuality = config.music_quality|default('auto') %}
+    {% set musicQualityLabels = {
+        'auto': 'Auto — 320 kbps Premium / 160 kbps Free',
+        'very_high': 'Very High — 320 kbps (Premium only)',
+        'high': 'High — 160 kbps',
+        'normal': 'Normal — 96 kbps'
+    } %}
+    {% set musicQualityLabel = musicQualityLabels[musicQuality]|default(musicQualityLabels['auto']) %}
+
+    <div class="music-quality-strip{{ musicQuality == 'very_high' ? ' is-warning' : '' }}">
+        <span class="music-quality-eyebrow">Qualité audio</span>
+        <span class="music-quality-value">{{ musicQualityLabel }}</span>
+        <a class="music-quality-link" href="{{ path('config') }}">Modifier</a>
+        {% if musicQuality == 'very_high' %}
+            <span class="music-quality-warning">Premium requis — un compte Free échouera avec « Audio key error ».</span>
+        {% endif %}
+    </div>
+
     <section class="card search-card" aria-labelledby="search-title">
         <div class="card-header">
             <div>
@@ -163,6 +181,54 @@
         background: var(--glass);
         box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
         backdrop-filter: blur(12px);
+    }
+
+    .music-page .music-quality-strip {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin: 0 0 1.35rem;
+        padding: 0.7rem 1rem;
+        border: 1px solid var(--mp-border);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.35);
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+    }
+
+    .music-page .music-quality-eyebrow {
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--mp-muted);
+    }
+
+    .music-page .music-quality-value {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .music-page .music-quality-link {
+        margin-left: auto;
+        color: var(--accent);
+        font-weight: 500;
+        text-decoration: none;
+    }
+
+    .music-page .music-quality-link:hover {
+        color: var(--accent-hover);
+    }
+
+    .music-page .music-quality-strip.is-warning {
+        border-color: rgba(245, 158, 11, 0.35);
+        background: rgba(245, 158, 11, 0.08);
+    }
+
+    .music-page .music-quality-warning {
+        color: var(--warning);
+        font-weight: 500;
     }
 
     .music-page .playlist-card,

@@ -186,11 +186,20 @@
                     <div>
                         <label for="music_quality">Quality</label>
                         <select id="music_quality" name="music_quality" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
-                            <option value="very_high" {{ config.music_quality|default('very_high') == 'very_high' ? 'selected' : '' }}>Very High</option>
-                            <option value="high" {{ config.music_quality|default('very_high') == 'high' ? 'selected' : '' }}>High</option>
-                            <option value="medium" {{ config.music_quality|default('very_high') == 'medium' ? 'selected' : '' }}>Medium</option>
+                            <option value="auto" {{ config.music_quality|default('auto') == 'auto' ? 'selected' : '' }}>Auto — best allowed by your account (recommended)</option>
+                            <option value="very_high" {{ config.music_quality|default('auto') == 'very_high' ? 'selected' : '' }}>Very High — 320 kbps (Premium only)</option>
+                            <option value="high" {{ config.music_quality|default('auto') == 'high' ? 'selected' : '' }}>High — 160 kbps (works with Free)</option>
+                            <option value="normal" {{ config.music_quality|default('auto') == 'normal' ? 'selected' : '' }}>Normal — 96 kbps</option>
                         </select>
                     </div>
+                </div>
+
+                <div style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border-left: 4px solid var(--accent);">
+                    <div style="font-weight: 600; color: var(--accent); margin-bottom: 0.35rem;">Spotify account limits</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
+                        Free accounts are capped at <strong>160 kbps</strong>; <strong>320 kbps requires Premium</strong>. Select <strong>Auto</strong> to always use the best quality your account allows.
+                    </div>
+                    <div id="music-quality-note" aria-live="polite" style="margin-top: 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);"></div>
                 </div>
 
                 <div style="margin-bottom: 1rem;">
@@ -204,7 +213,7 @@
                            <span id="auth-btn-spinner" style="display: none;">⏳...</span>
                         </button>
                     </div>
-                    <small style="color: var(--text-secondary);">Path to your music provider credentials file.</small>
+                    <small style="color: var(--text-secondary);">Path to your music provider credentials file. Use the same Spotify account you want to download with (Free or Premium).</small>
                     <div id="auth-status" style="margin-top: 0.5rem; font-size: 0.85rem; display: none;"></div>
                 </div>
 
@@ -855,6 +864,29 @@ async function handleConfigImport(input) {
     } finally {
         input.value = ''; // Reset input so the same file could be selected again if needed
     }
+}
+
+function updateMusicQualityNote() {
+    const select = document.getElementById('music_quality');
+    const note = document.getElementById('music-quality-note');
+    if (!select || !note) return;
+
+    const notes = {
+        auto: { text: 'Auto: 320 kbps with Premium, 160 kbps with a Free account.', color: 'var(--success)' },
+        high: { text: 'High: 160 kbps — works with Free and Premium accounts.', color: 'var(--success)' },
+        normal: { text: 'Normal: 96 kbps — works with Free and Premium accounts.', color: 'var(--text-secondary)' },
+        very_high: { text: 'Very High: 320 kbps — Premium only. A Free account will fail with "Audio key error".', color: 'var(--warning)' }
+    };
+
+    const info = notes[select.value] || notes.auto;
+    note.textContent = info.text;
+    note.style.color = info.color;
+}
+
+const musicQualitySelect = document.getElementById('music_quality');
+if (musicQualitySelect) {
+    musicQualitySelect.addEventListener('change', updateMusicQualityNote);
+    updateMusicQualityNote();
 }
 </script>
 {% endblock %}
