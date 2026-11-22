@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${1:-gautardos/downloader-app:2.8.2}"
+IMAGE="${1:-gautardos/downloader-app:2.8.4}"
 ZOTIFY_COMMIT="6e45c5ff9b504583d2c5223442baf788bf95be09"
 
 echo "Docker music runtime smoke: $IMAGE"
