@@ -108,6 +108,8 @@ fonctionnel ni migration de données.
   `music_automation_max_per_run` (50) et `music_automation_queue_guard` (20).
   Les réglages de maintenance/intégrité et les préférences push sont stockés dans
   leurs bases dédiées.
+- Image Docker allégée : la couche de `chown -R` redondante a été supprimée
+  (environ 4 Go au lieu de 5,5 Go), ce qui réduit aussi le temps de push.
 
 ## Mise à jour
 

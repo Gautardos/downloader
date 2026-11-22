@@ -62,13 +62,13 @@ WORKDIR /var/www/html
 # ────────────────────────────────────────────────
 # 6. Copie sélective → on n'inclut PAS var/
 # ────────────────────────────────────────────────
-COPY .env composer.json composer.lock ./
-COPY src/            src/
-COPY public/         public/
-COPY config/         config/
-COPY templates/      templates/
-COPY cli/            cli/
-COPY bin/            bin/
+COPY --chown=www-data:www-data .env composer.json composer.lock ./
+COPY --chown=www-data:www-data src/            src/
+COPY --chown=www-data:www-data public/         public/
+COPY --chown=www-data:www-data config/         config/
+COPY --chown=www-data:www-data templates/      templates/
+COPY --chown=www-data:www-data cli/            cli/
+COPY --chown=www-data:www-data bin/            bin/
 
 # Installation des dépendances PHP (sans dev)
 RUN composer install --no-dev --optimize-autoloader --classmap-authoritative --no-interaction
@@ -133,9 +133,9 @@ RUN echo '' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
 # ────────────────────────────────────────────────
 # 11. Dossiers de runtime (créés vides dans l’image)
 # ────────────────────────────────────────────────
-RUN mkdir -p var/storage/logs var/sessions var/cache var/log var/composer_home \
-    && chown -R www-data:www-data /var/www/html \
-    && chmod -R 775 var vendor \
+RUN mkdir -p var/storage/logs var/sessions var/cache var/log var/composer_home var/db var/home \
+    && chown -R www-data:www-data var/storage var/sessions var/cache var/log var/composer_home var/db var/home \
+    && chmod -R 775 var/storage var/sessions var/cache var/log var/composer_home var/db var/home \
     && find /var/www/html/var/librespot-auth -type f -name "librespot-auth" -exec chmod +x {} +
 
 # ────────────────────────────────────────────────
