@@ -8,6 +8,8 @@ use App\Service\QueueManager;
 use App\Service\JsonStorage;
 use App\Service\LogRedactor;
 use App\Service\LogRotator;
+use App\Service\Music\MusicDownloadCommandBuilder;
+use App\Service\Music\MusicTrackVerifier;
 use App\Service\ServerNotificationService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -30,6 +32,8 @@ class DownloadWorkerCommand extends Command
     private ServerNotificationService $notifications;
     private LogRedactor $redactor;
     private string $projectDir;
+    private MusicDownloadCommandBuilder $commandBuilder;
+    private MusicTrackVerifier $trackVerifier;
 
     public function __construct(
         QueueManager $queueManager,
@@ -37,7 +41,9 @@ class DownloadWorkerCommand extends Command
         ReleaseIntentService $releaseIntents,
         ServerNotificationService $notifications,
         LogRedactor $redactor,
-        string $projectDir
+        string $projectDir,
+        MusicDownloadCommandBuilder $commandBuilder,
+        MusicTrackVerifier $trackVerifier
     ) {
         parent::__construct();
         $this->queueManager = $queueManager;
@@ -46,6 +52,8 @@ class DownloadWorkerCommand extends Command
         $this->notifications = $notifications;
         $this->redactor = $redactor;
         $this->projectDir = $projectDir;
+        $this->commandBuilder = $commandBuilder;
+        $this->trackVerifier = $trackVerifier;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -208,27 +216,8 @@ class DownloadWorkerCommand extends Command
         $url = $item['url'];
         unset($item['not_before']);
 
-        $quality = $config['music_quality'] ?? 'auto';
-        if (!in_array($quality, ['auto', 'normal', 'high', 'very_high'], true)) {
-            $quality = 'auto';
-        }
-
-        $cmdArgs = [
-            '--output' => $config['music_output'] ?? '{artist} - {album} - {song_name}.{ext}',
-            '--download-format' => $config['music_format'] ?? 'mp3',
-            '--root-path' => $config['music_root_path'] ?? '',
-            '--credentials-location' => $config['music_creds'] ?? '',
-            '--song-archive' => $config['music_archive'] ?? '',
-            '--download-quality' => $quality,
-            '--retry-attempts' => $config['music_retries'] ?? 3,
-            '--skip-previously-downloaded' => ($config['music_skip_existing'] ?? false) ? 'True' : 'False',
-            '--download-lyrics' => ($config['music_lyrics'] ?? true) ? 'True' : 'False',
-            '--print-download-progress' => ($config['music_progress'] ?? false) ? 'True' : 'False',
-            '--print-downloads' => ($config['music_print_downloads'] ?? true) ? 'True' : 'False',
-            '--print-progress-info' => ($config['music_progress_info'] ?? false) ? 'True' : 'False',
-            '--client-id' => $config['spotify_client_id'] ?? '',
-            '--client-secret' => $config['spotify_client_secret'] ?? '',
-        ];
+        $cmdArgs = $this->commandBuilder->build($config);
+        $quality = $cmdArgs['--download-quality'];
 
         // Build Command using absolute paths
         $venvInput = $config['music_venv_path'] ?? 'venv';
@@ -377,35 +366,14 @@ class DownloadWorkerCommand extends Command
             $verifiedTracks = json_decode($verifyProcess->getOutput(), true) ?: [];
         }
 
-        $missingTracks = [];
-        foreach ($expectedTracks as $expected) {
-            $found = false;
-            foreach ($verifiedTracks as $verified) {
-                if (
-                    $this->normalizeTrackPart($expected['artist'] ?? '') === $this->normalizeTrackPart($verified['artist'] ?? '') &&
-                    $this->normalizeTrackPart($expected['album'] ?? '') === $this->normalizeTrackPart($verified['album'] ?? '') &&
-                    $this->normalizeTrackPart($expected['song_name'] ?? '') === $this->normalizeTrackPart($verified['song_name'] ?? '')
-                ) {
-                    $found = true;
-                    $matchedTracks[] = $verified;
-                    $validatedCount++;
-                    break;
-                }
-            }
-            if (!$found) {
-                $missingTracks[] = $expected;
-            }
-        }
+        $verification = $this->trackVerifier->verify($expectedTracks, $verifiedTracks);
+        $matchedTracks = $verification['matched'];
+        $missingTracks = $verification['missing'];
+        $validatedCount = $verification['validatedCount'];
+        $finalStatus = $verification['status'];
 
-        // Determine status: success (all found), warning (some found), error (none found)
-        $finalStatus = 'success';
         if (empty($expectedTracks)) {
             $log("No expected tracks found (Metadata missing). Marking as error to trigger retry.");
-            $finalStatus = 'error';
-        } elseif ($validatedCount === 0) {
-            $finalStatus = 'error';
-        } elseif ($validatedCount < count($expectedTracks)) {
-            $finalStatus = 'warning';
         }
 
         retry_check:
@@ -487,16 +455,6 @@ class DownloadWorkerCommand extends Command
         ]);
 
         return $finalStatus;
-    }
-
-    private function normalizeTrackPart(?string $value): string
-    {
-        $value = trim((string) $value);
-        $value = str_replace([' / ', ' /', '/ ', '/'], ', ', $value);
-        $value = str_replace(['; ', ';'], ', ', $value);
-        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
-
-        return mb_strtolower($value);
     }
 
     private function hasSpotifyAudioKeyErrors(string $output): bool

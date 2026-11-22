@@ -42,6 +42,14 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    App\Service\Spotify\LibrespotAuthService:
+        arguments:
+            $timeout: 60.0
+
+    App\Service\Music\MusicDownloadCommandBuilder: ~
+
+    App\Service\Music\MusicTrackVerifier: ~
+
     App\Service\Automation\AutomationStore:
         arguments:
             $projectDir: '%kernel.project_dir%'

@@ -6,6 +6,7 @@ use App\Service\AiService;
 use App\Service\JsonStorage;
 use App\Service\Maintenance\TorrentDatabaseUpdater;
 use App\Service\PasswordService;
+use App\Service\Spotify\LibrespotAuthService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -182,89 +183,16 @@ class ConfigController extends AbstractController
     }
 
     #[Route('/config/spotify-auth', name: 'config_spotify_auth', methods: ['POST'])]
-    public function generateSpotifyAuth(JsonStorage $storage): Response
+    public function generateSpotifyAuth(JsonStorage $storage, LibrespotAuthService $auth): Response
     {
         $config = $storage->get('config', []);
         $binary = $config['music_librespot_auth_binary'] ?? '/var/www/html/var/librespot-auth/target/release/librespot-auth';
 
-        $timestamp = time();
-        $name = "Speaker " . $timestamp;
-
-        // Final destination
+        $name = 'Speaker ' . time();
+        $homeDir = '/var/www/html/var';
         $targetPath = '/var/www/html/var/home/.local/credentials.json';
-        $targetDir = dirname($targetPath);
-        if (!is_dir($targetDir)) {
-            mkdir($targetDir, 0777, true);
-        }
 
-        // Execution environment
-        // librespot-auth generates files in $HOME/.local/share/zotify/credentials.json
-        $fakeHome = '/var/www/html/var';
-        $generatedFile = $fakeHome . '/credentials.json';
-
-        // Remove existing generated file to avoid confusion
-        if (file_exists($generatedFile)) {
-            unlink($generatedFile);
-        }
-        // Diagnostics
-        $whoami = trim(shell_exec('whoami') ?: 'unknown');
-        $cwd = getcwd();
-        $isWritable = is_writable($fakeHome) ? 'Yes' : 'No';
-        $isExecutable = is_executable($binary) ? 'Yes' : 'No';
-
-        // Force CD into fakeHome so librespot-auth saves credentials.json there
-        $cmd = sprintf('export HOME=%s && cd %s && %s --name %s 2>&1', escapeshellarg($fakeHome), escapeshellarg($fakeHome), escapeshellarg($binary), escapeshellarg($name));
-
-        // Capture output
-        $output = shell_exec($cmd);
-
-        if (!file_exists($generatedFile)) {
-            return $this->json([
-                'success' => false,
-                'message' => 'Credentials file not generated.',
-                'debug' => [
-                    'user' => $whoami,
-                    'php_cwd' => $cwd,
-                    'home_writable' => $isWritable,
-                    'binary_executable' => $isExecutable,
-                    'target_dir' => $fakeHome,
-                    'binary_path' => $binary,
-                    'expected_file' => $generatedFile
-                ],
-                'command' => $cmd,
-                'output' => $output
-            ]);
-        }
-
-        $content = file_get_contents($generatedFile);
-        $data = json_decode($content, true);
-
-        if (!$data) {
-            return $this->json(['success' => false, 'message' => 'Failed to parse generated JSON.']);
-        }
-
-        // Transformation
-        // Replace "auth_type": 1 by "type":"AUTHENTICATION_STORED_SPOTIFY_CREDENTIALS"
-        // Rename "auth_data" en "credentials"
-        if (isset($data['auth_type'])) {
-            // We'll assume the instruction applies if it's 1 or just force it as requested
-            $data['type'] = 'AUTHENTICATION_STORED_SPOTIFY_CREDENTIALS';
-            unset($data['auth_type']);
-        }
-
-        if (isset($data['auth_data'])) {
-            $data['credentials'] = $data['auth_data'];
-            unset($data['auth_data']);
-        }
-
-        file_put_contents($targetPath, json_encode($data, JSON_PRETTY_PRINT));
-
-        return $this->json([
-            'success' => true,
-            'message' => 'Spotify credentials generated and stored successfully!',
-            'path' => $targetPath,
-            'deviceName' => $name
-        ]);
+        return $this->json($auth->generate($binary, $homeDir, $targetPath, $name));
     }
 
     #[Route('/config/update-hash-db', name: 'config_update_hash_db', methods: ['POST'])]

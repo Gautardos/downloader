@@ -45,7 +45,7 @@ Deux grands domaines fonctionnels :
 | Guzzle | `^7.12` (Guzzle 7.16, PSR-7 2.13) | Appels HTTP Alldebrid, Grok, Spotify |
 | `gautardos/hash-db` | `dev-master` (dépôt VCS GitHub) | Base SQLite de torrents + CSV de hashs |
 | Python | 3 (venv `/opt/venv` dans l'image) | |
-| Zotify | `git+https://github.com/Gautardos/zotify.git` | Binaire configurable (`music_binary`) |
+| Zotify | `git+https://github.com/Gautardos/zotify.git@6e45c5ff9b504583d2c5223442baf788bf95be09` | Épinglé ; binaire configurable (`music_binary`) |
 | Redis | paquet système + extension PHP `redis` | Sessions uniquement |
 | SQLite | paquet système + PDO SQLite | Recherche torrents |
 | 7zip | `p7zip-full` | Extraction de l'archive splittée de la base torrents |
@@ -1060,6 +1060,7 @@ composer test:integrity
 composer test:search
 composer test:pwa
 composer test:music-automations
+composer test:music-runtime # librespot-auth + wrapper Zotify + mapping spotify_user
 composer test:functional    # functional_flow + tous les lots + lint
 composer test:all           # security:all + functional + lint Twig/container
 composer test:http-auth     # live optionnel, read-only, BASE_URL=http://127.0.0.1:8000
@@ -1069,6 +1070,20 @@ addons, streams, downloads et Alldebrid sont remplacés par des fakes. Ils
 utilisent un projet temporaire, une DB SQLite temporaire et des racines NAS
 factices. Ne jamais pointer ces tests vers le NAS, la DB ou les addons de
 production.
+
+`composer test:music-runtime` couvre aussi l'interopérabilité musicale **sans
+vrai librespot-auth, vrai Zotify ni compte Spotify** : `LibrespotAuthService`
+utilise un faux binaire, `MusicDownloadCommandBuilder`/`MusicTrackVerifier`
+sont testés en isolation, `cli/music_downloader.py` utilise un faux
+`music_binary` et `cli/spotify_user.py` monkeypatche `spotify_get`/session.
+Les cas MP3 taggé et `--tags`/`--update-tags` sont ignorés proprement si
+`music_tag` ou `ffmpeg` n'est pas disponible. Le script
+`tests/docker_music_runtime_smoke.sh` valide l'image réelle (binaire Rust,
+venv, import zotify épinglé, `--verify`, `spotify_user --help`) et reste hors de
+`composer test:all` car il exige Docker :
+```bash
+tests/docker_music_runtime_smoke.sh gautardos/downloader-app:2.8.2
+```
 
 Le dossier `tests/` n'est pas bind-mounté dans le conteneur `downloader-dev`
 (seuls `src/`, `templates/`, `cli/`, `public/` et `config/` le sont), et

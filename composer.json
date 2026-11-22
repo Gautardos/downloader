@@ -86,6 +86,12 @@
             "python3 tests/lyrics_audit_smoke.py"
         ],
         "test:music-automations": "php tests/music_automations_smoke.php",
+        "test:music-runtime": [
+            "php tests/librespot_auth_smoke.php",
+            "php tests/music_downloader_command_smoke.php",
+            "sh -c 'PY=python3; [ -x /opt/venv/bin/python3 ] && PY=/opt/venv/bin/python3; \"$PY\" tests/music_downloader_smoke.py'",
+            "sh -c 'PY=python3; [ -x /opt/venv/bin/python3 ] && PY=/opt/venv/bin/python3; \"$PY\" tests/spotify_user_smoke.py'"
+        ],
         "test:security:all": [
             "@test:auth",
             "@test:security",
@@ -99,6 +105,7 @@
             "@test:jellyfin",
             "@test:music-library",
             "@test:music-automations",
+            "@test:music-runtime",
             "@test:navigation",
             "@test:statistics",
             "@test:maintenance",

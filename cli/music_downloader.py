@@ -36,9 +36,13 @@ def safe_tag(handle, name):
 
 
 def verify_directory(directory, recursive=False):
-    import music_tag
     results = []
     if not os.path.isdir(directory):
+        return results
+
+    try:
+        import music_tag
+    except ImportError:
         return results
 
     audio_extensions = ('.mp3', '.flac', '.m4a', '.opus', '.ogg', '.wav')
