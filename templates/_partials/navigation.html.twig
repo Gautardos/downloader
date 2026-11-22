@@ -1,0 +1,67 @@
+<div class="nav-links" id="nav-links">
+    {% for group in navigation %}
+        {% if group.type == 'link' %}
+            <a href="{{ path(group.route) }}"
+               class="nav-top-link{{ group.active ? ' active' : '' }}"
+               data-nav-key="{{ group.key }}"
+               {% if not group.enabled %}aria-disabled="true"{% endif %}>
+                <span class="mi" aria-hidden="true">{{ group.icon|raw }}</span>
+                <span class="nav-top-label">{{ group.label }}</span>
+            </a>
+        {% else %}
+            <div class="nav-group{{ group.active ? ' has-active' : '' }}" data-group="{{ group.key }}" data-nav-key="{{ group.key }}">
+                <button class="nav-group-btn{{ group.active ? ' active' : '' }}"
+                        type="button"
+                        aria-haspopup="true"
+                        aria-expanded="false"
+                        data-nav-toggle="{{ group.key }}">
+                    <span class="nav-group-label">
+                        {{ group.label }}
+                        {% if group.key == 'downloads' %}
+                            <span id="queue-nav-dot" class="nav-activity-dot" hidden aria-hidden="true"></span>
+                        {% endif %}
+                    </span>
+                    <svg class="nav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="nav-menu" role="menu" aria-label="{{ group.label }}">
+                    {% for item in group.items %}
+                        {% if item.enabled and item.route %}
+                            <a href="{{ path(item.route) }}"
+                               class="nav-menu-item{{ item.active ? ' active' : '' }}"
+                               role="menuitem"
+                               data-nav-item="{{ item.key }}">
+                                <span class="mi" aria-hidden="true">{{ item.icon|raw }}</span>
+                                <span class="nav-menu-label">{{ item.label }}</span>
+                            </a>
+                        {% else %}
+                            <span class="nav-menu-item disabled"
+                                  role="menuitem"
+                                  aria-disabled="true"
+                                  data-nav-item="{{ item.key }}">
+                                <span class="mi" aria-hidden="true">{{ item.icon|raw }}</span>
+                                <span class="nav-menu-label">{{ item.label }}</span>
+                                <span class="nav-badge">Soon</span>
+                            </span>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+    {% endfor %}
+    {% if global_search_enabled is not defined or global_search_enabled %}
+    <button type="button"
+            class="search-trigger nav-search-trigger"
+            data-global-search-open
+            aria-label="Open global search"
+            aria-haspopup="dialog"
+            aria-keyshortcuts="Control+K Meta+K">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+        <span class="search-trigger-label">Search</span>
+        <span class="kbd" aria-hidden="true">⌘K</span>
+    </button>
+    {% endif %}
+    <form method="post" action="{{ path('logout') }}" class="logout-form">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
+        <button type="submit" class="logout-link">Logout</button>
+    </form>
+</div>

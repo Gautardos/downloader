@@ -12,9 +12,6 @@ import os
 import sys
 from urllib.parse import quote
 
-import requests
-from librespot.core import Session
-
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 CONFIG_PATH = os.path.join(BASE_DIR, 'var', 'storage', 'config.json')
 DEFAULT_CREDS = '/var/www/html/var/home/.local/credentials.json'
@@ -50,6 +47,8 @@ def get_credentials_path(config):
 
 
 def create_session(credentials_path):
+    from librespot.core import Session
+
     if not os.path.isfile(credentials_path):
         raise RuntimeError(f'Spotify credentials file not found: {credentials_path}')
 
@@ -62,6 +61,8 @@ def get_user_token(session):
 
 
 def get_client_token(config):
+    import requests
+
     client_id = str(config.get('spotify_client_id') or '').strip()
     client_secret = str(config.get('spotify_client_secret') or '').strip()
     if not client_id or not client_secret:
@@ -89,6 +90,8 @@ def get_username(credentials_path):
 
 
 def spotify_get(token, path, params=None):
+    import requests
+
     url = path if path.startswith('http') else SPOTIFY_API_URL + path
     headers = {
         'Authorization': f'Bearer {token}',
@@ -208,15 +211,52 @@ def get_playlist_metadata_fallback(config, credentials_path, playlist_id):
         return result
 
 
+def map_playlist_track(track, owner=''):
+    track_id = str(track.get('id') or '')
+    external_urls = track.get('external_urls') or {}
+    artists = [
+        str(artist.get('name'))
+        for artist in (track.get('artists') or [])
+        if artist and artist.get('name')
+    ]
+    album = track.get('album') or {}
+
+    return {
+        'id': track_id,
+        'url': external_urls.get('spotify') or (
+            f'https://open.spotify.com/track/{track_id}' if track_id else ''
+        ),
+        'duration_ms': int(track.get('duration_ms') or 0),
+        'artist': ', '.join(artists) or owner,
+        'album': album.get('name') or '',
+        'song_name': track.get('name') or '',
+    }
+
+
+def map_playlist_metadata(playlist_id, info, tracks, owner=''):
+    external_urls = info.get('external_urls') or {}
+
+    return {
+        'success': True,
+        'playlist': {
+            'id': playlist_id,
+            'name': info.get('name') or 'Playlist',
+            'owner': owner,
+            'url': external_urls.get('spotify') or f'https://open.spotify.com/playlist/{playlist_id}',
+            'snapshot_id': info.get('snapshot_id'),
+            'tracks': tracks,
+        },
+    }
+
+
 def get_playlist_metadata(token, playlist_id):
     encoded_id = quote(playlist_id, safe='')
     info = spotify_get(
         token,
         f'/playlists/{encoded_id}',
-        {'fields': 'id,name,owner(display_name),tracks(total)'},
+        {'fields': 'id,name,owner(display_name),tracks(total),snapshot_id,external_urls'},
     )
 
-    name = info.get('name') or 'Playlist'
     owner = (info.get('owner') or {}).get('display_name') or ''
     tracks = []
     offset = 0
@@ -235,32 +275,13 @@ def get_playlist_metadata(token, playlist_id):
             if not track or track.get('is_local') or not track.get('name'):
                 continue
 
-            artists = [
-                str(artist.get('name'))
-                for artist in (track.get('artists') or [])
-                if artist and artist.get('name')
-            ]
-            album = (track.get('album') or {}).get('name') or ''
-
-            tracks.append({
-                'artist': ', '.join(artists) or owner,
-                'album': album,
-                'song_name': track.get('name'),
-            })
+            tracks.append(map_playlist_track(track, owner))
 
         offset += len(batch)
         if not batch or len(batch) < limit:
             break
 
-    return {
-        'success': True,
-        'playlist': {
-            'id': playlist_id,
-            'name': name,
-            'owner': owner,
-            'tracks': tracks,
-        },
-    }
+    return map_playlist_metadata(playlist_id, info, tracks, owner)
 
 
 def build_parser():

@@ -1,0 +1,708 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Maintenance - Alldebrid Downloader{% endblock %}
+
+{% set dayLabels = {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'} %}
+{% set weekdayLabels = {1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday'} %}
+{% set statusLabels = {'success': 'Success', 'warning': 'Warning', 'error': 'Error', 'running': 'Running'} %}
+
+{% block body %}
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Maintenance',
+    subtitle: 'Schedule the nightly torrent database update, housekeeping and maintenance history.',
+    icon: 'settings',
+    badge: settings.enabled ? 'Scheduled' : 'Disabled',
+    badge_class: settings.enabled ? 'header-badge--success' : 'header-badge--neutral',
+    badge_dot: settings.enabled
+} %}
+    {% block actions %}
+        <a class="btn btn-secondary" href="{{ path('logs') }}">Logs</a>
+        <form method="post" action="{{ path('maintenance_run') }}" class="maint-run-form">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <label class="sr-only" for="maintenance-run-job">Job to run now</label>
+            <select id="maintenance-run-job" name="job" class="maint-select">
+                <option value="all">All enabled jobs</option>
+                {% for job in jobs %}
+                    <option value="{{ job.key }}">{{ job.label }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-primary" type="submit">Run now</button>
+        </form>
+    {% endblock %}
+{% endembed %}
+
+{% if locked or pause_active %}
+    <div class="alert alert-error" role="status">
+        {% if locked %}A maintenance run is currently in progress.{% endif %}
+        {% if pause_active %} The download worker pause flag is active.{% endif %}
+    </div>
+{% endif %}
+
+<section class="card maint-card" aria-labelledby="maint-schedule-title">
+    <div class="maint-card-head">
+        <div>
+            <h2 id="maint-schedule-title">Schedule</h2>
+            <p>Choose when maintenance runs. The schedule is disabled by default and uses the selected timezone.</p>
+        </div>
+        <span class="maint-badge {{ settings.enabled ? 'is-on' : 'is-off' }}">
+            {{ settings.enabled ? 'Enabled' : 'Disabled' }}
+        </span>
+    </div>
+
+    <form method="post" action="{{ path('maintenance_settings') }}" id="maintenance-settings-form">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
+        <input type="hidden" name="_maintenance_form" value="1">
+
+        <div class="maint-toggle-row">
+            <label class="switch">
+                <input type="checkbox" name="enabled" value="1" {{ settings.enabled ? 'checked' : '' }}>
+                <span class="switch-track" aria-hidden="true"></span>
+                <span class="switch-label">Enable scheduled maintenance</span>
+            </label>
+            <label class="switch">
+                <input type="checkbox" name="pause_downloads" value="1" {{ settings.pause_downloads ? 'checked' : '' }}>
+                <span class="switch-track" aria-hidden="true"></span>
+                <span class="switch-label">Pause the download worker during imports</span>
+            </label>
+        </div>
+
+        <div class="maint-grid">
+            <div class="maint-field">
+                <label for="maintenance-frequency">Frequency</label>
+                <select id="maintenance-frequency" name="frequency" class="maint-select">
+                    <option value="daily" {{ settings.frequency == 'daily' ? 'selected' : '' }}>Daily</option>
+                    <option value="weekly" {{ settings.frequency == 'weekly' ? 'selected' : '' }}>Weekly</option>
+                </select>
+            </div>
+
+            <div class="maint-field">
+                <label for="maintenance-time">Start time</label>
+                <input id="maintenance-time" type="time" name="time" value="{{ settings.time }}" required>
+            </div>
+
+            <div class="maint-field">
+                <label for="maintenance-timezone">Timezone</label>
+                <select id="maintenance-timezone" name="timezone" class="maint-select">
+                    {% for timezone in timezones %}
+                        <option value="{{ timezone }}" {{ settings.timezone == timezone ? 'selected' : '' }}>{{ timezone }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="maint-field">
+                <label for="maintenance-retention">Keep run history (days)</label>
+                <input id="maintenance-retention" type="number" name="run_retention_days" min="1" max="365" value="{{ settings.run_retention_days }}">
+            </div>
+        </div>
+
+        <div class="maint-field" data-frequency-panel="daily">
+            <span class="maint-label">Active days</span>
+            <div class="maint-chips">
+                {% for value, label in dayLabels %}
+                    <label class="chip">
+                        <input type="checkbox" name="days[]" value="{{ value }}" {{ value in settings.days ? 'checked' : '' }}>
+                        <span>{{ label }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="maint-field" data-frequency-panel="weekly">
+            <label for="maintenance-weekday">Day of week</label>
+            <select id="maintenance-weekday" name="weekday" class="maint-select">
+                {% for value, label in weekdayLabels %}
+                    <option value="{{ value }}" {{ settings.weekday == value ? 'selected' : '' }}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="maint-next">
+            <span class="maint-next-label">Next run</span>
+            {% if next_run %}
+                <strong>{{ next_run|date('D, M j Y H:i', settings.timezone) }}</strong>
+                <span>{{ settings.timezone }}</span>
+            {% else %}
+                <strong>Not scheduled</strong>
+                <span>Enable maintenance to compute the next run.</span>
+            {% endif %}
+        </div>
+
+        <fieldset class="maint-jobs">
+            <legend>Jobs</legend>
+            {% for job in jobs %}
+                <label class="maint-job-toggle">
+                    <input type="checkbox"
+                           name="jobs[{{ job.key }}]"
+                           value="1"
+                           {{ settings.jobs[job.key]|default(false) ? 'checked' : '' }}>
+                    <span>
+                        <strong>{{ job.label }}</strong>
+                        <small>
+                            {% if job.last_run %}
+                                Last run {{ job.last_run.started_at|date('Y-m-d H:i', 'UTC') }} UTC · {{ statusLabels[job.last_run.status] ?? job.last_run.status }}
+                            {% else %}
+                                Never run
+                            {% endif %}
+                        </small>
+                    </span>
+                </label>
+            {% endfor %}
+        </fieldset>
+
+        <div class="maint-actions">
+            <button class="btn btn-primary" type="submit">Save</button>
+            <span class="maint-hint">Library scans and metadata refreshes are managed in <a href="{{ path('automation') }}">Library Automations</a>.</span>
+        </div>
+    </form>
+</section>
+
+<section class="card maint-card" aria-labelledby="maint-jobs-title">
+    <div class="maint-card-head">
+        <div>
+            <h2 id="maint-jobs-title">Jobs</h2>
+            <p>Last run and next scheduled execution for each maintenance job.</p>
+        </div>
+    </div>
+
+    <div class="maint-table-wrap">
+        <table class="maint-table">
+            <thead>
+                <tr>
+                    <th scope="col">Job</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Last run</th>
+                    <th scope="col">Duration</th>
+                    <th scope="col">Next run</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                    <tr>
+                        <td>
+                            <strong>{{ job.label }}</strong>
+                            <div class="maint-mono">{{ job.key }}</div>
+                        </td>
+                        <td>
+                            <span class="maint-badge {{ job.enabled ? 'is-on' : 'is-off' }}">{{ job.enabled ? 'Enabled' : 'Disabled' }}</span>
+                        </td>
+                        <td>
+                            {% if job.last_run %}
+                                <span class="maint-status maint-status--{{ job.last_run.status }}">
+                                    {{ statusLabels[job.last_run.status] ?? job.last_run.status }}
+                                </span>
+                                <div class="maint-mono">{{ job.last_run.started_at|date('Y-m-d H:i:s', 'UTC') }} UTC</div>
+                            {% else %}
+                                <span class="maint-muted">Never</span>
+                            {% endif %}
+                        </td>
+                        <td class="maint-mono">
+                            {{ job.last_run and job.last_run.duration is not null ? job.last_run.duration|number_format(2) ~ ' s' : '--' }}
+                        </td>
+                        <td>
+                            {% if settings.enabled and job.enabled and next_run %}
+                                {{ next_run|date('Y-m-d H:i', settings.timezone) }}
+                                <div class="maint-mono">{{ settings.timezone }}</div>
+                            {% else %}
+                                <span class="maint-muted">--</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="maint-muted">No maintenance jobs are registered.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card maint-card" aria-labelledby="maint-history-title">
+    <div class="maint-card-head">
+        <div>
+            <h2 id="maint-history-title">Run history</h2>
+            <p>The 20 latest maintenance runs, newest first.</p>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="{{ path('logs') }}">Open logs</a>
+    </div>
+
+    <div class="maint-table-wrap">
+        <table class="maint-table">
+            <thead>
+                <tr>
+                    <th scope="col">Job</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Started (UTC)</th>
+                    <th scope="col">Duration</th>
+                    <th scope="col">Trigger</th>
+                    <th scope="col">Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in runs %}
+                    <tr>
+                        <td class="maint-mono">{{ run.job_key }}</td>
+                        <td><span class="maint-status maint-status--{{ run.status }}">{{ statusLabels[run.status] ?? run.status }}</span></td>
+                        <td class="maint-mono">{{ run.started_at|date('Y-m-d H:i:s', 'UTC') }}</td>
+                        <td class="maint-mono">{{ run.duration is not null ? run.duration|number_format(2) ~ ' s' : '--' }}</td>
+                        <td>{{ run.forced ? 'Manual' : run.trigger|capitalize }}</td>
+                        <td>
+                            {% if run.error %}
+                                <span class="maint-error">{{ run.error }}</span>
+                            {% elseif run.summary is not empty %}
+                                <span class="maint-mono">{{ run.summary|json_encode }}</span>
+                            {% else %}
+                                <span class="maint-muted">--</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="maint-muted">No maintenance run has been recorded yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card maint-card" aria-labelledby="maint-log-title">
+    <div class="maint-card-head">
+        <div>
+            <h2 id="maint-log-title">Latest log</h2>
+            <p>Last 40 lines of var/storage/logs/maintenance.log.</p>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="{{ path('logs') }}">View all logs</a>
+    </div>
+    {% if log_excerpt %}
+        <pre class="maint-log" tabindex="0">{{ log_excerpt }}</pre>
+    {% else %}
+        <p class="maint-muted">No maintenance log entries yet.</p>
+    {% endif %}
+</section>
+
+<style>
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .header-badge--success {
+        color: #bbf7d0;
+        background: rgba(34, 197, 94, .16);
+        border-color: rgba(34, 197, 94, .35);
+    }
+
+    .maint-run-form {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
+
+    .maint-card {
+        padding: 1.35rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .maint-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .maint-card-head h2 {
+        margin: 0 0 .3rem;
+        font-size: 1.05rem;
+    }
+
+    .maint-card-head p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: .82rem;
+        line-height: 1.45;
+    }
+
+    .maint-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .maint-field {
+        display: flex;
+        flex-direction: column;
+        gap: .35rem;
+        min-width: 0;
+        margin-bottom: .9rem;
+    }
+
+    .maint-field label,
+    .maint-label {
+        color: var(--text-secondary);
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .03em;
+    }
+
+    [data-frequency-panel][hidden] {
+        display: none !important;
+    }
+
+    .maint-field input[type="time"],
+    .maint-field input[type="number"] {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        padding: .65rem .7rem;
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: .5rem;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font: inherit;
+        color-scheme: dark;
+    }
+
+    .maint-select {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        padding: .65rem 2.4rem .65rem .7rem;
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: .5rem;
+        background-color: var(--bg-primary);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right .85rem center;
+        background-size: .8rem;
+        color: var(--text-primary);
+        font: inherit;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        color-scheme: dark;
+    }
+
+    .maint-field input[type="time"]::-webkit-calendar-picker-indicator {
+        cursor: pointer;
+        filter: invert(1) brightness(1.7);
+        opacity: .8;
+    }
+
+    .maint-field input[type="time"]::-webkit-calendar-picker-indicator:hover {
+        opacity: 1;
+    }
+
+    .maint-run-form .maint-select {
+        width: auto;
+        min-width: 12rem;
+        max-width: 18rem;
+    }
+
+    .maint-toggle-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem 2rem;
+        margin-bottom: 1.15rem;
+    }
+
+    .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: .6rem;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .switch input {
+        position: absolute;
+        opacity: 0;
+        width: 1px;
+        height: 1px;
+    }
+
+    .switch-track {
+        position: relative;
+        width: 2.4rem;
+        height: 1.3rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, .35);
+        transition: background .2s;
+        flex: 0 0 auto;
+    }
+
+    .switch-track::after {
+        content: "";
+        position: absolute;
+        top: .16rem;
+        left: .16rem;
+        width: .98rem;
+        height: .98rem;
+        border-radius: 50%;
+        background: #f8fafc;
+        transition: transform .2s;
+    }
+
+    .switch input:checked + .switch-track {
+        background: var(--accent);
+    }
+
+    .switch input:checked + .switch-track::after {
+        transform: translateX(1.1rem);
+    }
+
+    .switch input:focus-visible + .switch-track {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    .switch-label {
+        font-size: .85rem;
+        color: var(--text-primary);
+    }
+
+    .maint-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+    }
+
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .42rem .7rem;
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .03);
+        color: var(--text-secondary);
+        font-size: .8rem;
+        cursor: pointer;
+    }
+
+    .chip:has(input:checked) {
+        border-color: rgba(56, 189, 248, .5);
+        background: rgba(56, 189, 248, .13);
+        color: var(--text-primary);
+    }
+
+    .chip input {
+        accent-color: var(--accent);
+    }
+
+    .maint-next {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: .5rem .8rem;
+        padding: .8rem 1rem;
+        border: 1px solid rgba(56, 189, 248, .2);
+        border-radius: .65rem;
+        background: rgba(56, 189, 248, .06);
+        margin-bottom: 1.1rem;
+    }
+
+    .maint-next-label {
+        color: var(--text-secondary);
+        font-size: .75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+
+    .maint-next span {
+        color: var(--text-secondary);
+        font-size: .8rem;
+    }
+
+    .maint-jobs {
+        border: 0;
+        padding: 0;
+        margin: 0 0 1.1rem;
+    }
+
+    .maint-jobs legend {
+        padding: 0;
+        margin-bottom: .55rem;
+        color: var(--text-secondary);
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .03em;
+    }
+
+    .maint-job-toggle {
+        display: flex;
+        align-items: flex-start;
+        gap: .65rem;
+        padding: .7rem .8rem;
+        border: 1px solid rgba(255, 255, 255, .08);
+        border-radius: .6rem;
+        margin-bottom: .5rem;
+        cursor: pointer;
+    }
+
+    .maint-job-toggle input {
+        margin-top: .2rem;
+        accent-color: var(--accent);
+    }
+
+    .maint-job-toggle strong {
+        display: block;
+        font-size: .88rem;
+    }
+
+    .maint-job-toggle small {
+        color: var(--text-secondary);
+        font-size: .76rem;
+    }
+
+    .maint-actions {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .maint-hint {
+        color: var(--text-secondary);
+        font-size: .78rem;
+    }
+
+    .maint-hint a {
+        color: var(--accent);
+    }
+
+    .maint-table-wrap {
+        overflow-x: auto;
+    }
+
+    .maint-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .82rem;
+    }
+
+    .maint-table th,
+    .maint-table td {
+        padding: .7rem .65rem;
+        border-bottom: 1px solid rgba(255, 255, 255, .07);
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .maint-table th {
+        color: var(--text-secondary);
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+
+    .maint-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: .75rem;
+        color: var(--text-secondary);
+        overflow-wrap: anywhere;
+    }
+
+    .maint-muted {
+        color: var(--text-secondary);
+        font-size: .8rem;
+    }
+
+    .maint-error {
+        color: #fecaca;
+        overflow-wrap: anywhere;
+    }
+
+    .maint-badge,
+    .maint-status {
+        display: inline-flex;
+        align-items: center;
+        padding: .2rem .5rem;
+        border-radius: 999px;
+        font-size: .7rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .maint-badge.is-on,
+    .maint-status--success {
+        color: #bbf7d0;
+        background: rgba(34, 197, 94, .15);
+    }
+
+    .maint-badge.is-off {
+        color: var(--text-secondary);
+        background: rgba(148, 163, 184, .14);
+    }
+
+    .maint-status--warning,
+    .maint-status--running {
+        color: #fde68a;
+        background: rgba(245, 158, 11, .16);
+    }
+
+    .maint-status--error {
+        color: #fecaca;
+        background: rgba(239, 68, 68, .16);
+    }
+
+    .maint-log {
+        margin: 0;
+        max-height: 22rem;
+        overflow: auto;
+        padding: .9rem;
+        border-radius: .55rem;
+        border: 1px solid rgba(255, 255, 255, .08);
+        background: rgba(2, 6, 23, .72);
+        color: #cbd5e1;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: .74rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 900px) {
+        .maint-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 560px) {
+        .maint-grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .maint-card-head {
+            flex-direction: column;
+        }
+    }
+</style>
+
+<script>
+    (function () {
+        const frequency = document.getElementById('maintenance-frequency');
+        const panels = document.querySelectorAll('[data-frequency-panel]');
+        if (!frequency) return;
+
+        function refresh() {
+            panels.forEach(function (panel) {
+                panel.hidden = panel.getAttribute('data-frequency-panel') !== frequency.value;
+            });
+        }
+
+        frequency.addEventListener('change', refresh);
+        refresh();
+    })();
+</script>
+{% endblock %}

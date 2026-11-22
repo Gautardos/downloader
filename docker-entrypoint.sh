@@ -41,6 +41,14 @@ if [ -d "$db_dir" ]; then
 fi
 
 if [ -d "$storage_dir" ]; then
+    # Supervisor writes worker stderr into var/storage/logs. On a fresh data
+    # volume the directory does not exist, so create it before supervisord starts.
+    if [ ! -d "$storage_dir/logs" ]; then
+        mkdir -p "$storage_dir/logs" 2>/dev/null || true
+        chown www-data:www-data "$storage_dir/logs" 2>/dev/null || true
+        chmod 2750 "$storage_dir/logs" 2>/dev/null || true
+    fi
+
     # Move legacy app logs into the host-visible logs directory when possible.
     # Existing permissions are preserved; the entrypoint never chmods here.
     if [ -d "$storage_dir/logs" ]; then

@@ -82,6 +82,49 @@ class TmdbService
         return $results;
     }
 
+    /**
+     * Bounded search used by the global palette: fewer results and a short timeout.
+     */
+    public function searchQuick(string $query, int $limit = 8, int $timeout = 4): array
+    {
+        $query = trim($query);
+        if ($query === '' || !$this->isConfigured()) {
+            return [];
+        }
+
+        $config = $this->storage->get('config', []);
+        $includeAdult = !empty($config['allow_xxx_search']);
+        $limit = max(1, min($limit, 20));
+
+        $data = $this->request('search/multi', [
+            'query' => $query,
+            'language' => $this->getLanguage(),
+            'include_adult' => $includeAdult ? 'true' : 'false',
+            'page' => 1,
+        ], 300, $timeout, min(2, max(1, $timeout)));
+
+        if (!is_array($data) || !isset($data['results'])) {
+            return [];
+        }
+
+        $results = [];
+        foreach ($data['results'] as $item) {
+            $itemType = $item['media_type'] ?? null;
+            if (!in_array($itemType, ['movie', 'tv'], true)) {
+                continue;
+            }
+            $normalized = $this->normalizeSearchResult($item, $itemType === 'tv' ? 'series' : 'movie');
+            if ($normalized) {
+                $results[] = $normalized;
+            }
+            if (count($results) >= $limit) {
+                break;
+            }
+        }
+
+        return $results;
+    }
+
     public function trending(): array
     {
         if (!$this->isConfigured()) {
@@ -267,7 +310,7 @@ class TmdbService
         return $path ? self::IMAGE_URL . '/' . $size . $path : null;
     }
 
-    private function request(string $path, array $query = [], int $ttl = 600): array
+    private function request(string $path, array $query = [], int $ttl = 600, ?int $timeout = null, ?int $connectTimeout = null): array
     {
         $key = $this->getApiKey();
         if ($key === '') {
@@ -284,8 +327,8 @@ class TmdbService
             try {
                 $isBearer = strlen($key) > 100 || str_starts_with($key, 'eyJ');
                 $options = [
-                    'timeout' => 15,
-                    'connect_timeout' => 8,
+                    'timeout' => $timeout ?? 15,
+                    'connect_timeout' => $connectTimeout ?? 8,
                     'headers' => [
                         'Accept' => 'application/json',
                     ],

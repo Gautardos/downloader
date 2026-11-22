@@ -192,6 +192,7 @@ class QueueManager
             'status' => $status,
             'date' => date('Y-m-d H:i:s'),
             'path' => $item['path'] ?? '',
+            'source_url' => $item['original_url'] ?? null,
             'file_count' => $fileCount,
             'size' => $stats['size'] ?? ($item['size'] ?? null),
             'actual_size' => isset($stats['size']) && is_numeric($stats['size']) ? (int) $stats['size'] : null,

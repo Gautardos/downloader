@@ -2,7 +2,7 @@
 
 Une plateforme self-hosted de gestion de médias, développée avec Symfony & Python et livrée sous forme d'image Docker unique. Elle gère les téléchargements vidéo, torrents et liens directs via Alldebrid, un pipeline musical complet de la recherche Spotify à la bibliothèque taguée, une interface de découverte TMDB/Stremio, et un moteur d'automatisation qui synchronise votre bibliothèque NAS avec des listes externes.
 
-**Version :** 2.7.2
+**Version :** 2.8.1
 
 | Ressource | Lien |
 | --------- | ---- |
@@ -64,12 +64,18 @@ Une plateforme self-hosted de gestion de médias, développée avec Symfony & Py
 ### 🛠️ Système
 - **File de téléchargement** — traitement séquentiel via un worker en arrière-plan (géré par Supervisor).
 - **Worker d'automation** — scans, synchronisations de listes et intents de releases en arrière-plan.
+- **Worker de maintenance** — mise à jour de la base torrents, rotation des logs et contrôles d'intégrité planifiés.
+- **Worker d'automatisations musicales** — suit des playlists Spotify et ajoute les pistes manquantes.
+- **Recherche globale** — une palette (`Ctrl/Cmd+K`) sur les actions, torrents, historique, TMDB et Spotify.
+- **Statistiques** — tableau de bord d'activité (`7j` / `30j` / `90j` / tout) avec export CSV.
+- **Intégrité vidéo** — détecte les téléchargements tronqués, corrompus ou manquants et peut les remettre en file.
+- **PWA & Web Push** — application installable, page hors-ligne, notifications VAPID pour téléchargements, erreurs, automatisations et intégrité.
 - **Tracker temps réel** — progression en direct avec polling et notifications navigateur.
 - **Historique complet** — journaux détaillés avec limite de rétention configurable.
 - **Authentification** — login simple avec identifiants configurables (défaut : `admin` / `admin`) et protection CSRF.
 - **Fournisseur IA** — OpenRouter (par défaut) avec fallback xAI et un modèle par usage (défaut, renommage, genre musical).
 - **UI adaptative** — les éléments de navigation sont masqués automatiquement quand leurs dépendances ne sont pas configurées.
-- **Stockage fichier** — JSON pour la configuration/file/historique, SQLite pour la base torrents et l'index d'automation ; aucun serveur SQL externe requis.
+- **Stockage fichier** — JSON pour la configuration/file/historique, SQLite pour torrents, automatisations, maintenance, intégrité, règles musicales et abonnements PWA ; aucun serveur SQL externe requis.
 
 ---
 
@@ -95,6 +101,7 @@ L'application est distribuée sous forme d'image Docker préconstruite. Le dépl
 - Un compte **Alldebrid** pour les fonctionnalités vidéo/torrents.
 - Un compte développeur **Spotify** et une session Spotify pour la musique.
 - Optionnel : une clé API **TMDB** (Discover), une clé **OpenRouter** ou **xAI** (fonctions IA), des identifiants **Scrob/MDBList** (Automations), un client **Jellyfin/Nuvio** (streaming).
+- **HTTPS** (ou `localhost`) pour la PWA : l'installation, le service worker et le Web Push exigent un contexte sécurisé. Du HTTP simple sur une IP du LAN ne les activera pas.
 
 > [!IMPORTANT]
 > Le fichier Compose utilise `network_mode: host`. Sous Docker Desktop pour Windows, cela nécessite **Docker Desktop ≥ 4.34** avec des conteneurs Linux (voir la section Windows du [dépôt conteneur](https://github.com/Gautardos/docker-downloader)).
@@ -115,9 +122,9 @@ mkdir -p downloads music nas
 sudo chown -R 1000:1000 var downloads music nas
 ```
 
-- `var/db/` — bases SQLite (recherche torrents, index d'automation).
+- `var/db/` — bases SQLite (recherche torrents, index d'automation, maintenance, intégrité, automatisations musicales, abonnements push PWA).
 - `var/home/` — home persistant (credentials Spotify, archive Zotify).
-- `var/storage/` — configuration, file d'attente, historique, logs et caches.
+- `var/storage/` — configuration, file d'attente, historique, logs, caches et paire de clés VAPID.
 - `downloads/`, `music/`, `nas/` — points de montage médias. Adaptez-les à vos disques ou partages NFS/SMB.
 
 The application processes run as UID 1000 inside the container: data and media directories must be writable by that UID (on network shares, by the UID the share maps writes to).
@@ -133,7 +140,7 @@ MUSIC_DIR=./music
 NAS_DIR=./nas
 ```
 
-Utilisez une version explicite (par exemple `IMAGE_TAG=2.7.2`) pour un déploiement reproductible. Les chemins sont des chemins **hôte** ; ils sont montés vers des chemins conteneur fixes.
+Utilisez une version explicite (par exemple `IMAGE_TAG=2.8.1`) pour un déploiement reproductible. Les chemins sont des chemins **hôte** ; ils sont montés vers des chemins conteneur fixes.
 
 > [!NOTE]
 > L'image sert le HTTP sur le port **8000**. Conservez `PORT=8000` sauf si vous personnalisez l'image ; avec `network_mode: host`, l'application est accessible sur ce port.
@@ -386,7 +393,7 @@ Spotify applique la qualité audio côté serveur ; le client ne peut pas déblo
 
 ## 🏗️ Architecture
 
-Le conteneur exécute quatre services gérés par **Supervisor** :
+Le conteneur exécute six services gérés par **Supervisor** :
 
 | Service | Rôle |
 | ------- | ---- |
@@ -394,15 +401,21 @@ Le conteneur exécute quatre services gérés par **Supervisor** :
 | **Redis** | Stocke les sessions PHP (évite la contention de verrous de session) |
 | **Download Worker** | Traite séquentiellement la file de téléchargement (`app:download-worker`) |
 | **Automation Worker** | Exécute les scans planifiés, synchronisations de listes et intents de releases (`app:automation-worker`) |
+| **Maintenance Worker** | Exécute la planification de maintenance (`app:maintenance --loop`) |
+| **Music Automations Worker** | Suit les playlists Spotify (`app:music-automations --loop`) |
+
+Tous les workers écrivent leurs stderr dans `var/storage/logs/*_error.log`. Les
+bases `maintenance.db`, `integrity.db`, `music_automations.db` et `pwa.db` sont
+créées automatiquement dans `var/db` à la première utilisation.
 
 ### Correspondance des volumes
 
 ```
 Hôte                                    → Conteneur
 ────────────────────────────────────────────────────────────────
-~/downloader-app/var/db                 → /var/www/html/var/db         (bases SQLite)
+~/downloader-app/var/db                 → /var/www/html/var/db         (SQLite : torrents, automation, maintenance, intégrité, musique, PWA)
 ~/downloader-app/var/home               → /var/www/html/var/home       (credentials Spotify, archive)
-~/downloader-app/var/storage            → /var/www/html/var/storage    (config, file, historique, logs)
+~/downloader-app/var/storage            → /var/www/html/var/storage    (config, file, historique, logs, clés VAPID)
 ~/downloader-app/downloads              → /downloads                   (sortie torrent/vidéo)
 ~/downloader-app/music                  → /music                       (téléchargements musique)
 ~/downloader-app/nas                    → /nas                         (bibliothèque NAS, lecture/écriture)
@@ -466,11 +479,16 @@ docker exec -it downloader-container cat /var/www/html/var/storage/logs/worker.l
 # Automation worker
 docker exec -it downloader-container cat /var/www/html/var/storage/logs/automation_worker.log
 
+# Workers maintenance et automatisations musicales
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/maintenance_error.log
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/music_automations_worker_error.log
+
 # Erreurs fatales du worker
 docker exec -it downloader-container cat /var/www/html/var/storage/logs/worker_error.log
 docker exec -it downloader-container cat /var/www/html/var/storage/logs/automation_worker_error.log
 
 # Supervisor
+docker exec -it downloader-container supervisorctl status
 docker exec -it downloader-container cat /var/log/supervisord.log
 ```
 
@@ -487,6 +505,10 @@ docker exec -it downloader-container supervisorctl restart worker
 
 # Redémarrer uniquement l'automation worker
 docker exec -it downloader-container supervisorctl restart automation-worker
+
+# Redémarrer les workers maintenance ou automatisations musicales
+docker exec -it downloader-container supervisorctl restart maintenance-worker
+docker exec -it downloader-container supervisorctl restart music-automations-worker
 ```
 
 ### Sauvegarde & restauration
@@ -511,7 +533,8 @@ docker compose up -d
 
 ## 📝 Notes & limites
 
-- La configuration, la file d'attente et l'historique utilisent des fichiers JSON (`JsonStorage`) sous `var/storage/` ; SQLite est utilisé pour la base de recherche torrents et l'index d'automation. Redis sert **uniquement** aux sessions PHP.
+- La configuration, la file d'attente et l'historique utilisent des fichiers JSON (`JsonStorage`) sous `var/storage/` ; SQLite est utilisé pour la base de recherche torrents, l'index d'automation, les runs de maintenance/intégrité, les règles musicales et les abonnements push PWA. Redis sert **uniquement** aux sessions PHP.
+- **PWA / Web Push** exigent un contexte sécurisé (HTTPS ou `localhost`). Les clés VAPID sont générées au premier démarrage dans `var/storage/pwa_vapid.json` (mode `0600`) ; la clé privée ne quitte jamais le serveur. Les endpoints push sont limités aux hôtes officiels FCM/Mozilla/Apple/Microsoft.
 - Le binaire `librespot-auth` est compilé lors du build de l'image et n'a pas besoin d'être installé séparément.
 - Les Automations ne suppriment jamais de fichiers du NAS : les fichiers absents sont marqués `missing`, et seules les actions explicites (renommage, nettoyage des dossiers vides) déplacent les choses.
 - La passerelle Jellyfin est **direct-play uniquement** (sans transcodage) et expose uniquement la vidéo.
@@ -520,6 +543,7 @@ docker compose up -d
 - Les chemins configurés dans l'UI sont internes au conteneur. Gardez la disposition des montages hôte stable entre les mises à jour.
 - At startup the entrypoint enforces permissions on its data: `var/storage` 710, `var/storage/logs` 2750 (setgid), `*.log` 640, other files 600, `var/db` 700/600. To let an external log shipper read the logs, give `var/storage` and `var/storage/logs` a group it belongs to. Mounted media folders are never changed recursively: only their top level is adjusted when owned by root, and a refused change (network share) does not block startup.
 - If the host already runs Redis on `127.0.0.1:6379` (host networking), the application uses it for sessions instead of the bundled one.
+- La version 2.8.1 passe le runtime à Symfony **6.4 LTS** (PHP 8.1+), Twig 3.30 et Guzzle 7.16/PSR-7 2.13. `composer audit` ne remonte **aucun avis**.
 
 ---
 
@@ -527,4 +551,4 @@ docker compose up -d
 
 - **Application :** https://github.com/Gautardos/downloader
 - **Déploiement conteneurisé (Compose, guide Windows, compose de release) :** https://github.com/Gautardos/docker-downloader
-- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md)
+- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md) · [RELEASE_NOTES_2.8.md](RELEASE_NOTES_2.8.md)

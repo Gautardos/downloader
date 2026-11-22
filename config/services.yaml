@@ -1,8 +1,20 @@
+parameters:
+    app.global_search.default_limit: 8
+    app.global_search.max_limit: 20
+    app.global_search.max_query_length: 100
+    app.global_search.remote_timeout: 4
+
 services:
     # default configuration for services in *this* file
     _defaults:
         autowire: true      # Automatically injects dependencies in your services.
         autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+
+    _instanceof:
+        App\Service\Maintenance\Job\MaintenanceJobInterface:
+            tags: ['app.maintenance_job']
+        App\Service\Search\SearchProviderInterface:
+            tags: ['app.search_provider']
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name
@@ -33,6 +45,41 @@ services:
     App\Service\Automation\AutomationStore:
         arguments:
             $projectDir: '%kernel.project_dir%'
+
+    App\Service\MusicAutomation\MusicAutomationStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\MusicAutomation\PlaylistMetadataProviderInterface:
+        alias: App\Service\MusicAutomation\SpotifyUserPlaylistMetadataProvider
+
+    App\Service\MusicAutomation\MusicLibraryIndexInterface:
+        alias: App\Service\MusicAutomation\TaggedMusicLibraryIndex
+
+    App\Service\Maintenance\MaintenanceStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+    App\Service\Integrity\IntegrityStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Integrity\FileIntegrityChecker:
+        arguments:
+            $ffprobeBinary: null
+
+
+    App\Service\Maintenance\TorrentDatabaseUpdater:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Maintenance\Job\LogRotationJob:
+        arguments:
+            $now: null
+
+    App\Service\Maintenance\MaintenanceRunner:
+        arguments:
+            $jobs: !tagged_iterator app.maintenance_job
+            $now: null
 
     App\Service\Automation\LibraryIndexService:
         arguments:
@@ -73,8 +120,47 @@ services:
     App\Service\Automation\SeriesNumberingProviderInterface:
         alias: App\Service\Automation\FallbackSeriesNumberingProvider
 
+    App\Service\Statistics\StorageUsageProviderInterface:
+        alias: App\Service\Statistics\FilesystemStorageUsageProvider
+
+    App\Service\StatisticsService:
+        arguments:
+            $now: null
+
     App\Service\HostResolverInterface:
         alias: App\Service\DnsHostResolver
+
+    App\Service\Search\GlobalSearchService:
+        arguments:
+            $providers: !tagged_iterator app.search_provider
+            $defaultLimit: '%app.global_search.default_limit%'
+            $maxLimit: '%app.global_search.max_limit%'
+            $maxQueryLength: '%app.global_search.max_query_length%'
+
+    App\Service\Search\Provider\MediaSearchProvider:
+        arguments:
+            $timeout: '%app.global_search.remote_timeout%'
+
+    App\Service\Search\Provider\MusicSearchProvider:
+        arguments:
+            $timeout: '%app.global_search.remote_timeout%'
+
+    App\Service\Pwa\VapidKeyService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Pwa\PushSubscriptionStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\Pwa\PushTransportInterface:
+        alias: App\Service\Pwa\MinishlinkPushTransport
+
+    App\Service\Pwa\WebPushServiceInterface:
+        alias: App\Service\Pwa\WebPushService
+
+    App\Service\Pwa\PushNotifierInterface:
+        alias: App\Service\Pwa\PushNotifier
 
     # Redis Session Configuration
     Redis:

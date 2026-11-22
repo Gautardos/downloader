@@ -20,9 +20,12 @@
         {% endblock %}
     {% endembed %}
 
-    <div class="view-switcher">
-        <a href="{{ path('torrent') }}" class="btn btn-secondary">Recent links</a>
-        <a href="{{ path('torrent', {view: 'packs'}) }}" class="btn btn-primary">Packs (advanced)</a>
+    <div class="view-switcher" role="tablist" aria-label="Debrid views">
+        <a href="{{ path('torrent') }}" class="view-tab" role="tab">Recent links</a>
+        <a href="{{ path('torrent', {view: 'packs'}) }}" class="view-tab active" role="tab" aria-selected="true">
+            Packs
+            <span class="view-tab-badge">advanced</span>
+        </a>
     </div>
 
     <!-- Global Controls -->
@@ -1507,10 +1510,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <style>
 .view-switcher {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
+    display: inline-flex;
+    gap: 0.3rem;
+    padding: 4px;
+    margin-bottom: 1.35rem;
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 13px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.view-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.58rem 0.9rem;
+    border-radius: 9px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 700;
+    transition: 0.18s ease;
+}
+
+.view-tab:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.view-tab.active {
+    color: var(--text-primary);
+    background: rgba(56, 189, 248, 0.15);
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.25);
+}
+
+.view-tab-badge {
+    padding: 0.12rem 0.38rem;
+    border-radius: 999px;
+    color: #fbbf24;
+    background: rgba(245, 158, 11, 0.12);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .packs-grid {
@@ -1545,11 +1586,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* Recent Paths Manager */
 .recent-paths-manager {
-    background: var(--bg-secondary);
-    border-radius: 12px;
+    background: var(--panel, rgba(30, 41, 59, 0.78));
+    border-radius: 16px;
     padding: 1.5rem;
     margin-bottom: 5rem;
-    border: 1px solid rgba(255,255,255,0.05);
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+    box-shadow: var(--shadow-soft, 0 18px 50px rgba(0, 0, 0, 0.24));
+    backdrop-filter: blur(10px);
 }
 
 .recent-paths-manager h3 {
@@ -1599,10 +1642,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 .pack-card {
     position: relative;
-    background: var(--bg-secondary);
-    border-radius: 12px;
+    background: var(--panel, rgba(30, 41, 59, 0.78));
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+    border-radius: 16px;
     /* overflow: hidden; Removed to prevent potential clipping of datalists/tooltips */
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow-soft, 0 18px 50px rgba(0, 0, 0, 0.24));
+    backdrop-filter: blur(10px);
+    transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.pack-card:hover {
+    border-color: rgba(56, 189, 248, 0.22);
 }
 
 .pack-card.loading .pack-loader-overlay {
@@ -1767,9 +1817,10 @@ document.addEventListener('DOMContentLoaded', () => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.5rem;
+    padding: 1.35rem 1.4rem;
     cursor: pointer;
     transition: background 0.2s;
+    border-radius: 16px 16px 0 0;
 }
 
 .pack-header:hover {
@@ -1819,7 +1870,7 @@ document.addEventListener('DOMContentLoaded', () => {
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
-    border-top: 1px solid rgba(255,255,255,0.1);
+    border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
     gap: 1rem;
 }
 

@@ -4,13 +4,13 @@ namespace App\Controller;
 
 use App\Service\AiService;
 use App\Service\JsonStorage;
+use App\Service\Maintenance\TorrentDatabaseUpdater;
 use App\Service\PasswordService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelInterface;
-use Symfony\Component\Process\Process;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 
 class ConfigController extends AbstractController
 {
@@ -268,171 +268,32 @@ class ConfigController extends AbstractController
     }
 
     #[Route('/config/update-hash-db', name: 'config_update_hash_db', methods: ['POST'])]
-    public function updateHashDb(KernelInterface $kernel): Response
+    public function updateHashDb(TorrentDatabaseUpdater $updater): Response
     {
         @set_time_limit(0);
         @ignore_user_abort(true);
 
         try {
-            $projectDir = $kernel->getProjectDir();
-            $composerHome = $projectDir . '/var/composer_home';
+            $result = $updater->update(true);
 
-            // Ensure composer home directory exists
-            if (!is_dir($composerHome)) {
-                mkdir($composerHome, 0777, true);
-            }
-
-            // Diagnostics before
-            $vendorPkgDir = $projectDir . '/vendor/gautardos/hash-db';
-
-            // Step 1: Force remove the vendor package directory if it exists
-            if (is_dir($vendorPkgDir)) {
-                $processRemove = Process::fromShellCommandline(
-                    strtoupper(substr(PHP_OS, 0, 3)) === 'WIN'
-                    ? "rmdir /s /q " . escapeshellarg($vendorPkgDir)
-                    : "rm -rf " . escapeshellarg($vendorPkgDir)
-                );
-                $processRemove->run();
-            }
-
-            // Step 2: Clear composer cache
-            $processClear = new Process(['composer', 'clear-cache']);
-            $processClear->setEnv(['COMPOSER_HOME' => $composerHome]);
-            $processClear->run();
-
-            // Step 3: Run composer update
-            $cmd = ['composer', 'update', 'gautardos/hash-db', '--no-interaction', '--no-scripts', '--no-plugins', '--no-cache', '--prefer-dist'];
-            $process = new Process($cmd);
-            $process->setWorkingDirectory($projectDir);
-            $process->setEnv(['COMPOSER_HOME' => $composerHome]);
-            $process->setTimeout(600);
-            $process->run();
-
-            if (!$process->isSuccessful()) {
+            if (($result['status'] ?? 'error') !== 'success') {
                 return $this->json([
                     'success' => false,
-                    'message' => 'Composer update failed.',
-                    'details' => $process->getErrorOutput(),
-                    'output' => $process->getOutput()
+                    'message' => (string) ($result['error'] ?? 'Torrent database update failed.'),
+                    'diagnostics' => $result['diagnostics'] ?? [],
                 ]);
             }
 
-            $vendorDbPath = $projectDir . '/vendor/gautardos/hash-db/torrents.db';
-            $vendorSplitPath = $projectDir . '/vendor/gautardos/hash-db/torrents.zip.001';
-            $localDbDir = $projectDir . '/var/db';
-            $localDbPath = $localDbDir . '/torrents.db';
-
-            if (!is_dir($localDbDir)) {
-                mkdir($localDbDir, 0777, true);
-            }
-            @chmod($localDbDir, 0777);
-
-            $diagnostics = [
-                'vendor_db_exists' => file_exists($vendorDbPath),
-                'vendor_split_exists' => file_exists($vendorSplitPath),
-                'local_db_exists_before' => file_exists($localDbPath),
-            ];
-
-            // Copy or Extract DB if it doesn't exist
-            if (!file_exists($localDbPath)) {
-                if (file_exists($vendorDbPath)) {
-                    copy($vendorDbPath, $localDbPath);
-                } elseif (file_exists($vendorSplitPath)) {
-                    // Handle split 7zip archive
-                    $tempZip = $localDbDir . '/torrents_temp.7z';
-
-                    $cmd = "(" .
-                        "cat " . $projectDir . "/vendor/gautardos/hash-db/torrents.zip.00* > " . escapeshellarg($tempZip) .
-                        " && 7z e " . escapeshellarg($tempZip) . " -o" . escapeshellarg($localDbDir) . " -y" .
-                        " && rm " . escapeshellarg($tempZip) .
-                        ")";
-
-                    $processExtract = Process::fromShellCommandline($cmd);
-                    $processExtract->run();
-
-                    $diagnostics['extract_success'] = $processExtract->isSuccessful();
-                    $diagnostics['extract_error'] = $processExtract->getErrorOutput();
-                    $diagnostics['extract_output'] = $processExtract->getOutput();
-
-                    if (!$processExtract->isSuccessful() && !file_exists($localDbPath)) {
-                        return $this->json([
-                            'success' => false,
-                            'message' => 'Failed to extract database archive. Please ensure 7zip is installed (did you rebuild the docker image?).',
-                            'diagnostics' => $diagnostics
-                        ]);
-                    }
-                } else {
-                    return $this->json([
-                        'success' => false,
-                        'message' => 'Database source not found in vendor. Did you run composer update?',
-                        'diagnostics' => $diagnostics
-                    ]);
-                }
-            }
-
-            if (file_exists($localDbPath)) {
-                @chmod($localDbPath, 0666);
-            }
-
-            // Parse CSV and insert into SQLite
-            $inserted = 0;
-            $ignored = 0;
-            $csvPath = $projectDir . '/vendor/gautardos/hash-db/tos_all_hash.txt';
-
-            if (file_exists($localDbPath) && file_exists($csvPath)) {
-                $pdo = new \PDO('sqlite:' . $localDbPath);
-                $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-
-                // Ensure unique constraint
-                $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hash_info ON torrents(hash_info)');
-
-                $stmt = $pdo->prepare('INSERT OR IGNORE INTO torrents (name, hash_info, parent_category, category) VALUES (:name, :hash_info, 2145, NULL)');
-
-                $handle = fopen($csvPath, 'r');
-                if ($handle) {
-                    $pdo->beginTransaction();
-                    try {
-                        while (($line = fgets($handle)) !== false) {
-                            $parts = explode('###', trim($line));
-                            if (count($parts) >= 2) {
-                                $name = $parts[0];
-                                $hashInfo = $parts[1];
-
-                                $stmt->execute([
-                                    ':name' => $name,
-                                    ':hash_info' => $hashInfo
-                                ]);
-
-                                if ($stmt->rowCount() > 0) {
-                                    $inserted++;
-                                } else {
-                                    $ignored++;
-                                }
-                            }
-                        }
-                        $pdo->commit();
-                    } catch (\Exception $e) {
-                        $pdo->rollBack();
-                        throw $e;
-                    }
-                    fclose($handle);
-                }
-            }
-
-            if (!file_exists($localDbPath)) {
-                return $this->json([
-                    'success' => false,
-                    'message' => 'Initialization completed but the database file is still missing in var/db/.',
-                    'diagnostics' => $diagnostics
-                ]);
-            }
-
-            $summary = sprintf("\n--- Database Update ---\nImported: %d\nIgnored (already exists): %d", $inserted, $ignored);
+            $summary = sprintf(
+                "\n--- Database Update ---\nImported: %d\nIgnored (already exists): %d",
+                $result['inserted'] ?? 0,
+                $result['ignored'] ?? 0
+            );
 
             return $this->json([
                 'success' => true,
                 'message' => 'Torrent database updated successfully!' . $summary,
-                'diagnostics' => $diagnostics
+                'diagnostics' => $result['diagnostics'] ?? [],
             ]);
         } catch (\Throwable $e) {
             return $this->json(['success' => false, 'message' => $e->getMessage()]);

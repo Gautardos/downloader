@@ -464,6 +464,73 @@
         </div>
     </form>
 </div>
+
+<div class="card" id="pwa-settings-card" style="margin-top: 2rem;">
+    <div style="display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: flex-start;">
+        <div>
+            <h3 style="color: var(--accent); margin: 0 0 0.35rem 0;">Mobile &amp; notifications</h3>
+            <p style="color: var(--text-secondary); margin: 0; max-width: 680px; font-size: 0.9rem;">
+                Install Downloader on your device and receive push notifications for downloads, errors and automations, even when the tab is closed.
+            </p>
+        </div>
+        <span id="pwa-install-state" class="badge">Checking...</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin: 1.25rem 0;">
+        <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 0.85rem;">
+            <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Installability</div>
+            <strong id="pwa-installability" style="display: block; margin-top: 0.35rem;">Checking...</strong>
+        </div>
+        <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 0.85rem;">
+            <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Permission</div>
+            <strong id="pwa-permission" style="display: block; margin-top: 0.35rem;">Checking...</strong>
+        </div>
+        <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 0.85rem;">
+            <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">VAPID</div>
+            <strong id="pwa-vapid-state" style="display: block; margin-top: 0.35rem;">Checking...</strong>
+        </div>
+        <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 0.85rem;">
+            <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Subscriptions</div>
+            <strong id="pwa-sub-count" style="display: block; margin-top: 0.35rem;">0</strong>
+        </div>
+    </div>
+
+    <p id="pwa-vapid-missing" hidden style="color: var(--warning); font-size: 0.85rem; margin: 0 0 1rem 0;">
+        VAPID keys are missing. Run <code>php bin/console app:pwa:vapid</code> on the server, then reload this page.
+    </p>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+        <button id="pwa-subscribe-btn" class="btn btn-primary" type="button">Subscribe</button>
+        <button id="pwa-unsubscribe-btn" class="btn btn-secondary" type="button">Unsubscribe</button>
+        <button id="pwa-test-btn" class="btn btn-secondary" type="button">Send test notification</button>
+    </div>
+
+    <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1rem;">
+        <h4 style="margin: 0 0 0.75rem 0;">Push events</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.55rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">
+                <input type="checkbox" data-pwa-preference="downloads"> Downloads
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">
+                <input type="checkbox" data-pwa-preference="errors"> Errors
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">
+                <input type="checkbox" data-pwa-preference="automation"> Automation
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">
+                <input type="checkbox" data-pwa-preference="integrity"> Integrity
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">
+                <input type="checkbox" data-pwa-preference="daily_summary"> Daily summary
+            </label>
+        </div>
+        <small style="color: var(--text-secondary); display: block; margin-top: 0.6rem;">
+            Changes are saved automatically. Notification permission is only requested when you press Subscribe.
+        </small>
+    </div>
+
+    <div id="pwa-card-message" role="status" aria-live="polite" style="display: none; margin-top: 1rem; padding: 0.75rem 0.9rem; border-radius: 8px; font-size: 0.85rem;"></div>
+</div>
 {% endblock %}
 
 {% block javascripts %}
@@ -900,5 +967,315 @@ if (musicQualitySelect) {
     musicQualitySelect.addEventListener('change', updateMusicQualityNote);
     updateMusicQualityNote();
 }
+
+const pwaRoutes = {
+    status: "{{ path('pwa_status') }}",
+    vapid: "{{ path('pwa_vapid_public_key') }}",
+    subscribe: "{{ path('pwa_subscribe') }}",
+    unsubscribe: "{{ path('pwa_unsubscribe') }}",
+    test: "{{ path('pwa_test') }}",
+    preferences: "{{ path('pwa_preferences') }}"
+};
+const pwaState = { status: null, subscription: null };
+
+function pwaSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined';
+}
+
+function pwaStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function pwaMessage(text, type) {
+    const el = document.getElementById('pwa-card-message');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerText = text;
+    if (type === 'error') {
+        el.style.color = 'var(--danger)';
+        el.style.background = 'rgba(239, 68, 68, 0.1)';
+        el.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+    } else if (type === 'success') {
+        el.style.color = 'var(--success)';
+        el.style.background = 'rgba(34, 197, 94, 0.1)';
+        el.style.border = '1px solid rgba(34, 197, 94, 0.35)';
+    } else {
+        el.style.color = 'var(--text-secondary)';
+        el.style.background = 'rgba(255,255,255,0.04)';
+        el.style.border = '1px solid rgba(255,255,255,0.1)';
+    }
+}
+
+function pwaClearMessage() {
+    const el = document.getElementById('pwa-card-message');
+    if (el) el.style.display = 'none';
+}
+
+function pwaUrlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = window.atob(base64);
+    const output = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+        output[i] = raw.charCodeAt(i);
+    }
+    return output;
+}
+
+async function pwaFetchJson(url, options) {
+    const response = await fetch(url, options);
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (e) {
+        data = null;
+    }
+    if (!response.ok || !data || data.success === false) {
+        throw new Error((data && data.message) ? data.message : 'Request failed.');
+    }
+    return data;
+}
+
+async function pwaGetRegistration() {
+    if (!window.isSecureContext) {
+        throw new Error('PWA requires HTTPS.');
+    }
+    if (typeof window.pwaRegisterServiceWorker === 'function') {
+        const registration = await window.pwaRegisterServiceWorker();
+        if (registration) return registration;
+    }
+    if (!('serviceWorker' in navigator)) {
+        throw new Error('Service workers are not supported in this browser.');
+    }
+    return navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+}
+
+function pwaUpdateButtons() {
+    const subscribeBtn = document.getElementById('pwa-subscribe-btn');
+    const unsubscribeBtn = document.getElementById('pwa-unsubscribe-btn');
+    const testBtn = document.getElementById('pwa-test-btn');
+    if (!subscribeBtn || !unsubscribeBtn || !testBtn) return;
+
+    const supported = pwaSupported();
+    const vapidConfigured = !!(pwaState.status && pwaState.status.vapidConfigured);
+    const permission = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
+    const hasSubscription = !!pwaState.subscription || !!(pwaState.status && pwaState.status.subscribed);
+    const count = pwaState.status ? Number(pwaState.status.enabledSubscriptionCount || 0) : 0;
+
+    subscribeBtn.disabled = !supported || !vapidConfigured || permission === 'denied' || hasSubscription;
+    unsubscribeBtn.disabled = !supported || !hasSubscription;
+    testBtn.disabled = !supported || !vapidConfigured || count === 0;
+}
+
+function pwaRenderStatus() {
+    const status = pwaState.status || {};
+    const permission = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
+    const installState = document.getElementById('pwa-install-state');
+    const installability = document.getElementById('pwa-installability');
+    const permissionEl = document.getElementById('pwa-permission');
+    const vapidEl = document.getElementById('pwa-vapid-state');
+    const subCount = document.getElementById('pwa-sub-count');
+    const vapidMissing = document.getElementById('pwa-vapid-missing');
+
+    if (installState) installState.innerText = pwaStandalone() ? 'Standalone' : 'Browser';
+    if (installability) installability.innerText = pwaStandalone() ? 'Installed' : 'Browser';
+    if (permissionEl) permissionEl.innerText = permission === 'default' ? 'not requested' : permission;
+    if (vapidEl) vapidEl.innerText = status.vapidConfigured ? 'Configured' : 'Missing';
+    if (subCount) subCount.innerText = String(status.subscriptionCount || 0);
+    if (vapidMissing) vapidMissing.hidden = !!status.vapidConfigured;
+
+    document.querySelectorAll('[data-pwa-preference]').forEach(function (input) {
+        const key = input.getAttribute('data-pwa-preference');
+        if (status.preferences && Object.prototype.hasOwnProperty.call(status.preferences, key)) {
+            input.checked = status.preferences[key] === true;
+        }
+    });
+
+    pwaUpdateButtons();
+}
+
+async function pwaRefreshStatus() {
+    try {
+        pwaState.status = await pwaFetchJson(pwaRoutes.status, { headers: { 'Accept': 'application/json' } });
+    } catch (e) {
+        pwaState.status = null;
+    }
+
+    try {
+        if (pwaSupported() && window.isSecureContext) {
+            const registration = await navigator.serviceWorker.getRegistration('/');
+            if (registration) {
+                pwaState.subscription = await registration.pushManager.getSubscription();
+            }
+        }
+    } catch (e) {
+        pwaState.subscription = null;
+    }
+
+    pwaRenderStatus();
+}
+
+async function pwaSubscribe() {
+    pwaClearMessage();
+    if (!pwaSupported()) {
+        pwaMessage('Push notifications are not supported in this browser.', 'error');
+        return;
+    }
+    if (!pwaState.status || !pwaState.status.vapidConfigured) {
+        pwaMessage('VAPID keys are missing. Run php bin/console app:pwa:vapid on the server.', 'error');
+        return;
+    }
+
+    const button = document.getElementById('pwa-subscribe-btn');
+    const previousLabel = button ? button.innerText : 'Subscribe';
+    if (button) {
+        button.disabled = true;
+        button.innerText = 'Subscribing...';
+    }
+
+    try {
+        const permission = Notification.permission === 'granted'
+            ? 'granted'
+            : await Notification.requestPermission();
+        if (permission !== 'granted') {
+            throw new Error('Notification permission was not granted.');
+        }
+
+        const vapid = await pwaFetchJson(pwaRoutes.vapid, { headers: { 'Accept': 'application/json' } });
+        if (!vapid.configured || !vapid.publicKey) {
+            throw new Error('VAPID public key is not configured.');
+        }
+
+        const registration = await pwaGetRegistration();
+        await navigator.serviceWorker.ready;
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: pwaUrlBase64ToUint8Array(vapid.publicKey)
+            });
+        }
+
+        await pwaFetchJson(pwaRoutes.subscribe, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: subscription.toJSON() })
+        });
+
+        pwaState.subscription = subscription;
+        pwaMessage('Push notifications enabled for this browser.', 'success');
+        await pwaRefreshStatus();
+    } catch (e) {
+        pwaMessage(e.message || 'Unable to subscribe to push notifications.', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = previousLabel;
+        }
+        pwaUpdateButtons();
+    }
+}
+
+async function pwaUnsubscribe() {
+    pwaClearMessage();
+    const button = document.getElementById('pwa-unsubscribe-btn');
+    const previousLabel = button ? button.innerText : 'Unsubscribe';
+    if (button) {
+        button.disabled = true;
+        button.innerText = 'Removing...';
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.getRegistration('/');
+        const subscription = registration ? await registration.pushManager.getSubscription() : null;
+        if (!subscription) {
+            pwaMessage('No active push subscription was found for this browser.', 'info');
+            pwaState.subscription = null;
+            await pwaRefreshStatus();
+            return;
+        }
+
+        await pwaFetchJson(pwaRoutes.unsubscribe, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+        });
+        await subscription.unsubscribe();
+        pwaState.subscription = null;
+        pwaMessage('Push notifications disabled for this browser.', 'success');
+        await pwaRefreshStatus();
+    } catch (e) {
+        pwaMessage(e.message || 'Unable to unsubscribe.', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = previousLabel;
+        }
+        pwaUpdateButtons();
+    }
+}
+
+async function pwaSendTest() {
+    pwaClearMessage();
+    const button = document.getElementById('pwa-test-btn');
+    const previousLabel = button ? button.innerText : 'Send test notification';
+    if (button) {
+        button.disabled = true;
+        button.innerText = 'Sending...';
+    }
+
+    try {
+        const result = await pwaFetchJson(pwaRoutes.test, { method: 'POST' });
+        pwaMessage(result.message || 'Test notification sent.', 'success');
+    } catch (e) {
+        pwaMessage(e.message || 'Unable to send a test notification.', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = previousLabel;
+        }
+        pwaUpdateButtons();
+    }
+}
+
+async function pwaSavePreferences() {
+    const preferences = {};
+    document.querySelectorAll('[data-pwa-preference]').forEach(function (input) {
+        preferences[input.getAttribute('data-pwa-preference')] = input.checked;
+    });
+
+    try {
+        const result = await pwaFetchJson(pwaRoutes.preferences, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ preferences: preferences })
+        });
+        if (pwaState.status) {
+            pwaState.status.preferences = result.preferences;
+        }
+        pwaMessage('Notification preferences saved.', 'success');
+    } catch (e) {
+        pwaMessage(e.message || 'Unable to save notification preferences.', 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-pwa-preference]').forEach(function (input) {
+        input.addEventListener('change', pwaSavePreferences);
+    });
+
+    const subscribeBtn = document.getElementById('pwa-subscribe-btn');
+    const unsubscribeBtn = document.getElementById('pwa-unsubscribe-btn');
+    const testBtn = document.getElementById('pwa-test-btn');
+    if (subscribeBtn) subscribeBtn.addEventListener('click', pwaSubscribe);
+    if (unsubscribeBtn) unsubscribeBtn.addEventListener('click', pwaUnsubscribe);
+    if (testBtn) testBtn.addEventListener('click', pwaSendTest);
+
+    if (!pwaSupported()) {
+        pwaMessage('Push notifications are not supported in this browser.', 'info');
+    }
+
+    pwaRefreshStatus();
+});
 </script>
 {% endblock %}

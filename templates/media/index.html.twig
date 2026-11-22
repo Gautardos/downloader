@@ -335,7 +335,7 @@
     .discover-source-top { display:flex; gap:.45rem; align-items:center; flex-wrap:wrap; margin-bottom:.25rem; }
     .discover-source-addon { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
     .discover-source-quality { font-weight:800; font-size:.82rem; }
-    .discover-source-title { color:var(--text-secondary); font-size:.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:560px; }
+    .discover-source-title { color:var(--text-secondary); font-size:.78rem; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
     .discover-source-meta { display:flex; gap:.65rem; flex-wrap:wrap; margin-top:.45rem; font-size:.72rem; color:var(--text-secondary); }
     .discover-seeders { color:var(--success); font-weight:700; }
     .discover-loading { display:none; padding:2rem; border:1px dashed var(--border); border-radius:12px; text-align:center; color:var(--text-secondary); }
@@ -401,7 +401,7 @@
         .discover-detail-poster { width:100px; }
         .discover-detail-body { padding:1.25rem; }
         .discover-source { flex-direction:column; align-items:stretch; }
-        .discover-source-title { white-space:normal; }
+        .discover-source-title { white-space:normal; overflow-wrap:anywhere; }
         .discover-source .btn { width:100%; }
         .discover-notice { flex-direction:column; align-items:flex-start; }
     }
@@ -1857,6 +1857,20 @@ renderMediaCards();
 renderAddonsList();
 renderDiscoverStatus();
 setDiscoveryMode(nuvioCollections.length > 0 ? 'browse' : 'search');
+
+const paletteDeepLink = /^(movie|series)-(\d+)$/.exec(new URLSearchParams(location.search).get('tmdb') || '');
+if (paletteDeepLink) {
+    openMediaDetail({
+        id: parseInt(paletteDeepLink[2], 10),
+        type: paletteDeepLink[1],
+        title: 'Loading…',
+        year: '',
+        poster: '',
+        backdrop: '',
+        overview: '',
+        rating: null
+    });
+}
 
 const browsePreviewParams = new URLSearchParams(location.search);
 if (browsePreviewParams.has('folder') && nuvioCollections.length > 0) {

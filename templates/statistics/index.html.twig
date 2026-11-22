@@ -1,0 +1,679 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Statistics - Alldebrid Downloader{% endblock %}
+
+{% block body %}
+{% embed '_partials/page_header.html.twig' with {
+    title: 'Statistics',
+    subtitle: 'Download volume, success rate, storage usage and media breakdown for the selected period.',
+    icon: 'history',
+    badge: summary.items ~ ' items',
+    badge_class: 'header-badge--neutral',
+    badge_dot: false
+} %}
+    {% block actions %}
+        <nav class="stats-periods" aria-label="Statistics period">
+            {% for key, label in periods %}
+                <a href="{{ path('statistics', {period: key}) }}"
+                   class="stats-period{{ key == period ? ' active' : '' }}"
+                   {% if key == period %}aria-current="page"{% endif %}>
+                    {{ label }}
+                </a>
+            {% endfor %}
+        </nav>
+        <a class="btn btn-secondary" href="{{ path('statistics_export', {period: period}) }}">Export CSV</a>
+    {% endblock %}
+{% endembed %}
+
+<section class="stats-grid stats-grid--4" aria-label="Key metrics">
+    <article class="card stats-card">
+        <p class="stats-card-label">Downloaded volume</p>
+        <p class="stats-card-value">{{ summary.total_human }}</p>
+        <p class="stats-card-meta">{{ summary.items }} item{{ summary.items == 1 ? '' : 's' }} in {{ period_label|lower }}</p>
+    </article>
+
+    <article class="card stats-card">
+        <p class="stats-card-label">Success rate</p>
+        <p class="stats-card-value">{{ summary.success_rate_percent }}<small>%</small></p>
+        <p class="stats-card-meta">{{ summary.success }} success / {{ summary.items }} item{{ summary.items == 1 ? '' : 's' }}</p>
+    </article>
+
+    <article class="card stats-card">
+        <p class="stats-card-label">Average speed</p>
+        <p class="stats-card-value">{{ summary.average_speed_human }}</p>
+        <p class="stats-card-meta">Average item size: {{ summary.average_size_human }}</p>
+    </article>
+
+    <article class="card stats-card">
+        <p class="stats-card-label">Free disk space</p>
+        <p class="stats-card-value">{{ storage.has_volumes ? storage.free_human : '--' }}</p>
+        <p class="stats-card-meta">
+            {% if storage.has_volumes %}
+                {{ storage.total_human }} total across {{ storage.volumes|length }} volume{{ storage.volumes|length == 1 ? '' : 's' }}
+            {% else %}
+                No configured storage volume is available
+            {% endif %}
+        </p>
+    </article>
+</section>
+
+<section class="stats-grid stats-grid--2" aria-label="Trends and storage">
+    <article class="card stats-panel">
+        <div class="stats-panel-head">
+            <div>
+                <h2 class="stats-panel-title">Downloads per day</h2>
+                <p class="stats-panel-subtitle">Items recorded on each day of the selected period. Empty days are shown as zero.</p>
+            </div>
+            <span class="badge stats-badge">{{ period_label }}</span>
+        </div>
+
+        {% if daily is empty %}
+            <p class="stats-empty">No daily activity to display for this period.</p>
+        {% else %}
+            <div class="stats-bars" role="list" aria-label="Downloads per day">
+                {% for day in daily %}
+                    <div class="stats-bar-col"
+                         role="listitem"
+                         aria-label="{{ day.date }}: {{ day.items }} item{{ day.items == 1 ? '' : 's' }}, {{ day.bytes_human }}"
+                         title="{{ day.date }}: {{ day.items }} item{{ day.items == 1 ? '' : 's' }}, {{ day.bytes_human }}">
+                        <div class="stats-bar-track" aria-hidden="true">
+                            <span class="stats-bar" style="height: {{ day.height }}%"></span>
+                        </div>
+                        {% if daily|length <= 31 or loop.index0 % 7 == 0 or loop.last %}
+                            <span class="stats-bar-label" aria-hidden="true">{{ day.date|date('M j') }}</span>
+                        {% else %}
+                            <span class="stats-bar-label" aria-hidden="true"></span>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+            <p class="stats-note">
+                {{ summary.items }} item{{ summary.items == 1 ? '' : 's' }} and {{ summary.total_human }} over {{ range.days }} day{{ range.days == 1 ? '' : 's' }}.
+                Total duration: {{ summary.total_duration }} s.
+            </p>
+        {% endif %}
+    </article>
+
+    <article class="card stats-panel">
+        <div class="stats-panel-head">
+            <div>
+                <h2 class="stats-panel-title">Mounted storage</h2>
+                <p class="stats-panel-subtitle">Disk capacity of the configured download, music and library paths.</p>
+            </div>
+        </div>
+
+        {% if storage.has_volumes %}
+            <div class="stats-table-wrap">
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Path</th>
+                            <th scope="col" class="stats-right">Total</th>
+                            <th scope="col" class="stats-right">Free</th>
+                            <th scope="col" class="stats-right">Used</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for volume in storage.volumes %}
+                            <tr>
+                                <td class="stats-mono stats-break">{{ volume.path }}</td>
+                                <td class="stats-right stats-mono">{{ volume.total_human }}</td>
+                                <td class="stats-right stats-mono">{{ volume.free_human }}</td>
+                                <td class="stats-right stats-mono">{{ volume.used_human }} ({{ volume.used_percent }}%)</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="stats-note">
+                History volume: {{ storage.history_human }}.
+                {% if storage.unavailable_paths is not empty %}
+                    Unavailable: {{ storage.unavailable_paths|join(', ') }}.
+                {% endif %}
+            </p>
+        {% else %}
+            <p class="stats-empty">No configured storage path is available or readable.</p>
+            {% if storage.unavailable_paths is not empty %}
+                <p class="stats-note">Unavailable: {{ storage.unavailable_paths|join(', ') }}.</p>
+            {% endif %}
+        {% endif %}
+    </article>
+</section>
+
+<section class="stats-grid stats-grid--2" aria-label="Breakdowns">
+    <article class="card stats-panel">
+        <div class="stats-panel-head">
+            <div>
+                <h2 class="stats-panel-title">Storage by media type</h2>
+                <p class="stats-panel-subtitle">Share of the downloaded volume recorded in history.</p>
+            </div>
+        </div>
+        <div class="stats-meter-list">
+            {% for type in types %}
+                <div class="stats-meter-row">
+                    <div class="stats-meter-head">
+                        <span>{{ type.label }}</span>
+                        <span class="stats-mono">{{ type.bytes_human }} · {{ type.items }} item{{ type.items == 1 ? '' : 's' }}</span>
+                    </div>
+                    <div class="stats-progress" role="img" aria-label="{{ type.label }}: {{ type.percent_bytes }}% of downloaded volume">
+                        <span style="width: {{ type.percent_bytes }}%"></span>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        {% if summary.items == 0 %}
+            <p class="stats-empty">No history entries in this period.</p>
+        {% endif %}
+    </article>
+
+    <article class="card stats-panel">
+        <div class="stats-panel-head">
+            <div>
+                <h2 class="stats-panel-title">Top categories</h2>
+                <p class="stats-panel-subtitle">Estimated from media type and download path.</p>
+            </div>
+        </div>
+        <div class="stats-meter-list">
+            {% for category in categories %}
+                <div class="stats-meter-row">
+                    <div class="stats-meter-head">
+                        <span>{{ category.label }}</span>
+                        <span class="stats-mono">{{ category.items }} item{{ category.items == 1 ? '' : 's' }} · {{ category.percent }}%</span>
+                    </div>
+                    <div class="stats-progress" role="img" aria-label="{{ category.label }}: {{ category.percent }}% of items">
+                        <span style="width: {{ category.percent }}%"></span>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card stats-panel">
+        <div class="stats-panel-head">
+            <div>
+                <h2 class="stats-panel-title">Quality mix</h2>
+                <p class="stats-panel-subtitle">Detected from resolution markers in file names.</p>
+            </div>
+        </div>
+        <div class="stats-meter-list">
+            {% for quality in quality %}
+                <div class="stats-meter-row">
+                    <div class="stats-meter-head">
+                        <span>{{ quality.label }}</span>
+                        <span class="stats-mono">{{ quality.items }} · {{ quality.percent }}%</span>
+                    </div>
+                    <div class="stats-progress" role="img" aria-label="{{ quality.label }}: {{ quality.percent }}% of items">
+                        <span style="width: {{ quality.percent }}%"></span>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card stats-panel">
+        <div class="stats-panel-head">
+            <div>
+                <h2 class="stats-panel-title">Status mix</h2>
+                <p class="stats-panel-subtitle">Outcome of downloads recorded in the selected period.</p>
+            </div>
+        </div>
+        <div class="stats-meter-list">
+            {% set statusRows = [
+                {'label': 'Success', 'value': summary.success, 'class': 'success'},
+                {'label': 'Warning', 'value': summary.warning, 'class': 'warning'},
+                {'label': 'Error', 'value': summary.error, 'class': 'error'},
+                {'label': 'Canceled', 'value': summary.canceled, 'class': 'canceled'},
+                {'label': 'Failed / Requeued', 'value': summary.failed_requeued, 'class': 'requeued'},
+                {'label': 'Other / Unknown', 'value': summary.other, 'class': 'other'}
+            ] %}
+            {% for row in statusRows %}
+                <div class="stats-meter-row">
+                    <div class="stats-meter-head">
+                        <span>{{ row.label }}</span>
+                        <span class="stats-mono">{{ row.value }} item{{ row.value == 1 ? '' : 's' }}</span>
+                    </div>
+                    <div class="stats-progress stats-progress--{{ row.class }}" role="img" aria-label="{{ row.label }}: {{ row.value }} items">
+                        <span style="width: {{ summary.items > 0 ? (row.value / summary.items * 100)|round(1) : 0 }}%"></span>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="card stats-panel stats-recent">
+    <div class="stats-panel-head">
+        <div>
+            <h2 class="stats-panel-title">Recent downloads</h2>
+            <p class="stats-panel-subtitle">The 10 latest entries of the selected period, newest first.</p>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="{{ path('history') }}">View full history</a>
+    </div>
+
+    <div class="stats-table-wrap">
+        <table class="stats-table">
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Item</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="stats-right">Size</th>
+                    <th scope="col" class="stats-right">Speed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set statusLabels = {
+                    'success': 'Success',
+                    'warning': 'Warning',
+                    'error': 'Error',
+                    'canceled': 'Canceled',
+                    'failed_requeued': 'Failed / Requeued',
+                    'unknown': 'Unknown'
+                } %}
+                {% for item in recent %}
+                    <tr>
+                        <td class="stats-nowrap stats-mono">{{ item.date }}</td>
+                        <td>
+                            <div class="stats-filename">{{ item.filename }}</div>
+                            {% if item.path %}
+                                <div class="stats-path" title="{{ item.path }}">{{ item.path }}</div>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.type_label }}</td>
+                        <td>
+                            <span class="stats-status stats-status--{{ item.status }}">
+                                {{ statusLabels[item.status] ?? item.status|title }}
+                            </span>
+                        </td>
+                        <td class="stats-right stats-mono stats-nowrap">{{ item.size_human }}</td>
+                        <td class="stats-right stats-mono stats-nowrap">{{ item.speed_human }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="6" class="stats-empty">No downloads recorded for this period.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<style>
+    .page-content {
+        position: relative;
+        z-index: 0;
+        isolation: isolate;
+    }
+
+    .stats-periods {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        flex-wrap: wrap;
+    }
+
+    .stats-period {
+        padding: 0.45rem 0.7rem;
+        border-radius: 7px;
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .stats-period:hover {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    .stats-period.active {
+        color: #07111f;
+        background: var(--accent);
+    }
+
+    .stats-grid {
+        display: grid;
+        gap: 1.25rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .stats-grid--4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .stats-grid--2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stats-card {
+        padding: 1.25rem 1.35rem;
+        min-width: 0;
+    }
+
+    .stats-card-label {
+        margin: 0 0 0.55rem;
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    .stats-card-value {
+        margin: 0;
+        font-size: clamp(1.45rem, 3vw, 2rem);
+        line-height: 1.1;
+        font-weight: 750;
+        letter-spacing: -0.03em;
+    }
+
+    .stats-card-value small {
+        margin-left: 0.15rem;
+        color: var(--text-secondary);
+        font-size: 0.55em;
+        font-weight: 600;
+    }
+
+    .stats-card-meta {
+        margin: 0.55rem 0 0;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        line-height: 1.45;
+    }
+
+    .stats-panel {
+        padding: 1.35rem;
+        min-width: 0;
+    }
+
+    .stats-panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .stats-panel-title {
+        margin: 0;
+        font-size: 1.05rem;
+        letter-spacing: -0.02em;
+    }
+
+    .stats-panel-subtitle {
+        margin: 0.3rem 0 0;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        line-height: 1.45;
+    }
+
+    .stats-badge {
+        background: rgba(56, 189, 248, 0.12);
+        color: var(--accent);
+        white-space: nowrap;
+    }
+
+    .stats-bars {
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 190px;
+        padding: 0.5rem 0 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+
+    .stats-bar-col {
+        display: flex;
+        flex: 1 0 8px;
+        min-width: 8px;
+        height: 100%;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.35rem;
+    }
+
+    .stats-bar-track {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        width: 100%;
+        height: 150px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.025);
+    }
+
+    .stats-bar {
+        display: block;
+        width: min(100%, 22px);
+        min-height: 2px;
+        border-radius: 4px 4px 2px 2px;
+        background: linear-gradient(180deg, var(--accent), #6366f1);
+    }
+
+    .stats-bar-label {
+        color: var(--text-secondary);
+        font-size: 0.62rem;
+        white-space: nowrap;
+        min-height: 0.9rem;
+    }
+
+    .stats-note {
+        margin: 0.75rem 0 0;
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        line-height: 1.5;
+    }
+
+    .stats-empty {
+        margin: 0;
+        padding: 1.25rem;
+        border: 1px dashed rgba(148, 163, 184, 0.25);
+        border-radius: 10px;
+        color: var(--text-secondary);
+        text-align: center;
+        font-size: 0.85rem;
+    }
+
+    .stats-meter-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.8rem;
+    }
+
+    .stats-meter-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.35rem;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+    }
+
+    .stats-meter-head > span:first-child {
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+
+    .stats-progress {
+        height: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    .stats-progress > span {
+        display: block;
+        height: 100%;
+        min-width: 0;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--accent), #818cf8);
+    }
+
+    .stats-progress--success > span { background: var(--success); }
+    .stats-progress--warning > span { background: var(--warning); }
+    .stats-progress--error > span { background: var(--danger); }
+    .stats-progress--canceled > span { background: #94a3b8; }
+    .stats-progress--requeued > span { background: #a78bfa; }
+    .stats-progress--other > span { background: #64748b; }
+
+    .stats-table-wrap {
+        overflow-x: auto;
+    }
+
+    .stats-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+
+    .stats-table th {
+        padding: 0.7rem 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-align: left;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .stats-table td {
+        padding: 0.8rem 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        vertical-align: middle;
+    }
+
+    .stats-table tbody tr:hover td {
+        background: rgba(255, 255, 255, 0.015);
+    }
+
+    .stats-right {
+        text-align: right;
+    }
+
+    .stats-nowrap {
+        white-space: nowrap;
+    }
+
+    .stats-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.78rem;
+    }
+
+    .stats-break {
+        word-break: break-all;
+    }
+
+    .stats-filename {
+        font-weight: 600;
+        line-height: 1.4;
+        word-break: break-word;
+    }
+
+    .stats-path {
+        max-width: 420px;
+        margin-top: 0.2rem;
+        overflow: hidden;
+        color: var(--text-secondary);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.7rem;
+        opacity: 0.8;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .stats-status {
+        display: inline-block;
+        padding: 0.22rem 0.55rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.14);
+        color: var(--text-secondary);
+        font-size: 0.7rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .stats-status--success {
+        background: rgba(34, 197, 94, 0.16);
+        color: #86efac;
+    }
+
+    .stats-status--warning {
+        background: rgba(245, 158, 11, 0.17);
+        color: #fcd34d;
+    }
+
+    .stats-status--error {
+        background: rgba(239, 68, 68, 0.16);
+        color: #fca5a5;
+    }
+
+    .stats-status--canceled {
+        background: rgba(148, 163, 184, 0.14);
+        color: #cbd5e1;
+    }
+
+    .stats-status--failed_requeued {
+        background: rgba(139, 92, 246, 0.18);
+        color: #c4b5fd;
+    }
+
+    .stats-recent {
+        margin-bottom: 2rem;
+    }
+
+    @media (max-width: 1050px) {
+        .stats-grid--4 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 800px) {
+        .stats-grid--2 {
+            grid-template-columns: 1fr;
+        }
+
+        .stats-bars {
+            height: 160px;
+        }
+
+        .stats-bar-track {
+            height: 125px;
+        }
+    }
+
+    @media (max-width: 560px) {
+        .stats-grid--4 {
+            grid-template-columns: 1fr;
+        }
+
+        .stats-panel-head {
+            flex-direction: column;
+        }
+
+        .stats-period {
+            padding: 0.4rem 0.55rem;
+            font-size: 0.72rem;
+        }
+
+        .stats-table th,
+        .stats-table td {
+            padding: 0.65rem 0.55rem;
+        }
+
+        .stats-path {
+            max-width: 210px;
+        }
+    }
+</style>
+{% endblock %}

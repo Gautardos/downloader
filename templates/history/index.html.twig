@@ -82,6 +82,8 @@
                                         {{ item.error_message }}
                                     </div>
                                 {% endif %}
+                            {% elseif (item.status ?? 'success') == 'requeued' %}
+                                <span class="badge" style="background: #0ea5e9; color: white;">REQUEUED</span>
                             {% else %}
                                 <span class="badge" style="background: var(--success); color: white;">SUCCESS</span>
                             {% endif %}

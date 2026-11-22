@@ -1,0 +1,63 @@
+{
+  "name": "Downloader",
+  "short_name": "Downloader",
+  "description": "Self-hosted media downloader: queue, discover, music and debrid in one place.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/pwa-icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Queue",
+      "short_name": "Queue",
+      "description": "Open the download queue",
+      "url": "/queue",
+      "icons": [{ "src": "/pwa-icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Discover",
+      "short_name": "Discover",
+      "description": "Browse movies and series",
+      "url": "/media",
+      "icons": [{ "src": "/pwa-icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Music",
+      "short_name": "Music",
+      "description": "Search and download music",
+      "url": "/",
+      "icons": [{ "src": "/pwa-icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Debrid",
+      "short_name": "Debrid",
+      "description": "Recent debrid links",
+      "url": "/torrent",
+      "icons": [{ "src": "/pwa-icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

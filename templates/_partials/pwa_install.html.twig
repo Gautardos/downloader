@@ -1,0 +1,222 @@
+<style>
+    .pwa-install-banner {
+        position: fixed;
+        left: 1rem;
+        bottom: 1rem;
+        z-index: 3500;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        width: min(420px, calc(100vw - 2rem));
+        padding: 0.85rem 1rem;
+        background: rgba(30, 41, 59, 0.96);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.4);
+        color: var(--text-primary);
+        backdrop-filter: blur(12px);
+    }
+
+    .pwa-install-banner[hidden] {
+        display: none;
+    }
+
+    .pwa-install-banner img {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        flex: 0 0 auto;
+    }
+
+    .pwa-install-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .pwa-install-copy strong {
+        font-size: 0.95rem;
+    }
+
+    .pwa-install-copy span {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        line-height: 1.35;
+    }
+
+    .pwa-install-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex: 0 0 auto;
+    }
+
+    .pwa-install-actions .btn {
+        padding: 0.45rem 0.75rem;
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
+
+    .pwa-install-dismiss {
+        border: 0;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 1.25rem;
+        line-height: 1;
+        padding: 0.25rem 0.4rem;
+        cursor: pointer;
+        border-radius: 8px;
+    }
+
+    .pwa-install-dismiss:hover,
+    .pwa-install-dismiss:focus-visible {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .pwa-https-note {
+        position: fixed;
+        left: 1rem;
+        bottom: 1rem;
+        z-index: 3490;
+        padding: 0.5rem 0.75rem;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.95);
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        color: var(--warning);
+        font-size: 0.75rem;
+    }
+
+    .pwa-https-note[hidden] {
+        display: none;
+    }
+
+    @media (max-width: 620px) {
+        .pwa-install-banner {
+            left: 0.75rem;
+            right: 0.75rem;
+            bottom: 0.75rem;
+            width: auto;
+        }
+    }
+</style>
+
+<div id="pwa-install-banner" class="pwa-install-banner" hidden role="region" aria-label="Install Downloader" aria-live="polite">
+    <img src="/pwa-icons/icon-192.png" alt="" width="44" height="44">
+    <div class="pwa-install-copy">
+        <strong>Install app</strong>
+        <span id="pwa-install-help">Add Downloader to your device for faster access and offline status.</span>
+    </div>
+    <div class="pwa-install-actions">
+        <button id="pwa-install-btn" class="btn btn-primary" type="button">Install app</button>
+        <button id="pwa-install-dismiss" class="pwa-install-dismiss" type="button" aria-label="Dismiss install prompt">&times;</button>
+    </div>
+</div>
+
+<div id="pwa-https-note" class="pwa-https-note" hidden role="status">PWA requires HTTPS</div>
+
+<script>
+(function () {
+    const banner = document.getElementById('pwa-install-banner');
+    const installButton = document.getElementById('pwa-install-btn');
+    const dismissButton = document.getElementById('pwa-install-dismiss');
+    const help = document.getElementById('pwa-install-help');
+    const httpsNote = document.getElementById('pwa-https-note');
+    const configured = {{ pwa_configured|default(false) ? 'true' : 'false' }};
+
+    function registerServiceWorker() {
+        if (!('serviceWorker' in navigator)) {
+            return Promise.resolve(null);
+        }
+        if (!window.isSecureContext) {
+            if (httpsNote) httpsNote.hidden = false;
+            return Promise.resolve(null);
+        }
+        return navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(function () {
+            return null;
+        });
+    }
+
+    window.pwaRegisterServiceWorker = registerServiceWorker;
+
+    if (!configured) {
+        return;
+    }
+
+    if (document.readyState === 'complete') {
+        registerServiceWorker();
+    } else {
+        window.addEventListener('load', registerServiceWorker, { once: true });
+    }
+
+    if (!banner || !installButton || !dismissButton) {
+        return;
+    }
+
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+    const dismissed = localStorage.getItem('pwa_install_dismissed') === '1';
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    let deferredPrompt = null;
+
+    function showBanner() {
+        if (standalone || dismissed) {
+            return;
+        }
+        banner.hidden = false;
+    }
+
+    function hideBanner() {
+        banner.hidden = true;
+    }
+
+    window.addEventListener('beforeinstallprompt', function (event) {
+        event.preventDefault();
+        deferredPrompt = event;
+        if (help) {
+            help.textContent = 'Install Downloader for faster access and offline status.';
+        }
+        if (installButton) {
+            installButton.hidden = false;
+        }
+        showBanner();
+    });
+
+    window.addEventListener('appinstalled', function () {
+        localStorage.setItem('pwa_install_dismissed', '1');
+        hideBanner();
+    });
+
+    installButton.addEventListener('click', async function () {
+        if (!deferredPrompt) {
+            return;
+        }
+        deferredPrompt.prompt();
+        try {
+            await deferredPrompt.userChoice;
+        } catch (error) {
+            // The user may close the prompt without a choice.
+        }
+        deferredPrompt = null;
+        localStorage.setItem('pwa_install_dismissed', '1');
+        hideBanner();
+    });
+
+    dismissButton.addEventListener('click', function () {
+        localStorage.setItem('pwa_install_dismissed', '1');
+        hideBanner();
+    });
+
+    if (isIOS) {
+        if (help) {
+            help.textContent = 'Tap Share, then Add to Home Screen.';
+        }
+        installButton.hidden = true;
+        showBanner();
+    }
+})();
+</script>

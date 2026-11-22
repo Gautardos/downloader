@@ -1110,6 +1110,14 @@ document.addEventListener('keydown', (event) => {
 
 loadTorrentDbCategories();
 loadRecentLinks(true, false, 5);
+
+const torrentPrefill = (new URLSearchParams(location.search).get('q') || '').trim();
+if (torrentPrefill.length >= 2) {
+    dbQueryInput.value = torrentPrefill;
+    window.addEventListener('load', function () {
+        searchTorrentDb();
+    }, { once: true });
+}
 </script>
 
 <style>

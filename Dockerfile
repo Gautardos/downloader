@@ -46,6 +46,9 @@ RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
     curl \
     mbstring
 
+# PWA Web Push relies on openssl, curl, mbstring and json.
+# openssl and json are enabled in the official php:8.3-apache image.
+
 # ────────────────────────────────────────────────
 # 4. Composer
 # ────────────────────────────────────────────────

@@ -111,7 +111,28 @@ class SpotifyService
         return null;
     }
 
+    public function isConfigured(): bool
+    {
+        $config = $this->storage->get('config', []);
+
+        return trim((string) ($config['spotify_client_id'] ?? '')) !== ''
+            && trim((string) ($config['spotify_client_secret'] ?? '')) !== '';
+    }
+
     public function search(string $query, string $type = 'all', int $limit = 15): ?array
+    {
+        return $this->performSearch($query, $type, $limit, 15);
+    }
+
+    /**
+     * Bounded search used by the global palette: fewer results and a short timeout.
+     */
+    public function searchQuick(string $query, int $limit = 8, int $timeout = 4): ?array
+    {
+        return $this->performSearch($query, 'all', $limit, $timeout);
+    }
+
+    private function performSearch(string $query, string $type, int $limit, int $timeout): ?array
     {
         $this->logs = [];
         $this->lastError = null;
@@ -141,6 +162,8 @@ class SpotifyService
                     'type' => implode(',', $types),
                     'limit' => $limit,
                 ],
+                'timeout' => $timeout,
+                'connect_timeout' => min(2, max(1, $timeout)),
             ]);
 
             $data = json_decode($response->getBody()->getContents(), true);

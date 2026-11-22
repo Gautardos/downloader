@@ -2,8 +2,14 @@
 
 namespace App\Service;
 
+use App\Service\Pwa\PushNotifierInterface;
+
 class ServerNotificationService
 {
+    public function __construct(private ?PushNotifierInterface $pushNotifier = null)
+    {
+    }
+
     public function all(JsonStorage $storage): array
     {
         $notifications = $storage->get('server_notifications', []);
@@ -41,6 +47,62 @@ class ServerNotificationService
 
         $notifications[] = $notification;
         $storage->set('server_notifications', array_values($notifications));
+
+        if ($this->pushNotifier !== null) {
+            try {
+                $event = $this->pushEvent($notification);
+                $body = (string) ($notification['message'] ?? '');
+                if ($body === '') {
+                    $body = (string) ($notification['item'] ?? ($notification['action'] ?? 'New activity'));
+                }
+                $this->pushNotifier->notify($event, 'Downloader', $body, $this->pushUrl($event));
+            } catch (\Throwable $e) {
+                // Push delivery must never block notification persistence.
+            }
+        }
+    }
+
+    private function pushEvent(array $notification): string
+    {
+        $explicit = $notification['pwa_event'] ?? null;
+        if (is_string($explicit) && in_array($explicit, ['downloads', 'errors', 'automation', 'integrity', 'daily_summary'], true)) {
+            return $explicit;
+        }
+
+        $type = strtolower((string) ($notification['type'] ?? ''));
+        $action = strtolower((string) ($notification['action'] ?? ''));
+        $message = strtolower((string) ($notification['message'] ?? ''));
+        $mediaType = strtolower((string) ($notification['media_type'] ?? ''));
+        $haystack = $action . ' ' . $message . ' ' . $mediaType;
+
+        if (str_contains($haystack, 'integrity')) {
+            return 'integrity';
+        }
+
+        if (str_contains($haystack, 'automation') || in_array($mediaType, ['movie', 'series', 'anime'], true)) {
+            return 'automation';
+        }
+
+        if ($type === 'error') {
+            return 'errors';
+        }
+
+        if (str_contains($haystack, 'daily') && str_contains($haystack, 'summary')) {
+            return 'daily_summary';
+        }
+
+        return 'downloads';
+    }
+
+    private function pushUrl(string $event): string
+    {
+        return match ($event) {
+            'errors' => '/history',
+            'automation' => '/automation',
+            'integrity' => '/video/integrity',
+            'daily_summary' => '/statistics',
+            default => '/queue',
+        };
     }
 
     public function acknowledge(JsonStorage $storage, array $ids): int

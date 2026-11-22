@@ -1,0 +1,1177 @@
+<style>
+    .gs-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 6000;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: min(12vh, 7rem) 1rem 1rem;
+        background: rgba(2, 6, 23, 0.72);
+        backdrop-filter: blur(8px);
+    }
+
+    .gs-backdrop[hidden] {
+        display: none !important;
+    }
+
+    .gs-dialog {
+        width: min(760px, 100%);
+        max-height: min(78vh, 760px);
+        max-height: min(78dvh, 760px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        background: #111c31;
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+        color: var(--text-primary);
+    }
+
+    .gs-backdrop.open .gs-dialog {
+        animation: gs-in 0.16s ease;
+    }
+
+    @keyframes gs-in {
+        from { opacity: 0; transform: translateY(-8px) scale(0.99); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .gs-searchbar {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.9rem 1rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .gs-searchbar > svg {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+        color: var(--accent);
+    }
+
+    .gs-input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--text-primary);
+        font: inherit;
+        font-size: 1rem;
+    }
+
+    .gs-input::placeholder {
+        color: var(--text-secondary);
+    }
+
+    .gs-kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.7rem;
+        padding: 0.16rem 0.36rem;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 5px;
+        background: rgba(15, 23, 42, 0.7);
+        color: var(--text-secondary);
+        font-size: 0.65rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .gs-close {
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 1.3rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .gs-close:hover,
+    .gs-close:focus-visible {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.06);
+        outline: none;
+    }
+
+    .gs-scopes {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 0.35rem;
+        padding: 0.55rem 0.85rem;
+        overflow-x: auto;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        scrollbar-width: none;
+    }
+
+    .gs-scopes::-webkit-scrollbar {
+        display: none;
+    }
+
+    .gs-scope {
+        flex: 0 0 auto;
+        padding: 0.32rem 0.62rem;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 0.75rem;
+        font-weight: 650;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+
+    .gs-scope:hover,
+    .gs-scope:focus-visible {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.05);
+        outline: none;
+    }
+
+    .gs-scope[aria-selected="true"] {
+        color: var(--accent);
+        border-color: rgba(56, 189, 248, 0.35);
+        background: rgba(56, 189, 248, 0.12);
+    }
+
+    .gs-status {
+        flex: 0 0 auto;
+        padding: 0 1rem;
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+    }
+
+    .gs-status:not(:empty) {
+        padding-top: 0.7rem;
+        padding-bottom: 0.1rem;
+    }
+
+    .gs-status[data-state="error"] {
+        color: #fca5a5;
+    }
+
+    .gs-status[data-state="partial"] {
+        color: #fcd34d;
+    }
+
+    .gs-results {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0.55rem 0.55rem 0.7rem;
+        overscroll-behavior: contain;
+    }
+
+    .gs-group + .gs-group {
+        margin-top: 0.35rem;
+        padding-top: 0.35rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .gs-group-title {
+        padding: 0.35rem 0.55rem 0.3rem;
+        color: var(--text-secondary);
+        font-size: 0.66rem;
+        font-weight: 750;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .gs-item-row {
+        display: flex;
+        align-items: stretch;
+        gap: 0.35rem;
+    }
+
+    .gs-item-row .gs-item {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .gs-item {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        width: 100%;
+        padding: 0.55rem 0.6rem;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .gs-item-download {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.3rem;
+        padding: 0 0.55rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 0.68rem;
+        font-weight: 700;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: 0.16s ease;
+    }
+
+    .gs-item-download svg {
+        width: 13px;
+        height: 13px;
+    }
+
+    .gs-item-download:hover,
+    .gs-item-download:focus-visible {
+        color: var(--accent);
+        border-color: rgba(56, 189, 248, 0.35);
+        background: rgba(56, 189, 248, 0.1);
+        outline: none;
+    }
+
+    .gs-item:hover,
+    .gs-item.is-active {
+        background: rgba(56, 189, 248, 0.1);
+    }
+
+    .gs-item:focus-visible {
+        outline: 2px solid rgba(56, 189, 248, 0.6);
+        outline-offset: -2px;
+    }
+
+    .gs-item-icon {
+        width: 32px;
+        height: 32px;
+        flex: 0 0 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        background: rgba(56, 189, 248, 0.12);
+        color: var(--accent);
+    }
+
+    .gs-item-icon svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    .gs-item[data-group="media"] .gs-item-icon {
+        color: #c4b5fd;
+        background: rgba(167, 139, 250, 0.14);
+    }
+
+    .gs-item[data-group="music"] .gs-item-icon {
+        color: #f9a8d4;
+        background: rgba(244, 114, 182, 0.14);
+    }
+
+    .gs-item[data-group="actions"] .gs-item-icon {
+        color: #86efac;
+        background: rgba(74, 222, 128, 0.14);
+    }
+
+    .gs-item[data-group="history"] .gs-item-icon {
+        color: #fcd34d;
+        background: rgba(245, 158, 11, 0.14);
+    }
+
+    .gs-item-main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.12rem;
+    }
+
+    .gs-item-title {
+        overflow: hidden;
+        color: var(--text-primary);
+        font-size: 0.86rem;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .gs-item-sub {
+        overflow: hidden;
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .gs-item-meta {
+        flex: 0 0 auto;
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        white-space: nowrap;
+    }
+
+    .gs-mark {
+        border-radius: 3px;
+        background: rgba(56, 189, 248, 0.24);
+        color: inherit;
+    }
+
+    .gs-recent {
+        flex: 0 0 auto;
+        padding: 0.8rem 1rem 0.9rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.12);
+    }
+
+    .gs-recent[hidden] {
+        display: none;
+    }
+
+    .gs-recent-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.55rem;
+    }
+
+    .gs-recent-title {
+        color: var(--text-secondary);
+        font-size: 0.66rem;
+        font-weight: 750;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .gs-clear {
+        border: 0;
+        background: transparent;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 0.72rem;
+        cursor: pointer;
+    }
+
+    .gs-clear:hover,
+    .gs-clear:focus-visible {
+        color: var(--accent);
+        outline: none;
+    }
+
+    .gs-recent-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    .gs-chip {
+        padding: 0.3rem 0.6rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 0.75rem;
+        cursor: pointer;
+    }
+
+    .gs-chip:hover,
+    .gs-chip:focus-visible {
+        color: var(--text-primary);
+        border-color: rgba(56, 189, 248, 0.35);
+        background: rgba(56, 189, 248, 0.1);
+        outline: none;
+    }
+
+    .gs-footer {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.55rem 1rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.12);
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+    }
+
+    .gs-hints {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+    }
+
+    body.gs-open {
+        overflow: hidden;
+    }
+
+    @media (max-width: 768px) {
+        .gs-backdrop {
+            padding: 0;
+        }
+
+        .gs-dialog {
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            max-height: none;
+            border: 0;
+            border-radius: 0;
+        }
+
+        .gs-searchbar {
+            padding-top: max(0.9rem, env(safe-area-inset-top));
+        }
+
+        .gs-footer {
+            padding-bottom: max(0.55rem, env(safe-area-inset-bottom));
+        }
+
+        .gs-item-meta {
+            display: none;
+        }
+
+        .gs-item-download span {
+            display: none;
+        }
+    }
+</style>
+
+<div class="gs-backdrop" id="global-search" hidden>
+    <div class="gs-dialog" role="dialog" aria-modal="true" aria-labelledby="gs-title" aria-describedby="gs-help">
+        <div class="gs-searchbar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+            <label class="gs-sr-only" id="gs-title" for="gs-input" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">Global search</label>
+            <input id="gs-input" class="gs-input" type="search" placeholder="Search torrents, Discover, music, history or actions…" autocomplete="off" spellcheck="false" aria-controls="gs-results">
+            <span class="gs-kbd" aria-hidden="true">Esc</span>
+            <button type="button" class="gs-close" data-gs-close aria-label="Close search">×</button>
+        </div>
+        <div class="gs-scopes" role="tablist" aria-label="Search scope">
+            <button type="button" class="gs-scope" role="tab" data-gs-scope="all" aria-selected="true">All</button>
+            <button type="button" class="gs-scope" role="tab" data-gs-scope="actions" aria-selected="false">Actions</button>
+            <button type="button" class="gs-scope" role="tab" data-gs-scope="media" aria-selected="false">Discover</button>
+            <button type="button" class="gs-scope" role="tab" data-gs-scope="music" aria-selected="false">Music</button>
+            <button type="button" class="gs-scope" role="tab" data-gs-scope="torrents" aria-selected="false">Torrents</button>
+            <button type="button" class="gs-scope" role="tab" data-gs-scope="history" aria-selected="false">History</button>
+        </div>
+        <div class="gs-status" id="gs-status" role="status" aria-live="polite"></div>
+        <div class="gs-results" id="gs-results" role="listbox" aria-label="Search results"></div>
+        <div class="gs-recent" id="gs-recent" hidden>
+            <div class="gs-recent-head">
+                <span class="gs-recent-title">Recent searches</span>
+                <button type="button" class="gs-clear" data-gs-clear>Clear</button>
+            </div>
+            <div class="gs-recent-list" id="gs-recent-list"></div>
+        </div>
+        <div class="gs-footer">
+            <div class="gs-hints" id="gs-help">
+                <span><span class="gs-kbd">↑</span> <span class="gs-kbd">↓</span> navigate</span>
+                <span><span class="gs-kbd">↵</span> open</span>
+                <span><span class="gs-kbd">Tab</span> switch scope</span>
+                <span><span class="gs-kbd">Esc</span> close</span>
+            </div>
+            <span>Downloader · global search</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    "use strict";
+
+    var backdrop = document.getElementById('global-search');
+    if (!backdrop || backdrop.dataset.ready === '1') {
+        return;
+    }
+    backdrop.dataset.ready = '1';
+
+    var endpoint = "{{ path('search_global')|e('js') }}";
+    var musicAddUrl = "{{ path('music_add')|e('js') }}";
+    var recentKey = 'global_search_recent';
+    var recentMax = 8;
+    var groupOrder = ['actions', 'torrents', 'media', 'music', 'history'];
+    var groupLabels = {
+        actions: 'Quick actions',
+        torrents: 'Local torrent database',
+        media: 'Discover',
+        music: 'Music',
+        history: 'History'
+    };
+    var scopeOrder = ['all', 'actions', 'media', 'music', 'torrents', 'history'];
+    var icons = {
+        action: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 8-12h-6z"/></svg>',
+        torrent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+        video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>',
+        music: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>',
+        history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/><path d="M12 8v5l3 2"/></svg>',
+        download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>'
+    };
+
+    var input = document.getElementById('gs-input');
+    var resultsBox = document.getElementById('gs-results');
+    var statusBox = document.getElementById('gs-status');
+    var recentBox = document.getElementById('gs-recent');
+    var recentList = document.getElementById('gs-recent-list');
+    var scopeButtons = Array.prototype.slice.call(backdrop.querySelectorAll('[data-gs-scope]'));
+
+    if (!input || !resultsBox || !statusBox || !recentBox || !recentList) {
+        return;
+    }
+
+    var activeScope = 'all';
+    var activeIndex = -1;
+    var state = emptyState();
+    var debounceTimer = null;
+    var controllers = [];
+    var requestToken = 0;
+    var lastFocused = null;
+    var resultData = new Map();
+
+    function emptyGroups() {
+        var groups = {};
+        groupOrder.forEach(function (key) { groups[key] = []; });
+        return groups;
+    }
+
+    function emptyState() {
+        return {
+            query: '',
+            groups: emptyGroups(),
+            errors: [],
+            partial: false,
+            loading: false,
+            pending: 0
+        };
+    }
+
+    function el(tag, className) {
+        var node = document.createElement(tag);
+        if (className) {
+            node.className = className;
+        }
+        return node;
+    }
+
+    function abortRequests() {
+        controllers.forEach(function (controller) {
+            controller.abort();
+        });
+        controllers = [];
+    }
+
+    function text(value) {
+        return value === null || value === undefined ? '' : String(value);
+    }
+
+    function appendHighlighted(parent, value, query) {
+        var source = text(value);
+        var needle = query.trim();
+        if (needle === '') {
+            parent.textContent = source;
+            return;
+        }
+
+        var lower = source.toLocaleLowerCase();
+        var search = needle.toLocaleLowerCase();
+        var index = lower.indexOf(search);
+        if (index < 0) {
+            parent.textContent = source;
+            return;
+        }
+
+        var start = 0;
+        while (index >= 0) {
+            if (index > start) {
+                parent.appendChild(document.createTextNode(source.slice(start, index)));
+            }
+            var mark = document.createElement('mark');
+            mark.className = 'gs-mark';
+            mark.textContent = source.slice(index, index + needle.length);
+            parent.appendChild(mark);
+            start = index + needle.length;
+            index = lower.indexOf(search, start);
+        }
+        if (start < source.length) {
+            parent.appendChild(document.createTextNode(source.slice(start)));
+        }
+    }
+
+    function isSpotifyUrl(url) {
+        return typeof url === 'string' && url.indexOf('https://open.spotify.com/') === 0;
+    }
+
+    function buildItem(item, groupKey) {
+        var wrapper = el('div', 'gs-item-row');
+        var button = el('button', 'gs-item');
+        button.type = 'button';
+        button.dataset.group = groupKey;
+        button.setAttribute('role', 'option');
+
+        var icon = el('span', 'gs-item-icon');
+        icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = icons[item.icon] || icons.action;
+
+        var main = el('span', 'gs-item-main');
+        var title = el('span', 'gs-item-title');
+        appendHighlighted(title, item.title, state.query);
+        var subtitle = el('span', 'gs-item-sub');
+        appendHighlighted(subtitle, item.subtitle, state.query);
+        main.appendChild(title);
+        if (item.subtitle) {
+            main.appendChild(subtitle);
+        }
+
+        var meta = el('span', 'gs-item-meta');
+        meta.textContent = text(item.meta);
+
+        button.appendChild(icon);
+        button.appendChild(main);
+        button.appendChild(meta);
+
+        var id = 'gs-result-' + resultData.size;
+        button.id = id;
+        resultData.set(id, item);
+        button.addEventListener('click', function () {
+            openItem(item);
+        });
+
+        wrapper.appendChild(button);
+
+        if (groupKey === 'music' && isSpotifyUrl(item.url)) {
+            var download = el('button', 'gs-item-download');
+            download.type = 'button';
+            download.title = 'Download ' + item.title;
+            download.setAttribute('aria-label', 'Download ' + item.title);
+            download.innerHTML = icons.download + '<span>Download</span>';
+            download.addEventListener('click', function (event) {
+                event.stopPropagation();
+                openMusicDownload(item, download);
+            });
+            wrapper.appendChild(download);
+        }
+
+        return wrapper;
+    }
+
+    function setStatus(message, stateName) {
+        statusBox.textContent = message;
+        statusBox.dataset.state = stateName || '';
+    }
+
+    function renderStatus(resultCount) {
+        if (state.loading) {
+            setStatus('Searching…', 'loading');
+            return;
+        }
+
+        if (state.errors.length > 0 && resultCount === 0) {
+            setStatus('Search failed. Check your connection and try again.', 'error');
+            return;
+        }
+
+        if (state.errors.length > 0) {
+            setStatus('Some sources are unavailable — showing partial results.', 'partial');
+            return;
+        }
+
+        if (resultCount === 0 && state.query !== '') {
+            setStatus('No results for “' + state.query + '”.', 'empty');
+            return;
+        }
+
+        setStatus('', '');
+    }
+
+    function applyActive(items) {
+        items.forEach(function (item, index) {
+            item.classList.toggle('is-active', index === activeIndex);
+            item.setAttribute('aria-selected', index === activeIndex ? 'true' : 'false');
+        });
+
+        var active = items[activeIndex];
+        if (active) {
+            input.setAttribute('aria-activedescendant', active.id);
+        } else {
+            input.removeAttribute('aria-activedescendant');
+        }
+    }
+
+    function render() {
+        resultsBox.replaceChildren();
+        resultData = new Map();
+
+        groupOrder.forEach(function (groupKey) {
+            var items = state.groups[groupKey] || [];
+            if (!items.length) {
+                return;
+            }
+
+            var group = el('div', 'gs-group');
+            group.setAttribute('role', 'group');
+            group.setAttribute('aria-label', groupLabels[groupKey]);
+
+            var heading = el('div', 'gs-group-title');
+            heading.textContent = groupLabels[groupKey];
+            group.appendChild(heading);
+
+            items.forEach(function (item) {
+                group.appendChild(buildItem(item, groupKey));
+            });
+
+            resultsBox.appendChild(group);
+        });
+
+        var flatItems = Array.prototype.slice.call(resultsBox.querySelectorAll('.gs-item'));
+        if (activeIndex >= flatItems.length) {
+            activeIndex = flatItems.length > 0 ? 0 : -1;
+        }
+        if (activeIndex < 0 && flatItems.length > 0) {
+            activeIndex = 0;
+        }
+        applyActive(flatItems);
+        resultsBox.setAttribute('aria-busy', state.loading ? 'true' : 'false');
+        renderStatus(flatItems.length);
+        renderRecent(state.query === '');
+    }
+
+    function readRecent() {
+        try {
+            var value = JSON.parse(localStorage.getItem(recentKey) || '[]');
+            return Array.isArray(value) ? value.filter(function (item) { return typeof item === 'string' && item.trim() !== ''; }).slice(0, recentMax) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function writeRecent(values) {
+        try {
+            localStorage.setItem(recentKey, JSON.stringify(values.slice(0, recentMax)));
+        } catch (e) {
+            // localStorage can be unavailable in private browsing.
+        }
+    }
+
+    function addRecent(value) {
+        var term = text(value).trim();
+        if (term === '') {
+            return;
+        }
+        var existing = readRecent();
+        var next = [term];
+        existing.forEach(function (item) {
+            if (item.toLocaleLowerCase() !== term.toLocaleLowerCase()) {
+                next.push(item);
+            }
+        });
+        writeRecent(next);
+    }
+
+    function renderRecent(show) {
+        var items = readRecent();
+        recentList.replaceChildren();
+
+        if (!show || items.length === 0) {
+            recentBox.hidden = true;
+            return;
+        }
+
+        items.forEach(function (term) {
+            var chip = el('button', 'gs-chip');
+            chip.type = 'button';
+            chip.textContent = term;
+            chip.addEventListener('click', function () {
+                input.value = term;
+                runSearch(term);
+            });
+            recentList.appendChild(chip);
+        });
+
+        recentBox.hidden = false;
+    }
+
+    function mergeResponse(data) {
+        var groups = data && typeof data.groups === 'object' && data.groups ? data.groups : {};
+        groupOrder.forEach(function (key) {
+            var items = groups[key];
+            if (Array.isArray(items) && items.length > 0) {
+                state.groups[key] = items;
+            }
+        });
+
+        if (Array.isArray(data.errors)) {
+            data.errors.forEach(function (error) {
+                state.errors.push(error);
+            });
+        }
+
+        if (data.partial === true) {
+            state.partial = true;
+        }
+    }
+
+    function fetchPhase(phase, token, query) {
+        var controller = new AbortController();
+        controllers.push(controller);
+
+        var params = new URLSearchParams({
+            q: query,
+            scope: phase,
+            limit: '8'
+        });
+
+        fetch(endpoint + '?' + params.toString(), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin',
+            signal: controller.signal
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            return response.json();
+        }).then(function (data) {
+            if (token !== requestToken) {
+                return;
+            }
+            mergeResponse(data);
+            finishPhase();
+        }).catch(function (error) {
+            if (error && error.name === 'AbortError') {
+                return;
+            }
+            if (token !== requestToken) {
+                return;
+            }
+            state.errors.push({
+                provider: phase,
+                label: phase,
+                message: 'Search request failed.'
+            });
+            state.partial = true;
+            finishPhase();
+        });
+    }
+
+    function finishPhase() {
+        state.pending = Math.max(0, state.pending - 1);
+        state.loading = state.pending > 0;
+        render();
+    }
+
+    function runSearch(query) {
+        clearTimeout(debounceTimer);
+        abortRequests();
+        var token = ++requestToken;
+        var trimmed = text(query).trim();
+
+        state = emptyState();
+        state.query = trimmed;
+        activeIndex = -1;
+
+        if (trimmed === '') {
+            render();
+            input.focus();
+            return;
+        }
+
+        var phases = activeScope === 'all' ? ['local', 'remote'] : [activeScope];
+        state.loading = true;
+        state.pending = phases.length;
+        render();
+
+        phases.forEach(function (phase) {
+            fetchPhase(phase, token, trimmed);
+        });
+    }
+
+    function scheduleSearch(immediate) {
+        clearTimeout(debounceTimer);
+        var query = input.value.trim();
+
+        if (query === '') {
+            abortRequests();
+            requestToken++;
+            state = emptyState();
+            activeIndex = -1;
+            render();
+            return;
+        }
+
+        if (immediate === true) {
+            runSearch(query);
+            return;
+        }
+
+        debounceTimer = setTimeout(function () {
+            runSearch(query);
+        }, 170);
+    }
+
+    function moveActive(delta) {
+        var items = Array.prototype.slice.call(resultsBox.querySelectorAll('.gs-item'));
+        if (!items.length) {
+            return;
+        }
+        if (activeIndex < 0) {
+            activeIndex = delta > 0 ? 0 : items.length - 1;
+        } else {
+            activeIndex = (activeIndex + delta + items.length) % items.length;
+        }
+        applyActive(items);
+        items[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+
+    function openActive() {
+        var items = Array.prototype.slice.call(resultsBox.querySelectorAll('.gs-item'));
+        var item = items[activeIndex];
+        if (!item) {
+            return;
+        }
+        var data = resultData.get(item.id);
+        if (data) {
+            openItem(data);
+        }
+    }
+
+    function copyText(value) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            navigator.clipboard.writeText(value).catch(function () {});
+            return true;
+        }
+
+        var area = document.createElement('textarea');
+        area.value = value;
+        area.setAttribute('readonly', 'readonly');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        var copied = false;
+        try {
+            copied = document.execCommand('copy');
+        } catch (e) {
+            copied = false;
+        }
+        document.body.removeChild(area);
+        return copied;
+    }
+
+    function openExternalSpotify(url) {
+        var link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    }
+
+    function openMusicDownload(item, button) {
+        if (!isSpotifyUrl(item.url) || (button && button.disabled)) {
+            return;
+        }
+
+        addRecent(state.query || item.title);
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = icons.download + '<span>Adding…</span>';
+        }
+        setStatus('Adding to the music queue…', 'loading');
+
+        var formData = new FormData();
+        formData.append('urls', item.url);
+
+        fetch(musicAddUrl, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' },
+            body: formData
+        }).then(function (response) {
+            return response.json();
+        }).then(function (data) {
+            if (data && data.success) {
+                setStatus('Added to the music queue.', '');
+                if (button) {
+                    button.innerHTML = icons.download + '<span>Queued</span>';
+                }
+                return;
+            }
+            throw new Error((data && data.message) || 'Could not add this track to the queue.');
+        }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Network error while adding to the queue.', 'error');
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = icons.download + '<span>Download</span>';
+            }
+        });
+    }
+
+    function openItem(item) {
+        addRecent(state.query || item.title);
+
+        if (isSpotifyUrl(item.url)) {
+            openExternalSpotify(item.url);
+            setStatus('Opened in Spotify — search stays open.', '');
+            return;
+        }
+
+        if (item.url) {
+            closePalette();
+            window.location.assign(item.url);
+            return;
+        }
+
+        var copied = copyText(item.title);
+        setStatus(copied ? 'No direct link — name copied to clipboard.' : 'No link available for this result.', copied ? 'partial' : 'error');
+    }
+
+    function setScope(scope, search) {
+        activeScope = scope;
+        scopeButtons.forEach(function (button) {
+            button.setAttribute('aria-selected', button.dataset.gsScope === scope ? 'true' : 'false');
+        });
+
+        if (search === true) {
+            if (input.value.trim() === '') {
+                render();
+            } else {
+                scheduleSearch(true);
+            }
+        }
+    }
+
+    function cycleScope(direction) {
+        var index = scopeOrder.indexOf(activeScope);
+        if (index < 0) {
+            index = 0;
+        }
+        index = (index + direction + scopeOrder.length) % scopeOrder.length;
+        setScope(scopeOrder[index], true);
+        input.focus();
+    }
+
+    function openPalette() {
+        lastFocused = document.activeElement;
+        backdrop.hidden = false;
+        backdrop.classList.add('open');
+        document.body.classList.add('gs-open');
+        input.focus();
+        input.select();
+
+        if (input.value.trim() === '') {
+            state = emptyState();
+            activeIndex = -1;
+            render();
+            renderRecent(true);
+        } else {
+            scheduleSearch(true);
+        }
+    }
+
+    function closePalette() {
+        clearTimeout(debounceTimer);
+        abortRequests();
+        requestToken++;
+        backdrop.classList.remove('open');
+        backdrop.hidden = true;
+        document.body.classList.remove('gs-open');
+        setStatus('', '');
+
+        if (lastFocused && typeof lastFocused.focus === 'function') {
+            lastFocused.focus();
+        }
+    }
+
+    scopeButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            setScope(button.dataset.gsScope, true);
+            input.focus();
+        });
+    });
+
+    input.addEventListener('input', function () {
+        scheduleSearch(false);
+    });
+
+    backdrop.addEventListener('click', function (event) {
+        if (event.target === backdrop) {
+            closePalette();
+        }
+    });
+
+    backdrop.querySelectorAll('[data-gs-close]').forEach(function (button) {
+        button.addEventListener('click', closePalette);
+    });
+
+    backdrop.querySelectorAll('[data-gs-clear]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            writeRecent([]);
+            renderRecent(true);
+        });
+    });
+
+    backdrop.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closePalette();
+            return;
+        }
+
+        if (event.key === 'Tab') {
+            event.preventDefault();
+            cycleScope(event.shiftKey ? -1 : 1);
+            return;
+        }
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            moveActive(1);
+            return;
+        }
+
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            moveActive(-1);
+            return;
+        }
+
+        if (event.key === 'Enter' && !event.isComposing) {
+            event.preventDefault();
+            openActive();
+        }
+    });
+
+    document.addEventListener('focusin', function (event) {
+        if (!backdrop.hidden && !backdrop.contains(event.target)) {
+            input.focus();
+        }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key === 'k' || event.key === 'K')) {
+            event.preventDefault();
+            if (backdrop.hidden) {
+                openPalette();
+            } else {
+                input.focus();
+            }
+        }
+    });
+
+    document.querySelectorAll('[data-global-search-open]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            openPalette();
+        });
+    });
+})();
+</script>

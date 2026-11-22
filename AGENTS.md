@@ -12,7 +12,7 @@
 **Downloader** est une application web **self-hosted** de gestion de médias,
 livrée sous forme d'**image Docker unique**. Elle combine :
 
-- **Symfony 6.3** (PHP 8.1+) pour le backend web, les routes et les vues Twig.
+- **Symfony 6.4 LTS** (PHP 8.1+) pour le backend web, les routes et les vues Twig.
 - **Python 3** (scripts `cli/`) pour le moteur de téléchargement musical, les
   paroles et le tagging/renommage/déplacement.
 - **Alldebrid** comme service de debrid cloud : l'application n'est *pas* un
@@ -40,9 +40,9 @@ Deux grands domaines fonctionnels :
 | Composant | Version / contrainte | Notes |
 | --------- | -------------------- | ----- |
 | PHP | `>=8.1` (`composer.json`), image `php:8.3-apache` | L'environnement de dev local peut être plus récent |
-| Symfony | `6.3.*` | Micro-kernel via `MicroKernelTrait` |
-| Twig | fourni par `symfony/twig-bundle` 6.3 | Templates sans pipeline d'assets |
-| Guzzle | `^7.5` | Appels HTTP Alldebrid, Grok, Spotify |
+| Symfony | `6.4.*` (LTS) | Micro-kernel via `MicroKernelTrait` |
+| Twig | `^3.27` via `symfony/twig-bundle` 6.4 (résolu en 3.30) | Templates sans pipeline d'assets |
+| Guzzle | `^7.12` (Guzzle 7.16, PSR-7 2.13) | Appels HTTP Alldebrid, Grok, Spotify |
 | `gautardos/hash-db` | `dev-master` (dépôt VCS GitHub) | Base SQLite de torrents + CSV de hashs |
 | Python | 3 (venv `/opt/venv` dans l'image) | |
 | Zotify | `git+https://github.com/Gautardos/zotify.git` | Binaire configurable (`music_binary`) |
@@ -212,7 +212,22 @@ Autres fichiers runtime (hors JsonStorage) :
 - `var/storage/logs/automation_release_dry_run.log` : sortie du dry-run des releases (rotation via `LogRotator`).
 - `var/storage/logs/active_worker.log` : log du téléchargement musique en cours.
 - `var/storage/logs/history_<downloadId>.log` : log détaillé par téléchargement.
+- `var/storage/pwa_vapid.json` : paire VAPID push (0600, générée par `app:pwa:vapid`).
+- `var/storage/music_automations_worker.lock` / `.heartbeat` : mutex et heartbeat du worker musique.
+- `var/storage/maintenance.lock` : mutex du runner de maintenance.
 - `var/db/torrents.db` : base SQLite de recherche de torrents.
+- `var/db/automation.db` : index NAS et automatisations vidéo (existant 2.6).
+- `var/db/maintenance.db` : réglages, runs et logs de maintenance (2.8).
+- `var/db/integrity.db` : contrôles d'intégrité vidéo et politique (2.8).
+- `var/db/music_automations.db` : règles et runs d'automatisations musicales (2.8).
+- `var/db/pwa.db` : abonnements push et préférences de notification (2.8).
+
+Toutes les bases SQLite utilisent `journal_mode=WAL`, `synchronous=NORMAL` et
+`busy_timeout=15000` (sauf `torrents.db`, géré par `hash-db`). Elles sont
+créées avec `CREATE TABLE/INDEX IF NOT EXISTS` et `PRAGMA user_version`, donc
+les initialisations sont idempotentes. Les stores passent les fichiers en
+`0600` et le répertoire `var/db` en `0700` (l'entrypoint le fait aussi au
+démarrage).
 
 > **Logs** : `var/storage/logs/` est le seul dossier lu par l'agent de logs de
 > l'hôte (2750 setgid sur l'hôte). Ne pas appeler `chmod`/`chgrp` sur ce dossier
@@ -390,6 +405,21 @@ valeurs par défaut).
 | `grok_renaming_prompt` | — | Prompt personnalisé de renommage |
 | `allow_xxx_search` | `false` | Autorise les catégories XXX dans la recherche |
 | `music_librespot_auth_binary` | `/var/www/html/var/librespot-auth/target/release/librespot-auth` | Binaire d'auth Spotify |
+| `music_automation_timezone` | `UTC` | Fuseau des règles musicales (lu dans `config.json`, pas encore exposé dans `/config`) |
+| `music_automation_max_per_run` | `50` | Plafond de pistes ajoutées par règle/exécution |
+| `music_automation_queue_guard` | `20` | Garde-fou : suspend le run si la file dépasse ce seuil |
+
+Réglages stockés hors `config.json` (bases SQLite dédiées, avec defaults
+idempotents) :
+- `maintenance_settings` dans `maintenance.db` : `enabled`, `frequency`, `time`,
+  `days`, `weekday`, `timezone`, `pause_downloads`, `run_retention_days`, `jobs`.
+- `integrity_settings` dans `integrity.db` : `max_requeue_attempts`,
+  `auto_requeue`, `deep_check`, `small_file_threshold`, `scan_limit`,
+  `requeue_bulk_limit`, `retention_days`.
+- Préférences push (`downloads`, `errors`, `automation`, `integrity`,
+  `daily_summary`) dans `pwa.db`, pas dans `config.json`.
+- La paire VAPID vit dans `var/storage/pwa_vapid.json` (0600), jamais en base
+  ni dans le dépôt.
 
 > Notes :
 > - `music_venv_path` est résolu différemment selon les contrôleurs : parfois
@@ -502,6 +532,62 @@ Routes déclarées par attributs. `GET`/`POST` indiqué ; les routes de polling
 | GET | `/debug-storage` | `debug_storage` | Diagnostic répertoire storage |
 | GET | `/debug-api` | `debug_api` | Échantillons de réponses Alldebrid |
 | GET | `/debug-grouping` | `debug_grouping` | Résumé du groupement par pack |
+
+### Recherche globale (2.8)
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/search/global` | `search_global` | Recherche agrégée ; `q`, `scope` (`all`, `local`, `remote`, `actions`, `torrents`, `media`, `music`, `history`), `limit` |
+
+La recherche globale est authentifiée (pas de polling). Les providers sont taggés
+`app.search_provider` ; les résultats sont normalisés et les URLs externes sont
+limitées aux liens `https://open.spotify.com/...`. Les secrets (`source_url`,
+tokens) ne sont jamais renvoyés.
+
+### Statistiques (2.8)
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/statistics` | `statistics` | Tableau de bord d'activité (`period=7d|30d|90d|all`) |
+| GET | `/statistics/export` | `statistics_export` | Export CSV de la période |
+
+### Maintenance (2.8)
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/settings/maintenance` | `maintenance` | Planification, jobs, derniers runs, extrait de log |
+| POST | `/settings/maintenance/settings` | `maintenance_settings` | Sauvegarde des réglages |
+| POST | `/settings/maintenance/run` | `maintenance_run` | Lance un job (ou tous) immédiatement |
+| GET | `/settings/maintenance/status` | `maintenance_status` | État JSON (prochain run, verrou, pause) |
+
+### Intégrité vidéo (2.8)
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/video/integrity` | `video_integrity` | Liste des contrôles (`filter=all|incomplete|corrupted|requeued|healthy`, `q`) |
+| POST | `/video/integrity/check` | `video_integrity_check` | Scan rapide ou profond (`deep`, `limit`) |
+| POST | `/video/integrity/requeue` | `video_integrity_requeue` | Remet en file un ou plusieurs fichiers (`download_id`, `download_ids[]`, `all`, `dry_run`) |
+| POST | `/video/integrity/settings` | `video_integrity_settings` | Politique de contrôle/requeue |
+| GET | `/video/integrity/status` | `video_integrity_status` | État JSON (résumé, checks, politique) |
+
+### Automatisations musicales (2.8)
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/music/automations` | `music_automations` | Règles de suivi de playlists Spotify |
+| GET | `/music/automations/search` | `music_automations_search` | Recherche de playlists (`q`, `scope=all|public|private`) |
+| POST | `/music/automations/save` | `music_automations_save` | Crée/met à jour une règle |
+| POST | `/music/automations/delete` | `music_automations_delete` | Supprime une règle |
+| POST | `/music/automations/run` | `music_automations_run` | Exécution manuelle (`rule_id`, `mode=dry|enqueue`) |
+| GET | `/music/automations/status` | `music_automations_status` | Heartbeat worker + règles + runs |
+
+### PWA / push (2.8)
+| Méthode | URL | Nom | Rôle |
+| --- | --- | --- | --- |
+| GET | `/pwa/vapid-public-key` | `pwa_vapid_public_key` | Clé publique VAPID (ou `configured=false`) |
+| GET | `/pwa/status` | `pwa_status` | État VAPID, abonnements, préférences |
+| POST | `/pwa/subscribe` | `pwa_subscribe` | Enregistre un abonnement (endpoint allowlisté) |
+| POST | `/pwa/unsubscribe` | `pwa_unsubscribe` | Supprime un abonnement |
+| POST | `/pwa/test` | `pwa_test` | Envoie une notification de test |
+| POST | `/pwa/preferences` | `pwa_preferences` | Active/désactive les catégories de push |
+
+`/manifest.webmanifest`, `/service-worker.js`, `/offline.html` et `/pwa-icons/*`
+sont des fichiers statiques servis sans authentification.
 
 ---
 
@@ -848,7 +934,9 @@ emoji comme icônes. Éviter d'introduire une dépendance front sans nécessité
 ### Image (`Dockerfile`)
 - Base `php:8.3-apache`.
 - `www-data` remappé en UID/GID **1000**.
-- Extensions : `redis`, `pdo_mysql`, `zip`, `gd`, `intl`, `curl`, `mbstring`.
+- Extensions : `redis`, `pdo_mysql`, `pdo_sqlite` (fourni par l'image de base),
+  `zip`, `gd`, `intl`, `curl`, `mbstring`, `openssl`, `json` (requis par
+  `minishlink/web-push`).
 - Composer installé (`composer:2`), `composer install --no-dev --optimize-autoloader`.
 - venv Python `/opt/venv` + `cli/requirements.txt`.
 - `librespot-auth` cloné depuis `Gautardos/librespot-auth` et compilé en Rust.
@@ -857,32 +945,56 @@ emoji comme icônes. Éviter d'introduire une dépendance front sans nécessité
 - Dossiers runtime créés et appartenant à `www-data`.
 - `CMD` = `supervisord`.
 
+> ⚠️ Ne pas nommer un dossier public `public/icons/` : Debian active
+> `Alias /icons/ "/usr/share/apache2/icons/"`, qui masque les fichiers de
+> l'application. Les icônes PWA vivent dans `public/pwa-icons/`.
+
 ### Processus (`supervisord.conf`)
-- `redis` (priorité 1), `worker` (5), `apache2` (10).
+- `redis` (priorité 1), `worker` (5), `automation-worker` (6),
+  `maintenance-worker` (7, `app:maintenance --loop`),
+  `music-automations-worker` (8, `app:music-automations --loop`),
+  `apache2` (10).
+- Un socket Unix `[unix_http_server]` + `[rpcinterface:supervisor]` permet à
+  `supervisorctl` de piloter les processus.
 - Logs : `/var/log/redis*.log`, `/var/log/apache2*.log`,
-  `/var/log/supervisord.log` ; les logs worker/automation sont dans
-  `var/storage/logs/`.
+  `/var/log/supervisord.log` ; les stderr des quatre workers sont dans
+  `var/storage/logs/*_error.log`.
+- L'entrypoint crée `var/storage/logs/` sur un volume neuf **avant** de lancer
+  Supervisor (sinon le stderr_logfile fait échouer le démarrage).
 
 ### Volumes persistants attendus (côté hôte)
-- `var/storage` : config, queue, historique, logs applicatifs.
+- `var/storage` : config, queue, historique, logs applicatifs, clé VAPID.
+- `var/db` : bases SQLite (`torrents.db`, `automation.db`, `maintenance.db`,
+  `integrity.db`, `music_automations.db`, `pwa.db`).
 - `var/home` : `HOME` applicatif (credentials Spotify, archive Zotify).
 - Les répertoires de téléchargement (`/downloads`, `/music`, bibliothèque)
   doivent être montés dans le conteneur.
+- `var/.env.local` est monté en lecture seule (secret applicatif).
 
 > ⚠️ Les chemins saisis dans les réglages sont des chemins **internes au
 > conteneur**. Ne pas y mettre des chemins hôte.
 
 ### Environnement
-- `.env` versionné : `APP_ENV=dev`, `APP_SECRET=...`.
-- Pour un déploiement production, définir `APP_ENV=prod` et un secret propre
-  (variable d'environnement ou `.env.local`, non versionné).
+- `.env` versionné : `APP_ENV=prod`, `APP_SECRET=change-me-in-env-local`
+  (aucun secret réel).
+- En production, surcharger `APP_SECRET` via `/var/www/html/.env.local`
+  monté en lecture seule (non versionné), avec `APP_DEBUG=0`.
+- PWA/push : servir en HTTPS ou via `localhost` (contexte sécurisé).
 - `docker-compose.yml` n'est **pas** présent dans le dépôt (le README y fait
   référence). À recréer si nécessaire.
 
 ### Commandes utiles
 ```bash
+docker exec -it <container> supervisorctl status
 docker exec -it <container> cat /var/www/html/var/storage/logs/worker.log
 docker exec -it <container> supervisorctl restart worker
+docker exec -it <container> supervisorctl restart maintenance-worker
+docker exec -it <container> supervisorctl restart music-automations-worker
+docker exec -it <container> php bin/console app:pwa:vapid
+docker exec -it <container> php bin/console app:pwa:test-push
+docker exec -it <container> php bin/console app:maintenance --once
+docker exec -it <container> php bin/console app:integrity-check --limit 50
+docker exec -it <container> php bin/console app:music-automations --once --dry-run
 docker compose pull && docker compose up -d
 ```
 
@@ -918,6 +1030,10 @@ pip install -r cli/requirements.txt
   ```
 - En production, le worker est lancé par Supervisor ; en local il peut être
   lancé automatiquement par `QueueManager::triggerWorker()` lors d'un enqueue.
+- PWA / service worker / push exigent un **contexte sécurisé** : HTTPS ou
+  `http://localhost` / `http://127.0.0.1`. Un accès par IP LAN en HTTP ne
+  permettra ni l'installation ni le push. `127.0.0.1` est accepté par Chrome
+  et Firefox pour les tests locaux.
 
 ### Vérifications / qualité
 La batterie de non-régression est constituée de smoke tests PHP standalone
@@ -937,7 +1053,14 @@ composer test:security:all  # auth + session_secrets + csrf + ssrf
 composer test:automation
 composer test:backfill
 composer test:jellyfin
-composer test:functional    # functional_flow + automation + backfill + jellyfin
+composer test:navigation
+composer test:statistics
+composer test:maintenance
+composer test:integrity
+composer test:search
+composer test:pwa
+composer test:music-automations
+composer test:functional    # functional_flow + tous les lots + lint
 composer test:all           # security:all + functional + lint Twig/container
 composer test:http-auth     # live optionnel, read-only, BASE_URL=http://127.0.0.1:8000
 ```
@@ -1054,8 +1177,9 @@ python3 -m py_compile cli/*.py
   par nature.
 - La route de mise à jour de la base exécute `composer` au runtime (réseau +
   écriture `vendor/`) ; non adaptée à un conteneur immuable.
-- Aucun test automatisé : privilégier des vérifications manuelles ciblées après
-  chaque changement (routes, worker, scripts Python).
+- La non-régression repose sur des smoke tests standalone (`tests/`, `composer
+  test:all`), sans PHPUnit. Les tests PWA/JS ne remplacent pas une validation
+  navigateur réelle (installation, offline, push/click) : voir §21.6.
 
 ---
 
@@ -1891,3 +2015,181 @@ vérité reste `library_entries` dans `var/db/automation.db`.
 - La bibliothèque doit avoir été scannée par Automation au préalable.
 - Les gros fichiers mobilisent un worker Apache pendant la lecture ; un
   `X-Sendfile` ou un reverse proxy pourra être ajouté ultérieurement.
+
+---
+
+## 21. Navigation, recherche, statistiques, maintenance, intégrité, automatisations musicales et PWA (2.8)
+
+Ce lot regroupe sept fonctionnalités livrées ensemble. Elles suivent toutes le
+même contrat : services dans `src/Service/<Domaine>`, contrôleur fin, stockage
+SQLite dédié (WAL, busy_timeout, `CREATE ... IF NOT EXISTS`), POST protégés
+par le CSRF global, et tests smoke standalone.
+
+### 21.1 Navigation groupée et recherche globale
+
+- `App\Service\NavigationService` construit les menus à partir de la route
+  courante et de `JsonStorage::isConfigured()`. Cinq entrées racine : **Music**,
+  **Video**, **Debrid**, **Downloads**, **Settings**.
+- Les partials sont `templates/_partials/navigation.html.twig`,
+  `global_search.html.twig` et `pwa_install.html.twig`. La recherche globale
+  n'apparaît que si l'application est configurée.
+- `ConfigSubscriber` injecte `storage` **et** `app_storage` (alias historique)
+  ainsi que `navigation` et `csrf_token` dans Twig.
+- La palette de recherche (`Ctrl/Cmd+K`) appelle `GET /search/global`.
+  `GlobalSearchService` agrège des providers taggés `app.search_provider` :
+  `actions`, `torrents`, `media`, `music`, `history`.
+- Limites par défaut : `app.global_search.default_limit` (8), `max_limit` (20),
+  `max_query_length` (100), `remote_timeout` (4 s). Les providers distants
+  (`MediaSearchProvider` → TMDB, `MusicSearchProvider` → Spotify) ne sont
+  appelés que si le service est configuré. Une erreur provider rend le résultat
+  `partial=true` sans casser les autres groupes.
+- Les URLs de résultat sont soit internes (`/...`), soit des liens
+  `https://open.spotify.com/...`. Aucun `source_url`, token ou secret
+  d'historique n'est renvoyé.
+
+### 21.2 Statistiques
+
+- `App\Service\StatisticsService` agrège l'historique JSON et
+  `FilesystemStorageUsageProvider` (`StorageUsageProviderInterface`) pour les
+  volumes.
+- Périodes : `7d`, `30d`, `90d`, `all` (normalisées par `normalizePeriod`).
+- `GET /statistics` rend `templates/statistics/index.html.twig` ;
+  `GET /statistics/export` produit un CSV (`text/csv`, nom horodaté).
+- Les volumes indisponibles sont signalés (`available=false`) sans faire échouer
+  la page.
+
+### 21.3 Maintenance planifiée
+
+- Base `var/db/maintenance.db`, classes `MaintenanceStore`,
+  `MaintenanceSettings`, `MaintenanceScheduler`, `MaintenanceRunner`.
+- Jobs taggés `app.maintenance_job` : `TorrentDatabaseUpdateJob`,
+  `LogRotationJob`, `IntegrityCheckJob`. Chaque job expose clé, libellé et
+  dernier run.
+- Réglages : activation, fréquence (`daily`, `weekly`, `monthly`, `custom`),
+  heure, jours, fuseau, pause des téléchargements, rétention des runs (30 j par
+  défaut), jobs activés. `TorrentDatabaseUpdateJob` utilise `Process` avec un
+  **tableau d'arguments** (pas de shell) pour `composer` et `7z`.
+- `MaintenanceRunner` prend un verrou (`maintenance.lock`), écrit un run et
+  peut poser un fichier de pause ; il renvoie toujours un tableau structuré
+  (`success`, `locked`, `runs`, `message`).
+- `app:maintenance --once` exécute les jobs dus ; `--loop` tourne dans le worker
+  Supervisor `maintenance-worker` (`--interval` configurable).
+- `GET /settings/maintenance/status` est un JSON de polling mais reste
+  authentifié (pas dans `POLLING_ROUTES`).
+
+### 21.4 Intégrité vidéo
+
+- Base `var/db/integrity.db`, classes `IntegrityStore`, `IntegritySettings`,
+  `FileIntegrityChecker`, `VideoIntegrityService`, `IntegrityRequeueService`.
+- Statuts : `healthy`, `incomplete`, `corrupted`, `missing`, `outside_root`,
+  `unsupported`. Les seuils/politique sont dans `IntegritySettings`.
+- `FileIntegrityChecker` vérifie taille attendue vs réelle, en-têtes de
+  contenu (HTML/JSON téléchargé à la place d'une vidéo), préfixes de fichiers et
+  éventuellement `ffprobe` (`--deep`). Sans `ffprobe`, le scan reste valide et
+  signale un avertissement.
+- `IntegrityRequeueService` ne réenqueue que des sources sûres (`http(s)` ou
+  `magnet`), avec plafond de tentatives, limite de lot, déduplication avec la
+  file existante et mode `dry_run`.
+- Pour les anciennes entrées d'historique, la source est lue via
+  `source_url ?? original_url ?? null` : l'absence de `source_url` est gérée.
+- `app:integrity-check` accepte `--limit`, `--deep`, `--requeue`, `--dry-run`,
+  `--json`.
+
+### 21.5 Automatisations musicales
+
+- Base `var/db/music_automations.db`, classes `MusicAutomationStore`,
+  `MusicAutomationScheduler`, `MusicAutomationRunner`, `MusicQueueService`,
+  `PlaylistSearchService`, `MusicTrackMatcher`, `TaggedMusicLibraryIndex`.
+- Une règle associe une playlist Spotify (`playlist_id`/`playlist_url`
+  validés), une fréquence (`daily`, `weekly`, `6h`, `12h`), une heure, un
+  fuseau, et un état actif. `PlaylistMetadataProviderInterface` est branché sur
+  `SpotifyUserPlaylistMetadataProvider` (playlists privées incluses).
+- `MusicAutomationRunner` compare les pistes aux tags locaux, applique
+  `music_automation_max_per_run` (50) et `music_automation_queue_guard` (20),
+  puis enqueue via le worker musique standard (contrat `processMusicTask`).
+- Le worker Supervisor `music-automations-worker` appelle
+  `app:music-automations --loop`. Un lock et un heartbeat
+  (`music_automations_worker.*`) empêchent les exécutions concurrentes.
+- `app:music-automations` accepte `--once`, `--loop`, `--force`, `--rule`,
+  `--dry-run`, `--interval`. `POST /music/automations/run` expose `dry` et
+  `enqueue`.
+
+### 21.6 PWA, service worker et push
+
+Fichiers statiques :
+- `public/manifest.webmanifest` : `scope=/`, `start_url=/`,
+  `display=standalone`, icônes `pwa-icons/icon-192.png`, `icon-512.png`,
+  `maskable-512.png`, raccourcis Queue/Discover/Music/Debrid.
+- `public/service-worker.js` : précache de la coquille hors-ligne
+  (`offline.html`, manifeste, icônes, logos), navigation **network-first**,
+  assets statiques **cache-first** avec revalidation.
+- `public/offline.html` : page hors-ligne avec bouton **Retry**.
+- `public/pwa-icons/` : **ne pas renommer en `public/icons/`** (alias Apache
+  Debian).
+
+Politique de cache : le service worker ne met **jamais** en cache les
+navigations HTML authentifiées ni les routes sensibles. `NETWORK_ONLY_PREFIXES`
+couvre `/jellyfin`, `/login`, `/logout`, `/pwa/`, `/search/global`,
+`/queue-status`, `/queue-active-log`, `/notifications-poll`,
+`/notifications-ack`, `/progress/`. Toute requête non GET ou dont l'en-tête
+`Accept` contient `application/json` est réseau uniquement. Les réponses non
+`ok` et les 5xx ne sont pas cachées.
+
+Push :
+- `App\Service\Pwa\VapidKeyService` lit/écrit `var/storage/pwa_vapid.json`
+  (0600, écriture atomique via fichier temporaire). `app:pwa:vapid` génère la
+  paire si absente. La clé privée n'est jamais exposée par l'API.
+- `PushSubscriptionStore` (`var/db/pwa.db`) stocke endpoints, clés `p256dh` et
+  `auth`, user-agent, dates et préférences. Les endpoints sont validés :
+  HTTPS, port 443, pas d'identifiants, hôte dans l'allowlist
+  (`fcm.googleapis.com`, `android.googleapis.com`, Mozilla, WNS/Microsoft,
+  Apple). Les clés sont limitées par longueur et caractères base64url.
+- `MinishlinkPushTransport` utilise `minishlink/web-push` (`aes128gcm`) ;
+  `WebPushService` supprime les abonnements expirés et met à jour `last_seen`.
+- `PushNotifier` mappe les événements `downloads`, `errors`, `automation`,
+  `integrity`, `daily_summary`, nettoie les textes (pas d'URL, pas de balises)
+  et n'autorise que des URLs internes d'une liste blanche.
+- `ServerNotificationService` déclenche aussi les push quand le service est
+  disponible, sans bloquer la persistance des notifications si l'envoi échoue.
+- `POST /pwa/*` est protégé par CSRF et limité par un rate-limit de session.
+- `app:pwa:test-push` envoie une notification de test à tous les abonnements.
+- Prérequis : **HTTPS ou localhost** (`127.0.0.1` accepté en dev), permission
+  navigateur, et abonnement depuis le même navigateur. L'installation
+  (`beforeinstallprompt`) n'est disponible que sur les navigateurs qui
+  l'implémentent ; iOS Safari passe par **Partager → Sur l'écran d'accueil**.
+- La bannière d'installation est masquée en mode standalone et après
+  `localStorage.pwa_install_dismissed=1` ; le service worker est enregistré avec
+  `scope=/` uniquement en contexte sécurisé.
+
+### 21.7 Compatibilité ascendante et pièges
+
+- Anciennes entrées `history` sans `source_url` : fallback `original_url`, puis
+  `null` (intégrité et recherche ne plantent pas).
+- Anciennes configurations sans clés `music_automation_*` ou sans tables
+  PWA : les defaults s'appliquent, les bases sont créées à la demande.
+- Anciennes URLs : `/debrid` redirige vers `/torrent` ; `/music-files` redirige
+  vers `/music-library?root=downloads`.
+- Le worker de maintenance et celui des automatisations musicales doivent
+  pouvoir écrire dans `var/db` et `var/storage` ; l'entrypoint crée
+  `var/storage/logs` sur un volume neuf.
+- Ne pas exposer l'application en HTTP sur une IP LAN si l'on veut la PWA : le
+  navigateur refusera service worker et push. Utiliser HTTPS (reverse proxy) ou
+  `localhost`.
+- Depuis 2.8.1, les dépendances sont à jour sécurité : Symfony 6.4 LTS,
+  Twig 3.30, Guzzle 7.16 et PSR-7 2.13. `composer audit` ne remonte plus aucun
+  avis. Conserver ces contraintes lors des prochaines montées de version.
+
+### 21.8 Tests des sept lots
+
+| Commande | Fichier | Périmètre |
+| --- | --- | --- |
+| `composer test:navigation` | `tests/navigation_smoke.php` | menus, routes, active state |
+| `composer test:search` | `tests/global_search_smoke.php` | agrégation, limites, absence de fuite |
+| `composer test:statistics` | `tests/statistics_smoke.php` | périodes, agrégats, CSV, volumes indisponibles |
+| `composer test:maintenance` | `tests/maintenance_smoke.php` | scheduler, verrou, jobs, rétention, idempotence |
+| `composer test:integrity` | `tests/integrity_smoke.php` | statuts, deep check, requeue, legacy history |
+| `composer test:music-automations` | `tests/music_automations_smoke.php` | règles, matching, cap/guard, runs |
+| `composer test:pwa` | `tests/pwa_smoke.php` | manifeste, SW, VAPID, SSRF push, CSRF, préférences |
+
+`composer test:all` exécute aussi ces suites, les tests de sécurité existants et
+les lints Twig/container.

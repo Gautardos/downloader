@@ -25,7 +25,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 
 class DashboardController extends AbstractController
 {
@@ -87,6 +87,12 @@ class DashboardController extends AbstractController
             'is_torrent_page' => true,
             'is_ai_configured' => $ai->hasAi('renaming')
         ]);
+    }
+
+    #[Route('/debrid', name: 'debrid', methods: ['GET'])]
+    public function debrid(): Response
+    {
+        return $this->redirectToRoute('torrent');
     }
 
     #[Route('/debrid/recent', name: 'debrid_recent', methods: ['GET'])]

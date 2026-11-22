@@ -109,7 +109,15 @@ class SpotifyUserService
             if (!is_array($track) || empty($track['song_name'])) {
                 continue;
             }
+            $trackId = (string) ($track['id'] ?? '');
+            $url = (string) ($track['url'] ?? '');
+            if ($url === '' && $trackId !== '') {
+                $url = 'https://open.spotify.com/track/' . $trackId;
+            }
             $tracks[] = [
+                'id' => $trackId,
+                'url' => $url,
+                'duration_ms' => (int) ($track['duration_ms'] ?? 0),
                 'artist' => (string) ($track['artist'] ?? ''),
                 'album' => (string) ($track['album'] ?? ''),
                 'song_name' => (string) $track['song_name'],
@@ -117,7 +125,13 @@ class SpotifyUserService
         }
 
         return [
+            'id' => (string) ($result['playlist']['id'] ?? $playlistId),
             'name' => (string) ($result['playlist']['name'] ?? 'Playlist'),
+            'owner' => (string) ($result['playlist']['owner'] ?? ''),
+            'url' => (string) ($result['playlist']['url'] ?? 'https://open.spotify.com/playlist/' . $playlistId),
+            'snapshot_id' => isset($result['playlist']['snapshot_id']) && $result['playlist']['snapshot_id'] !== ''
+                ? (string) $result['playlist']['snapshot_id']
+                : null,
             'tracks' => $tracks,
         ];
     }

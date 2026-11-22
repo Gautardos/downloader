@@ -16,15 +16,18 @@
         "ext-pdo_sqlite": "*",
         "ext-simplexml": "*",
         "gautardos/hash-db": "dev-master",
-        "guzzlehttp/guzzle": "^7.5",
-        "symfony/console": "6.3.*",
-        "symfony/dotenv": "6.3.*",
+        "guzzlehttp/guzzle": "^7.12",
+        "guzzlehttp/psr7": "^2.12",
+        "minishlink/web-push": "^10.1",
+        "symfony/console": "6.4.*",
+        "symfony/dotenv": "6.4.*",
         "symfony/flex": "^2",
-        "symfony/framework-bundle": "6.3.*",
-        "symfony/process": "6.3.*",
-        "symfony/runtime": "6.3.*",
-        "symfony/twig-bundle": "6.3.*",
-        "symfony/yaml": "6.3.*"
+        "symfony/framework-bundle": "6.4.*",
+        "symfony/process": "6.4.*",
+        "symfony/runtime": "6.4.*",
+        "symfony/twig-bundle": "6.4.*",
+        "symfony/yaml": "6.4.*",
+        "twig/twig": "^3.27"
     },
     "config": {
         "allow-plugins": {
@@ -65,6 +68,12 @@
             "@auto-scripts"
         ],
         "test:automation": "php tests/automation_smoke.php",
+        "test:navigation": "php tests/navigation_smoke.php",
+        "test:statistics": "php tests/statistics_smoke.php",
+        "test:maintenance": "php tests/maintenance_smoke.php",
+        "test:integrity": "php tests/integrity_smoke.php",
+        "test:search": "php tests/global_search_smoke.php",
+        "test:pwa": "php tests/pwa_smoke.php",
         "test:jellyfin": "php tests/jellyfin_smoke.php",
         "test:security": "php tests/session_secrets_smoke.php",
         "test:ssrf": "php tests/ssrf_smoke.php",
@@ -76,6 +85,7 @@
             "php tests/music_library_smoke.php",
             "python3 tests/lyrics_audit_smoke.py"
         ],
+        "test:music-automations": "php tests/music_automations_smoke.php",
         "test:security:all": [
             "@test:auth",
             "@test:security",
@@ -87,7 +97,14 @@
             "@test:automation",
             "@test:backfill",
             "@test:jellyfin",
-            "@test:music-library"
+            "@test:music-library",
+            "@test:music-automations",
+            "@test:navigation",
+            "@test:statistics",
+            "@test:maintenance",
+            "@test:integrity",
+            "@test:search",
+            "@test:pwa"
         ],
         "test:all": [
             "@test:security:all",
@@ -102,7 +119,7 @@
     "extra": {
         "symfony": {
             "allow-contrib": false,
-            "require": "6.3.*"
+            "require": "6.4.*"
         }
     }
 }

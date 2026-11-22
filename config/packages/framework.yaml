@@ -15,5 +15,5 @@ framework:
         gc_maxlifetime: 7200                             # 2 heures (optionnel mais utile)
         gc_probability: 0
 
-    #php_errors:
-    #    log: true
+    php_errors:
+        log: true

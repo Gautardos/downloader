@@ -2,7 +2,7 @@
 
 A self-hosted media management platform built with Symfony & Python and shipped as a single Docker image. It handles video, torrent and direct-link downloads through Alldebrid, a complete music pipeline from Spotify search to a tagged library, a TMDB/Stremio discovery interface, and an automation engine that keeps your NAS library in sync with external lists.
 
-**Version:** 2.7.2
+**Version:** 2.8.1
 
 | Resource | Link |
 | -------- | ---- |
@@ -64,12 +64,18 @@ A self-hosted media management platform built with Symfony & Python and shipped 
 ### 🛠️ System
 - **Download queue** — sequential processing via a background worker (Supervisor-managed).
 - **Automation worker** — scans, list syncs and release intents in the background.
+- **Maintenance worker** — scheduled torrent DB update, log rotation and optional integrity scans.
+- **Music automations worker** — follows Spotify playlists and queues missing tracks.
+- **Global search** — one palette (`Ctrl/Cmd+K`) across actions, torrents, history, TMDB and Spotify.
+- **Statistics** — activity dashboard with `7d` / `30d` / `90d` / all periods and CSV export.
+- **Video integrity** — detects truncated, corrupt or missing downloads and can requeue them.
+- **PWA & Web Push** — installable app, offline status page, VAPID push notifications for downloads, errors, automations and integrity.
 - **Real-time tracker** — live progress with polling and browser notifications.
 - **Full history** — detailed action logs with a configurable retention limit.
 - **Authentication** — simple login with configurable credentials (default: `admin` / `admin`) and CSRF protection.
 - **AI provider** — OpenRouter (default) with xAI fallback and a model per usage (default, renaming, music genre).
 - **Adaptive UI** — navigation items are hidden automatically when their dependencies are not configured.
-- **File-based storage** — JSON for configuration/queue/history, SQLite for the torrent DB and automation index; no external SQL server required.
+- **File-based storage** — JSON for configuration/queue/history, SQLite for torrents, automations, maintenance, integrity, music rules and PWA subscriptions; no external SQL server required.
 
 ---
 
@@ -95,6 +101,7 @@ The application is distributed as a pre-built Docker image. The recommended way 
 - An **Alldebrid** account for video/torrent features.
 - A **Spotify** developer account and a Spotify session for music features.
 - Optional: a **TMDB** API key (Discover), an **OpenRouter** or **xAI** key (AI features), **Scrob/MDBList** credentials (Automations), a **Jellyfin/Nuvio** client (streaming).
+- **HTTPS** (or `localhost`) for the PWA: installing the app, the service worker and Web Push require a secure context. Plain HTTP on a LAN IP will not enable them.
 
 > [!IMPORTANT]
 > The Compose file uses `network_mode: host`. On Docker Desktop for Windows this requires **Docker Desktop ≥ 4.34** with Linux containers (see the Windows section of the [container repository](https://github.com/Gautardos/docker-downloader)).
@@ -115,9 +122,9 @@ mkdir -p downloads music nas
 sudo chown -R 1000:1000 var downloads music nas
 ```
 
-- `var/db/` — SQLite databases (torrent search, automation index).
+- `var/db/` — SQLite databases (torrent search, automation index, maintenance, integrity, music automations, PWA push subscriptions).
 - `var/home/` — persistent home (Spotify credentials, Zotify archive).
-- `var/storage/` — configuration, queue, history, logs and caches.
+- `var/storage/` — configuration, queue, history, logs, caches and the VAPID key pair.
 - `downloads/`, `music/`, `nas/` — media mounts. Adapt them to your disks or NFS/SMB shares.
 
 The application processes run as UID 1000 inside the container: data and media directories must be writable by that UID (on network shares, by the UID the share maps writes to).
@@ -133,7 +140,7 @@ MUSIC_DIR=./music
 NAS_DIR=./nas
 ```
 
-Use an explicit version (for example `IMAGE_TAG=2.7.2`) if you want reproducible deployments. Paths are **host** paths; they are mounted to fixed container paths.
+Use an explicit version (for example `IMAGE_TAG=2.8.1`) if you want reproducible deployments. Paths are **host** paths; they are mounted to fixed container paths.
 
 > [!NOTE]
 > The image serves HTTP on port **8000**. Keep `PORT=8000` unless you customize the image; with `network_mode: host`, the application is reachable on that port.
@@ -386,7 +393,7 @@ Spotify enforces audio quality on its servers; the client cannot unlock more tha
 
 ## 🏗️ Architecture
 
-The container runs four services managed by **Supervisor**:
+The container runs six services managed by **Supervisor**:
 
 | Service | Role |
 | ------- | ---- |
@@ -394,15 +401,21 @@ The container runs four services managed by **Supervisor**:
 | **Redis** | Stores PHP sessions (prevents session lock contention) |
 | **Download Worker** | Sequentially processes the download queue (`app:download-worker`) |
 | **Automation Worker** | Runs scheduled scans, list syncs and release intents (`app:automation-worker`) |
+| **Maintenance Worker** | Runs the maintenance schedule (`app:maintenance --loop`) |
+| **Music Automations Worker** | Follows Spotify playlists (`app:music-automations --loop`) |
+
+All workers write their stderr to `var/storage/logs/*_error.log`. The
+`maintenance.db`, `integrity.db`, `music_automations.db` and `pwa.db` SQLite
+databases are created automatically in `var/db` on first use.
 
 ### Volume mapping explained
 
 ```
 Host                                    → Container
 ────────────────────────────────────────────────────────────────
-~/downloader-app/var/db                 → /var/www/html/var/db         (SQLite databases)
+~/downloader-app/var/db                 → /var/www/html/var/db         (SQLite: torrents, automation, maintenance, integrity, music, PWA)
 ~/downloader-app/var/home               → /var/www/html/var/home       (Spotify creds, archive)
-~/downloader-app/var/storage            → /var/www/html/var/storage    (config, queue, history, logs)
+~/downloader-app/var/storage            → /var/www/html/var/storage    (config, queue, history, logs, VAPID keys)
 ~/downloader-app/downloads              → /downloads                   (torrent/video output)
 ~/downloader-app/music                  → /music                       (music downloads)
 ~/downloader-app/nas                    → /nas                         (NAS library, read/write)
@@ -466,11 +479,16 @@ docker exec -it downloader-container cat /var/www/html/var/storage/logs/worker.l
 # Automation worker
 docker exec -it downloader-container cat /var/www/html/var/storage/logs/automation_worker.log
 
+# Maintenance and music automations workers
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/maintenance_error.log
+docker exec -it downloader-container cat /var/www/html/var/storage/logs/music_automations_worker_error.log
+
 # Worker fatal errors
 docker exec -it downloader-container cat /var/www/html/var/storage/logs/worker_error.log
 docker exec -it downloader-container cat /var/www/html/var/storage/logs/automation_worker_error.log
 
 # Supervisor
+docker exec -it downloader-container supervisorctl status
 docker exec -it downloader-container cat /var/log/supervisord.log
 ```
 
@@ -487,6 +505,10 @@ docker exec -it downloader-container supervisorctl restart worker
 
 # Restart only the automation worker
 docker exec -it downloader-container supervisorctl restart automation-worker
+
+# Restart the maintenance or music automations worker
+docker exec -it downloader-container supervisorctl restart maintenance-worker
+docker exec -it downloader-container supervisorctl restart music-automations-worker
 ```
 
 ### Backup & restore
@@ -511,7 +533,8 @@ docker compose up -d
 
 ## 📝 Notes & Limits
 
-- Configuration, queue and history use JSON files (`JsonStorage`) under `var/storage/`; SQLite is used for the torrent search database and the automation index. Redis is used **only** for PHP sessions.
+- Configuration, queue and history use JSON files (`JsonStorage`) under `var/storage/`; SQLite is used for the torrent search database, automation index, maintenance/integrity runs, music automation rules and PWA push subscriptions. Redis is used **only** for PHP sessions.
+- **PWA / Web Push** require a secure context (HTTPS or `localhost`). VAPID keys are generated on first start in `var/storage/pwa_vapid.json` (mode `0600`); the private key never leaves the server. Push endpoints are restricted to the official FCM/Mozilla/Apple/Microsoft hosts.
 - The `librespot-auth` binary is compiled during the image build and does not need to be installed separately.
 - Automations never delete NAS files: missing files are marked `missing`, and only explicit actions (rename, prune empty folders) move things.
 - The Jellyfin bridge is **direct play only** (no transcoding) and exposes video only.
@@ -520,6 +543,7 @@ docker compose up -d
 - Paths configured in the UI are container-internal. Keep the host mount layout stable across upgrades.
 - At startup the entrypoint enforces permissions on its data: `var/storage` 710, `var/storage/logs` 2750 (setgid), `*.log` 640, other files 600, `var/db` 700/600. To let an external log shipper read the logs, give `var/storage` and `var/storage/logs` a group it belongs to. Mounted media folders are never changed recursively: only their top level is adjusted when owned by root, and a refused change (network share) does not block startup.
 - If the host already runs Redis on `127.0.0.1:6379` (host networking), the application uses it for sessions instead of the bundled one.
+- 2.8.1 upgrades the runtime to Symfony **6.4 LTS** (PHP 8.1+), Twig 3.30 and Guzzle 7.16/PSR-7 2.13. `composer audit` reports **0 advisories**.
 
 ---
 
@@ -527,4 +551,4 @@ docker compose up -d
 
 - **Application:** https://github.com/Gautardos/downloader
 - **Containerized deployment (Compose, Windows guide, release compose):** https://github.com/Gautardos/docker-downloader
-- **Release notes:** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md)
+- **Release notes:** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md) · [RELEASE_NOTES_2.8.md](RELEASE_NOTES_2.8.md)

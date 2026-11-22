@@ -17,15 +17,24 @@ final class LogRotator
                 @mkdir($directory, 0777, true);
             }
 
-            clearstatcache(true, $path);
-            if (is_file($path) && filesize($path) >= self::MAX_BYTES) {
-                self::rotate($path);
-            }
+            self::rotateIfOversized($path);
 
             @file_put_contents($path, $data, FILE_APPEND | LOCK_EX);
         } finally {
             umask($previousUmask);
         }
+    }
+
+    public static function rotateIfOversized(string $path): bool
+    {
+        clearstatcache(true, $path);
+        if (!is_file($path) || filesize($path) < self::MAX_BYTES) {
+            return false;
+        }
+
+        self::rotate($path);
+
+        return true;
     }
 
     private static function rotate(string $path): void

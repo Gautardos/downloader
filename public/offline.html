@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f172a">
+    <title>Offline - Downloader</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0f172a;
+            --panel: #1e293b;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 1.5rem;
+            background: radial-gradient(circle at top, #1e293b 0%, var(--bg) 55%);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        }
+        main {
+            width: min(100%, 420px);
+            padding: 2.5rem 2rem;
+            text-align: center;
+            background: rgba(30, 41, 59, 0.76);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+        }
+        .mark {
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
+            margin-bottom: 1.25rem;
+        }
+        h1 {
+            margin: 0 0 0.65rem;
+            font-size: 1.55rem;
+        }
+        p {
+            margin: 0 0 1.75rem;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+        button {
+            appearance: none;
+            border: 0;
+            border-radius: 10px;
+            padding: 0.8rem 1.4rem;
+            background: var(--accent);
+            color: #082f49;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        button:hover { background: #7dd3fc; }
+        button:focus-visible {
+            outline: 3px solid #e0f2fe;
+            outline-offset: 2px;
+        }
+        .hint {
+            margin-top: 1.25rem;
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+    <main aria-live="polite">
+        <img class="mark" src="/pwa-icons/icon-192.png" alt="" width="72" height="72">
+        <h1>You are offline</h1>
+        <p>The Downloader shell is available, but this page needs a network connection. Check your connection and try again.</p>
+        <button type="button" onclick="window.location.reload()">Retry</button>
+        <div class="hint">No account data is stored on this offline page.</div>
+    </main>
+</body>
+</html>

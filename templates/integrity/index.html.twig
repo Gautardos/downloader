@@ -1,0 +1,690 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}File Integrity - Alldebrid Downloader{% endblock %}
+
+{% macro bytes(value) %}
+    {%- set size = value|default(0) -%}
+    {%- if size >= 1073741824 -%}
+        {{ (size / 1073741824)|round(2) }} GB
+    {%- elseif size >= 1048576 -%}
+        {{ (size / 1048576)|round(1) }} MB
+    {%- elseif size >= 1024 -%}
+        {{ (size / 1024)|round(1) }} KB
+    {%- else -%}
+        {{ size }} B
+    {%- endif -%}
+{% endmacro %}
+
+{% import _self as ui %}
+
+{% set statusLabels = {
+    'healthy': 'Healthy',
+    'incomplete': 'Incomplete',
+    'corrupted': 'Corrupted',
+    'missing': 'Missing',
+    'outside_root': 'Outside root',
+    'unsupported': 'Unsupported'
+} %}
+{% set statusClasses = {
+    'healthy': 'success',
+    'incomplete': 'warning',
+    'corrupted': 'danger',
+    'missing': 'danger',
+    'outside_root': 'danger',
+    'unsupported': 'neutral'
+} %}
+{% set incompleteCount = summary.incomplete + summary.missing + summary.outside_root + summary.unsupported %}
+{% set attentionCount = incompleteCount + summary.corrupted %}
+
+{% block body %}
+{% embed '_partials/page_header.html.twig' with {
+    title: 'File integrity',
+    subtitle: 'Check downloaded video files for missing data, truncation and corrupt responses, then requeue from the original HTTP source.',
+    icon: 'shield',
+    badge: summary.total ~ ' checked',
+    badge_class: attentionCount > 0 ? 'header-badge--danger' : 'header-badge--success',
+    badge_dot: attentionCount > 0
+} %}
+    {% block actions %}
+        <form method="post" action="{{ path('video_integrity_check') }}" class="integrity-inline-form">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <input type="hidden" name="limit" value="{{ policy.scan_limit }}">
+            <label class="integrity-check-toggle">
+                <input type="checkbox" name="deep" value="1" {{ policy.deep_check ? 'checked' : '' }}>
+                <span>Deep check</span>
+            </label>
+            <button class="btn btn-primary" type="submit">Run check</button>
+        </form>
+        <a class="btn btn-secondary" href="{{ path('history') }}">History</a>
+    {% endblock %}
+{% endembed %}
+
+{% if attentionCount > 0 %}
+    <div class="integrity-alert integrity-alert--warning" role="status">
+        <div>
+            <strong>{{ attentionCount }} file(s) need attention</strong>
+            <p>{{ summary.corrupted }} corrupted, {{ incompleteCount }} incomplete or unavailable. Requeue refreshes the debrid link and starts a new download.</p>
+        </div>
+        <form method="post" action="{{ path('video_integrity_requeue') }}" class="integrity-inline-form js-requeue-all">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <input type="hidden" name="all" value="1">
+            <input type="hidden" name="limit" value="{{ policy.requeue_bulk_limit }}">
+            <button class="btn btn-secondary" type="submit">Requeue all</button>
+        </form>
+    </div>
+{% endif %}
+
+<section class="integrity-summary" aria-label="Integrity summary">
+    <article class="integrity-stat">
+        <span class="integrity-stat-label">Files checked</span>
+        <strong>{{ summary.total }}</strong>
+        <small>Latest stored checks</small>
+    </article>
+    <article class="integrity-stat integrity-stat--success">
+        <span class="integrity-stat-label">Healthy</span>
+        <strong>{{ summary.healthy }}</strong>
+        <small>Size and signature look valid</small>
+    </article>
+    <article class="integrity-stat integrity-stat--danger">
+        <span class="integrity-stat-label">Corrupted</span>
+        <strong>{{ summary.corrupted }}</strong>
+        <small>HTML, JSON or unreadable media</small>
+    </article>
+    <article class="integrity-stat integrity-stat--warning">
+        <span class="integrity-stat-label">Requeued</span>
+        <strong>{{ summary.requeued }}</strong>
+        <small>Retries started from a fresh link</small>
+    </article>
+</section>
+
+<section class="card integrity-card" aria-labelledby="integrity-files-title">
+    <div class="integrity-card-head">
+        <div>
+            <h2 id="integrity-files-title">Checked files</h2>
+            <p>Video files from the download history. Audio, ebooks, archives and images are ignored.</p>
+        </div>
+        <form method="get" action="{{ path('video_integrity') }}" class="integrity-search">
+            <input type="hidden" name="filter" value="{{ filter }}">
+            <label class="sr-only" for="integrity-search-input">Search checked files</label>
+            <input id="integrity-search-input" type="search" name="q" value="{{ search }}" placeholder="Filter by file name, path or reason">
+            <button class="btn btn-secondary btn-sm" type="submit">Search</button>
+        </form>
+    </div>
+
+    <div class="integrity-tabs" role="tablist" aria-label="Integrity filters">
+        {% set tabCounts = {
+            'all': summary.total,
+            'incomplete': incompleteCount,
+            'corrupted': summary.corrupted,
+            'requeued': summary.requeued,
+            'healthy': summary.healthy
+        } %}
+        {% for key in filters %}
+            <a class="integrity-tab{{ filter == key ? ' active' : '' }}"
+               role="tab"
+               aria-selected="{{ filter == key ? 'true' : 'false' }}"
+               href="{{ path('video_integrity', {filter: key, q: search}) }}">
+                {{ key|capitalize }} <span>{{ tabCounts[key] }}</span>
+            </a>
+        {% endfor %}
+    </div>
+
+    <form id="integrity-bulk-form" method="post" action="{{ path('video_integrity_requeue') }}">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
+        <input type="hidden" name="limit" value="{{ policy.requeue_bulk_limit }}">
+    </form>
+
+    <div class="integrity-table-wrap">
+        <table class="integrity-table">
+            <thead>
+                <tr>
+                    <th scope="col"><span class="sr-only">Select</span></th>
+                    <th scope="col">File</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Expected / actual</th>
+                    <th scope="col">Check</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for check in checks %}
+                    {% set expected = check.expected_size %}
+                    {% set actual = check.actual_size %}
+                    {% set pct = expected > 0 ? (actual / expected * 100)|round : (actual > 0 ? 100 : 0) %}
+                    {% if pct > 100 %}{% set pct = 100 %}{% endif %}
+                    {% set status = check.status %}
+                    <tr>
+                        <td>
+                            {% if status != 'healthy' %}
+                                <input form="integrity-bulk-form" type="checkbox" name="download_ids[]" value="{{ check.check_key }}" aria-label="Select {{ check.filename }}">
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="integrity-file">{{ check.filename }}</div>
+                            <div class="integrity-path" title="{{ check.path }}">{{ check.path }}</div>
+                            <details class="integrity-details">
+                                <summary>Details</summary>
+                                <div class="integrity-detail-grid">
+                                    <span>Reason</span><strong>{{ check.reason ?: 'No issue detected.' }}</strong>
+                                    <span>Attempts</span><strong>{{ check.attempts }} / {{ policy.max_requeue_attempts }}</strong>
+                                    <span>Source</span>
+                                    <strong>
+                                        {% if check.source_available %}
+                                            {{ check.source_display }} (HTTP source available)
+                                        {% elseif check.source_kind == 'non_http' %}
+                                            Non-HTTP source; manual retry required
+                                        {% else %}
+                                            Source unknown; manual retry required
+                                        {% endif %}
+                                    </strong>
+                                    <span>Last check</span><strong>{{ check.last_checked_at ?: '--' }} UTC</strong>
+                                    <span>Last requeue</span><strong>{{ check.last_requeued_at ?: '--' }}</strong>
+                                </div>
+                            </details>
+                        </td>
+                        <td><span class="integrity-badge integrity-badge--neutral">{{ check.type|capitalize }}</span></td>
+                        <td>
+                            <div class="integrity-size">{{ ui.bytes(expected) }} <span>&rarr;</span> {{ ui.bytes(actual) }}</div>
+                            {% if check.expected_size > 0 and check.actual_size < check.expected_size %}
+                                <div class="integrity-size-note">{{ check.actual_size }} of {{ check.expected_size }} bytes</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="integrity-meter" aria-hidden="true">
+                                <span class="integrity-meter-bar integrity-meter-bar--{{ statusClasses[status] ?? 'neutral' }}" style="width: {{ pct }}%"></span>
+                            </div>
+                            <span class="integrity-meter-label">{{ pct }}%</span>
+                        </td>
+                        <td>
+                            <span class="integrity-badge integrity-badge--{{ statusClasses[status] ?? 'neutral' }}">{{ statusLabels[status] ?? status }}</span>
+                            {% if check.last_requeued_at %}
+                                <span class="integrity-badge integrity-badge--info">Requeued</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="integrity-actions">
+                                {% if status != 'healthy' %}
+                                    <form method="post" action="{{ path('video_integrity_requeue') }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token }}">
+                                        <input type="hidden" name="download_id" value="{{ check.check_key }}">
+                                        <button class="btn btn-secondary btn-sm" type="submit" {{ check.attempts >= policy.max_requeue_attempts ? 'disabled' : '' }}>Requeue</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="7" class="integrity-empty">No integrity checks match this view. Run a check to scan the video download history.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="integrity-bulk-actions">
+        <button class="btn btn-secondary btn-sm" type="submit" form="integrity-bulk-form">Requeue selected</button>
+        <span>Bulk requeue is limited to {{ policy.requeue_bulk_limit }} file(s) per action.</span>
+    </div>
+</section>
+
+<section class="card integrity-card" aria-labelledby="integrity-policy-title">
+    <div class="integrity-card-head">
+        <div>
+            <h2 id="integrity-policy-title">Integrity policy</h2>
+            <p>Used by the nightly maintenance job and by bulk requeue actions. The job is disabled by default in Maintenance.</p>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="{{ path('maintenance') }}">Open Maintenance</a>
+    </div>
+
+    <form method="post" action="{{ path('video_integrity_settings') }}" class="integrity-policy-form">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
+        <div class="integrity-policy-grid">
+            <label>
+                <span>Max requeue attempts</span>
+                <input type="number" name="max_requeue_attempts" min="0" max="20" value="{{ policy.max_requeue_attempts }}">
+            </label>
+            <label>
+                <span>Small file threshold (bytes)</span>
+                <input type="number" name="small_file_threshold" min="0" value="{{ policy.small_file_threshold }}">
+            </label>
+            <label>
+                <span>Files per check</span>
+                <input type="number" name="scan_limit" min="1" max="2000" value="{{ policy.scan_limit }}">
+            </label>
+            <label>
+                <span>Bulk requeue limit</span>
+                <input type="number" name="requeue_bulk_limit" min="1" max="200" value="{{ policy.requeue_bulk_limit }}">
+            </label>
+        </div>
+        <div class="integrity-policy-toggles">
+            <label class="switch">
+                <input type="checkbox" name="deep_check" value="1" {{ policy.deep_check ? 'checked' : '' }}>
+                <span class="switch-track" aria-hidden="true"></span>
+                <span class="switch-label">Deep check with ffprobe when available</span>
+            </label>
+            <label class="switch">
+                <input type="checkbox" name="auto_requeue" value="1" {{ policy.auto_requeue ? 'checked' : '' }}>
+                <span class="switch-track" aria-hidden="true"></span>
+                <span class="switch-label">Requeue automatically during the maintenance job</span>
+            </label>
+        </div>
+        <div class="integrity-policy-footer">
+            <button class="btn btn-primary" type="submit">Save policy</button>
+            <span>Files are never deleted by a check. Requeue replaces the partial file when the worker downloads it.</span>
+        </div>
+    </form>
+</section>
+
+<style>
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .header-badge--success {
+        color: #bbf7d0;
+        background: rgba(34, 197, 94, .16);
+        border-color: rgba(34, 197, 94, .35);
+    }
+
+    .header-badge--danger {
+        color: #fecaca;
+        background: rgba(239, 68, 68, .16);
+        border-color: rgba(239, 68, 68, .35);
+    }
+
+    .integrity-inline-form {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
+
+    .integrity-check-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        color: var(--text-secondary);
+        font-size: .8rem;
+        white-space: nowrap;
+    }
+
+    .integrity-check-toggle input {
+        accent-color: var(--accent);
+    }
+
+    .integrity-alert {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        padding: 1rem 1.15rem;
+        border-radius: .75rem;
+        margin-bottom: 1.25rem;
+        border: 1px solid rgba(245, 158, 11, .35);
+        background: rgba(245, 158, 11, .1);
+    }
+
+    .integrity-alert strong {
+        display: block;
+        margin-bottom: .2rem;
+    }
+
+    .integrity-alert p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: .82rem;
+    }
+
+    .integrity-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .integrity-stat {
+        padding: 1rem 1.1rem;
+        border: 1px solid rgba(255, 255, 255, .08);
+        border-radius: .75rem;
+        background: var(--bg-secondary);
+    }
+
+    .integrity-stat-label {
+        display: block;
+        color: var(--text-secondary);
+        font-size: .74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+
+    .integrity-stat strong {
+        display: block;
+        margin: .35rem 0 .15rem;
+        font-size: 1.65rem;
+    }
+
+    .integrity-stat small {
+        color: var(--text-secondary);
+        font-size: .74rem;
+    }
+
+    .integrity-stat--success strong { color: #86efac; }
+    .integrity-stat--danger strong { color: #fca5a5; }
+    .integrity-stat--warning strong { color: #fcd34d; }
+
+    .integrity-card {
+        padding: 1.25rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .integrity-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .integrity-card-head h2 {
+        margin: 0 0 .3rem;
+        font-size: 1.05rem;
+    }
+
+    .integrity-card-head p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: .82rem;
+        line-height: 1.45;
+    }
+
+    .integrity-search {
+        display: flex;
+        gap: .45rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .integrity-search input {
+        min-width: 16rem;
+        padding: .55rem .7rem;
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: .5rem;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font: inherit;
+    }
+
+    .integrity-tabs {
+        display: flex;
+        gap: .35rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .integrity-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .4rem .7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, .1);
+        color: var(--text-secondary);
+        font-size: .8rem;
+        text-decoration: none;
+    }
+
+    .integrity-tab span {
+        font-size: .72rem;
+        opacity: .8;
+    }
+
+    .integrity-tab.active {
+        color: var(--text-primary);
+        border-color: rgba(56, 189, 248, .45);
+        background: rgba(56, 189, 248, .12);
+    }
+
+    .integrity-table-wrap {
+        overflow-x: auto;
+    }
+
+    .integrity-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .82rem;
+    }
+
+    .integrity-table th,
+    .integrity-table td {
+        padding: .7rem .6rem;
+        border-bottom: 1px solid rgba(255, 255, 255, .07);
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .integrity-table th {
+        color: var(--text-secondary);
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+
+    .integrity-file {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+
+    .integrity-path {
+        color: var(--text-secondary);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: .72rem;
+        overflow-wrap: anywhere;
+    }
+
+    .integrity-details {
+        margin-top: .4rem;
+    }
+
+    .integrity-details summary {
+        color: var(--accent);
+        cursor: pointer;
+        font-size: .76rem;
+    }
+
+    .integrity-detail-grid {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: .25rem .75rem;
+        margin-top: .45rem;
+        padding: .55rem .7rem;
+        border-radius: .45rem;
+        background: rgba(255, 255, 255, .03);
+        font-size: .75rem;
+    }
+
+    .integrity-detail-grid span {
+        color: var(--text-secondary);
+    }
+
+    .integrity-detail-grid strong {
+        font-weight: 500;
+        overflow-wrap: anywhere;
+    }
+
+    .integrity-size {
+        white-space: nowrap;
+    }
+
+    .integrity-size span {
+        color: var(--text-secondary);
+        padding: 0 .2rem;
+    }
+
+    .integrity-size-note {
+        color: var(--text-secondary);
+        font-size: .7rem;
+        margin-top: .2rem;
+    }
+
+    .integrity-meter {
+        width: 7rem;
+        max-width: 100%;
+        height: .4rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, .2);
+        overflow: hidden;
+    }
+
+    .integrity-meter-bar {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--accent);
+    }
+
+    .integrity-meter-bar--success { background: #22c55e; }
+    .integrity-meter-bar--warning { background: #f59e0b; }
+    .integrity-meter-bar--danger { background: #ef4444; }
+    .integrity-meter-bar--neutral { background: #94a3b8; }
+
+    .integrity-meter-label {
+        color: var(--text-secondary);
+        font-size: .72rem;
+    }
+
+    .integrity-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: .2rem .5rem;
+        border-radius: 999px;
+        font-size: .7rem;
+        font-weight: 700;
+        white-space: nowrap;
+        margin: 0 .2rem .2rem 0;
+    }
+
+    .integrity-badge--success { color: #bbf7d0; background: rgba(34, 197, 94, .16); }
+    .integrity-badge--warning { color: #fde68a; background: rgba(245, 158, 11, .16); }
+    .integrity-badge--danger { color: #fecaca; background: rgba(239, 68, 68, .16); }
+    .integrity-badge--info { color: #bae6fd; background: rgba(56, 189, 248, .16); }
+    .integrity-badge--neutral { color: var(--text-secondary); background: rgba(148, 163, 184, .14); }
+
+    .integrity-actions {
+        display: flex;
+        gap: .35rem;
+        flex-wrap: wrap;
+    }
+
+    .integrity-actions form {
+        margin: 0;
+    }
+
+    .integrity-bulk-actions {
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+        color: var(--text-secondary);
+        font-size: .78rem;
+    }
+
+    .integrity-empty {
+        text-align: center;
+        padding: 2rem !important;
+        color: var(--text-secondary);
+    }
+
+    .integrity-policy-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .8rem;
+        margin-bottom: 1rem;
+    }
+
+    .integrity-policy-grid label {
+        display: flex;
+        flex-direction: column;
+        gap: .35rem;
+        color: var(--text-secondary);
+        font-size: .78rem;
+        font-weight: 700;
+    }
+
+    .integrity-policy-grid input {
+        padding: .55rem .65rem;
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: .5rem;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font: inherit;
+    }
+
+    .integrity-policy-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .8rem 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .integrity-policy-footer {
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+        flex-wrap: wrap;
+    }
+
+    .integrity-policy-footer span {
+        color: var(--text-secondary);
+        font-size: .76rem;
+    }
+
+    @media (max-width: 900px) {
+        .integrity-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .integrity-policy-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 560px) {
+        .integrity-summary,
+        .integrity-policy-grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .integrity-search {
+            width: 100%;
+        }
+        .integrity-search input {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+    }
+</style>
+
+<script>
+    (function () {
+        document.querySelectorAll('.js-requeue-all').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!window.confirm('Requeue every incomplete, corrupted or missing file that has a known HTTP source?')) {
+                    event.preventDefault();
+                }
+            });
+        });
+    })();
+</script>
+{% endblock %}

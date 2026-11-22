@@ -73,10 +73,26 @@ class DownloadWorkerCommand extends Command
 
         $log('Starting Download Worker...');
         $this->recoverInterruptedTask($storage, $log);
+        $pauseLogged = false;
 
         while (true) {
             // Heartbeat loop (UI visibility only)
             $storage->set('worker_heartbeat', time());
+
+            $pause = self::maintenancePauseState($storage);
+            if (!empty($pause['paused'])) {
+                if (!$pauseLogged) {
+                    $log('Maintenance pause is active; waiting before processing the queue.');
+                    $pauseLogged = true;
+                }
+                $this->queueManager->setActiveTask(null);
+                sleep(2);
+                continue;
+            }
+            if ($pauseLogged) {
+                $log('Maintenance pause cleared; resuming the download queue.');
+                $pauseLogged = false;
+            }
 
             $item = $this->queueManager->pop();
 
@@ -157,6 +173,32 @@ class DownloadWorkerCommand extends Command
         flock($lockFp, LOCK_UN);
         fclose($lockFp);
         return Command::SUCCESS;
+    }
+
+    public static function maintenancePauseState(JsonStorage $storage): array
+    {
+        $path = $storage->getStorageDir() . '/maintenance.pause';
+        if (!is_file($path)) {
+            return ['paused' => false];
+        }
+
+        $raw = @file_get_contents($path);
+        $data = json_decode((string) $raw, true);
+        $started = is_array($data) ? ($data['started_at'] ?? null) : null;
+
+        if (is_string($started) && $started !== '') {
+            $timestamp = strtotime($started);
+            if ($timestamp !== false && $timestamp < time() - 6 * 3600) {
+                @unlink($path);
+
+                return ['paused' => false, 'stale' => true];
+            }
+        }
+
+        return [
+            'paused' => true,
+            'job' => is_array($data) ? ($data['job'] ?? null) : null,
+        ];
     }
 
     private function processMusicTask(array $item, $storage, callable $log): string

@@ -1,0 +1,552 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Music Automations{% endblock %}
+
+{% block body %}
+<div class="ma-page">
+    {% embed '_partials/page_header.html.twig' with {
+        title: 'Music Automations',
+        subtitle: 'Follow Spotify playlists and queue only the tracks that are not in your music library yet.',
+        icon: 'music',
+        icon_class: 'page-icon--music',
+        badge: 'Playlist rules',
+        badge_dot: false
+    } %}{% endembed %}
+
+    {% if not spotify_ready or not music_root_ready %}
+        <div class="ma-alert" role="status">
+            <strong>Configuration needed.</strong>
+            {% if not spotify_ready %}Spotify credentials or the credentials file is missing.{% endif %}
+            {% if not music_root_ready %}Set the music download path before enabling rules.{% endif %}
+            <a href="{{ path('config') }}">Open settings</a>
+        </div>
+    {% endif %}
+
+    <section class="ma-card" aria-labelledby="ma-search-title">
+        <div class="ma-card-head">
+            <div>
+                <div class="ma-eyebrow">Playlist search</div>
+                <h2 id="ma-search-title">Find a playlist</h2>
+                <p>Search public Spotify playlists or pick one from your connected account.</p>
+            </div>
+            <span class="ma-timezone">Schedule timezone: <strong>{{ timezone }}</strong></span>
+        </div>
+
+        <div class="ma-search-row">
+            <label class="ma-search-field">
+                <span class="sr-only">Search playlists</span>
+                <input type="search" id="ma-search-input" placeholder="Search playlists…" autocomplete="off" aria-label="Search playlists">
+            </label>
+            <button type="button" class="ma-btn ma-btn-primary" id="ma-search-button">Search</button>
+        </div>
+
+        <div class="ma-tabs" role="tablist" aria-label="Playlist source">
+            <button type="button" class="ma-tab is-active" role="tab" aria-selected="true" data-scope="all">All</button>
+            <button type="button" class="ma-tab" role="tab" aria-selected="false" data-scope="public">Public</button>
+            <button type="button" class="ma-tab" role="tab" aria-selected="false" data-scope="private">My playlists</button>
+        </div>
+
+        <div class="ma-search-results" id="ma-search-results" aria-live="polite">
+            <p class="ma-muted">Type a playlist name and choose a source tab.</p>
+        </div>
+    </section>
+
+    <section class="ma-card" aria-labelledby="ma-rules-title">
+        <div class="ma-card-head">
+            <div>
+                <div class="ma-eyebrow">Automations</div>
+                <h2 id="ma-rules-title">Playlist rules</h2>
+                <p>One rule per playlist. Destination, quality, lyrics and tags use your global music settings.</p>
+            </div>
+            <span class="ma-count">{{ rules|length }} rule{{ rules|length == 1 ? '' : 's' }}</span>
+        </div>
+
+        {% if rules is empty %}
+            <p class="ma-empty">No rule yet. Search for a playlist above and choose <strong>Automate</strong>.</p>
+        {% else %}
+            <div class="ma-rule-list">
+                {% for rule in rules %}
+                    <article class="ma-rule" data-rule-card="{{ rule.id }}">
+                        <div class="ma-rule-main">
+                            <div class="ma-rule-title">
+                                <h3>{{ rule.name }}</h3>
+                                <span class="ma-badge ma-badge--{{ rule.visibility }}">{{ rule.visibility }}</span>
+                                {% if rule.enabled %}
+                                    <span class="ma-badge ma-badge--on">Active</span>
+                                {% else %}
+                                    <span class="ma-badge ma-badge--off">Paused</span>
+                                {% endif %}
+                            </div>
+                            <div class="ma-rule-meta">
+                                <span>{{ rule.owner ?: 'Unknown owner' }}</span>
+                                <span>{{ rule.schedule_label }}</span>
+                                <span class="ma-rule-status ma-rule-status--{{ rule.last_status ?: 'idle' }}">{{ rule.last_status ?: 'Never run' }}</span>
+                            </div>
+                            <div class="ma-rule-times">
+                                <span>Last run: {{ rule.last_run_at ?: '—' }} UTC</span>
+                                <span>Next run: {{ rule.next_run_at ?: '—' }} UTC</span>
+                            </div>
+                            {% if rule.last_summary %}
+                                <p class="ma-rule-summary">{{ rule.last_summary }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="ma-rule-actions">
+                            <button type="button" class="ma-btn ma-btn-ghost" data-run-rule="{{ rule.id }}" data-mode="dry">Dry run</button>
+                            <button type="button" class="ma-btn ma-btn-ghost" data-run-rule="{{ rule.id }}" data-mode="enqueue">Run now</button>
+                            <button type="button" class="ma-btn ma-btn-ghost" data-edit-rule data-rule="{{ rule|json_encode|e('html_attr') }}">Edit</button>
+                            <button type="button" class="ma-btn ma-btn-ghost" data-toggle-rule="{{ rule.id }}" data-enabled="{{ rule.enabled ? '1' : '0' }}">
+                                {{ rule.enabled ? 'Pause' : 'Resume' }}
+                            </button>
+                            <button type="button" class="ma-btn ma-btn-danger" data-delete-rule="{{ rule.id }}">Delete</button>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </section>
+
+    <section class="ma-card" aria-labelledby="ma-runs-title">
+        <div class="ma-card-head">
+            <div>
+                <div class="ma-eyebrow">Activity</div>
+                <h2 id="ma-runs-title">Recent runs</h2>
+            </div>
+        </div>
+        {% if runs is empty %}
+            <p class="ma-empty">No run recorded yet.</p>
+        {% else %}
+            <div class="ma-table-wrap">
+                <table class="ma-table">
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Rule</th>
+                            <th>Trigger</th>
+                            <th>Status</th>
+                            <th>Found</th>
+                            <th>New</th>
+                            <th>Skipped</th>
+                            <th>Queued</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for run in runs %}
+                            <tr>
+                                <td>{{ run.started_at }} UTC</td>
+                                <td>#{{ run.rule_id }}</td>
+                                <td>{{ run.trigger }}</td>
+                                <td><span class="ma-rule-status ma-rule-status--{{ run.status }}">{{ run.status }}</span></td>
+                                <td>{{ run.found }}</td>
+                                <td>{{ run.new }}</td>
+                                <td>{{ run.skipped }}</td>
+                                <td>{{ run.queued }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </section>
+</div>
+
+<dialog id="ma-rule-dialog" class="ma-dialog" aria-labelledby="ma-rule-dialog-title">
+    <form method="dialog" class="ma-dialog-form" id="ma-rule-form">
+        <div class="ma-dialog-head">
+            <div>
+                <div class="ma-eyebrow">Automation</div>
+                <h2 id="ma-rule-dialog-title">Schedule this playlist</h2>
+            </div>
+            <button type="button" class="ma-icon-btn" data-close-dialog aria-label="Close dialog">×</button>
+        </div>
+
+        <input type="hidden" name="rule_id" id="ma-rule-id" value="">
+        <input type="hidden" name="playlist_id" id="ma-playlist-id" value="">
+        <input type="hidden" name="playlist_url" id="ma-playlist-url" value="">
+        <input type="hidden" name="visibility" id="ma-visibility" value="public">
+
+        <div class="ma-field">
+            <label for="ma-name">Playlist</label>
+            <input type="text" name="name" id="ma-name" maxlength="200" readonly>
+        </div>
+        <div class="ma-field">
+            <label for="ma-owner">Owner</label>
+            <input type="text" name="owner" id="ma-owner" maxlength="200" readonly>
+        </div>
+        <div class="ma-field">
+            <label for="ma-frequency">Frequency</label>
+            <select name="frequency" id="ma-frequency">
+                {% for frequency in frequencies %}
+                    <option value="{{ frequency }}">{{ frequency == '6h' ? 'Every 6 hours' : (frequency == '12h' ? 'Every 12 hours' : (frequency == 'daily' ? 'Daily' : 'Weekly')) }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="ma-field" id="ma-time-field">
+            <label for="ma-run-time">Run time ({{ timezone }})</label>
+            <input type="time" name="run_time" id="ma-run-time" value="03:00">
+        </div>
+        <div class="ma-field" id="ma-weekday-field" hidden>
+            <label for="ma-weekday">Weekday</label>
+            <select name="weekday" id="ma-weekday">
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+                <option value="7">Sunday</option>
+            </select>
+        </div>
+        <label class="ma-checkbox">
+            <input type="checkbox" name="enabled" id="ma-enabled" value="1" checked>
+            <span>Rule is active</span>
+        </label>
+
+        <p class="ma-dialog-error" id="ma-dialog-error" role="alert" hidden></p>
+
+        <div class="ma-dialog-actions">
+            <button type="button" class="ma-btn ma-btn-ghost" data-close-dialog>Cancel</button>
+            <button type="submit" class="ma-btn ma-btn-primary" id="ma-save-rule">Save rule</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="ma-preview-dialog" class="ma-dialog" aria-labelledby="ma-preview-title">
+    <div class="ma-dialog-head">
+        <div>
+            <div class="ma-eyebrow">Dry run</div>
+            <h2 id="ma-preview-title">Preview</h2>
+        </div>
+        <button type="button" class="ma-icon-btn" data-close-preview aria-label="Close preview">×</button>
+    </div>
+    <div id="ma-preview-body"></div>
+</dialog>
+
+<style>
+.ma-page{display:flex;flex-direction:column;gap:18px}
+.ma-card{background:var(--bg-secondary);border:1px solid rgba(148,163,184,.18);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:16px}
+.ma-card-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.ma-card-head h2{margin:2px 0 4px;font-size:1.15rem}
+.ma-card-head p{margin:0;color:#94a3b8;font-size:.9rem}
+.ma-eyebrow{text-transform:uppercase;letter-spacing:.08em;font-size:.68rem;font-weight:700;color:#818cf8}
+.ma-timezone,.ma-count{font-size:.8rem;color:#94a3b8}
+.ma-alert{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);color:#fbbf24;padding:12px 16px;border-radius:12px;font-size:.9rem}
+.ma-alert a{color:#fde68a;margin-left:6px}
+.ma-search-row{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+.ma-search-field{flex:1;min-width:220px;display:flex}
+.ma-search-field input{width:100%;height:44px;padding:0 14px;border-radius:11px;border:1px solid rgba(148,163,184,.28);background:var(--bg-primary);color:var(--text-primary,#e2e8f0);box-sizing:border-box}
+.ma-search-row .ma-btn{height:44px;padding:0 20px;box-sizing:border-box}
+.ma-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.ma-tab{border:1px solid rgba(148,163,184,.24);background:transparent;color:#cbd5e1;padding:7px 14px;border-radius:999px;cursor:pointer;font-size:.82rem}
+.ma-tab.is-active{background:#4f46e5;border-color:#4f46e5;color:#fff}
+.ma-search-results{display:grid;gap:10px}
+.ma-result{display:flex;gap:12px;align-items:center;border:1px solid rgba(148,163,184,.16);border-radius:13px;padding:10px 12px;background:rgba(15,23,42,.4)}
+.ma-result-art{width:46px;height:46px;border-radius:9px;object-fit:cover;background:#1f2937;flex-shrink:0}
+.ma-result-art--empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:1.1rem}
+.ma-result-body{flex:1;min-width:0}
+.ma-result-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ma-result-title strong{font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.ma-result-meta{font-size:.78rem;color:#94a3b8;margin-top:2px}
+.ma-badge{font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;border:1px solid transparent}
+.ma-badge--public{background:rgba(34,197,94,.14);color:#4ade80;border-color:rgba(34,197,94,.3)}
+.ma-badge--private{background:rgba(168,85,247,.14);color:#c084fc;border-color:rgba(168,85,247,.3)}
+.ma-badge--on{background:rgba(34,197,94,.14);color:#4ade80}
+.ma-badge--off{background:rgba(148,163,184,.14);color:#94a3b8}
+.ma-btn{border-radius:10px;border:1px solid rgba(148,163,184,.28);background:transparent;color:#e2e8f0;padding:8px 13px;font-size:.8rem;cursor:pointer;white-space:nowrap}
+.ma-btn:hover{border-color:#6366f1}
+.ma-btn-primary{background:#4f46e5;border-color:#4f46e5;color:#fff}
+.ma-btn-danger{border-color:rgba(248,113,113,.4);color:#fca5a5}
+.ma-btn-ghost{background:rgba(148,163,184,.08)}
+.ma-btn[disabled]{opacity:.55;cursor:not-allowed}
+.ma-rule-list{display:grid;gap:12px}
+.ma-rule{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;border:1px solid rgba(148,163,184,.16);border-radius:14px;padding:14px;flex-wrap:wrap}
+.ma-rule-main{flex:1;min-width:240px;display:flex;flex-direction:column;gap:6px}
+.ma-rule-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ma-rule-title h3{margin:0;font-size:.98rem}
+.ma-rule-meta,.ma-rule-times{display:flex;gap:14px;flex-wrap:wrap;font-size:.78rem;color:#94a3b8}
+.ma-rule-times{color:#64748b}
+.ma-rule-summary{margin:2px 0 0;font-size:.8rem;color:#cbd5e1}
+.ma-rule-status{font-weight:700;text-transform:capitalize}
+.ma-rule-status--success,.ma-rule-status--no_changes{color:#4ade80}
+.ma-rule-status--error{color:#f87171}
+.ma-rule-status--skipped{color:#fbbf24}
+.ma-rule-status--dry_run{color:#60a5fa}
+.ma-rule-status--idle{color:#94a3b8}
+.ma-rule-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ma-empty,.ma-muted{color:#94a3b8;font-size:.86rem;margin:0}
+.ma-table-wrap{overflow-x:auto}
+.ma-table{width:100%;border-collapse:collapse;font-size:.8rem;min-width:640px}
+.ma-table th,.ma-table td{text-align:left;padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.12)}
+.ma-table th{color:#94a3b8;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+.ma-dialog{border:1px solid rgba(148,163,184,.28);border-radius:18px;background:#111827;color:#e2e8f0;padding:0;width:min(480px,94vw)}
+.ma-dialog::backdrop{background:rgba(2,6,23,.72)}
+.ma-dialog-form,.ma-dialog{padding:20px}
+.ma-dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.ma-dialog-head h2{margin:2px 0 0;font-size:1.05rem}
+.ma-icon-btn{background:transparent;border:1px solid rgba(148,163,184,.3);color:#cbd5e1;width:32px;height:32px;border-radius:9px;cursor:pointer;font-size:1.1rem;line-height:1}
+.ma-field{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+.ma-field label{font-size:.78rem;color:#94a3b8}
+.ma-field input,.ma-field select{padding:9px 11px;border-radius:9px;border:1px solid rgba(148,163,184,.28);background:#0f172a;color:#e2e8f0}
+.ma-checkbox{display:flex;gap:8px;align-items:center;font-size:.85rem;margin:4px 0 12px}
+.ma-dialog-error{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.4);color:#fca5a5;padding:9px 11px;border-radius:9px;font-size:.82rem}
+.ma-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.ma-preview-summary{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:.82rem;color:#cbd5e1}
+.ma-preview-summary strong{color:#fff}
+.ma-preview-track{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid rgba(148,163,184,.12);font-size:.8rem}
+.ma-preview-track span:last-child{color:#94a3b8}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:640px){.ma-rule-actions{width:100%;justify-content:flex-start}.ma-card{padding:16px}.ma-dialog{width:96vw}}
+</style>
+
+<script>
+(() => {
+    const csrfToken = window.csrfToken || '';
+    const input = document.getElementById('ma-search-input');
+    const results = document.getElementById('ma-search-results');
+    const searchButton = document.getElementById('ma-search-button');
+    const ruleDialog = document.getElementById('ma-rule-dialog');
+    const previewDialog = document.getElementById('ma-preview-dialog');
+    const previewBody = document.getElementById('ma-preview-body');
+    const form = document.getElementById('ma-rule-form');
+    const errorBox = document.getElementById('ma-dialog-error');
+    const frequency = document.getElementById('ma-frequency');
+    const timeField = document.getElementById('ma-time-field');
+    const weekdayField = document.getElementById('ma-weekday-field');
+    let scope = 'all';
+    let searchTimer = null;
+
+    const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[char]));
+
+    const api = async (url, options = {}) => {
+        const response = await fetch(url, {
+            credentials: 'same-origin',
+            ...options,
+            headers: {
+                'Accept': 'application/json',
+                ...(csrfToken ? {'X-CSRF-Token': csrfToken} : {}),
+                ...(options.headers || {})
+            }
+        });
+        let data = null;
+        try { data = await response.json(); } catch (e) { data = {}; }
+        if (!response.ok) {
+            throw new Error(data.message || data.error || ('Request failed (' + response.status + ')'));
+        }
+        return data;
+    };
+
+    const toggleScheduleFields = () => {
+        const value = frequency.value;
+        timeField.hidden = value === '6h' || value === '12h';
+        weekdayField.hidden = value !== 'weekly';
+    };
+
+    const renderResults = (data) => {
+        const items = data.results || [];
+        if (!items.length) {
+            const message = data.message || data.private_error || data.public_error || 'No playlist found.';
+            results.innerHTML = '<p class="ma-muted">' + esc(message) + '</p>';
+            return;
+        }
+        results.innerHTML = items.map((item) => `
+            <article class="ma-result">
+                ${item.image ? '<img class="ma-result-art" src="' + esc(item.image) + '" alt="" loading="lazy">' : '<div class="ma-result-art ma-result-art--empty" aria-hidden="true">♪</div>'}
+                <div class="ma-result-body">
+                    <div class="ma-result-title">
+                        <strong>${esc(item.name)}</strong>
+                        <span class="ma-badge ma-badge--${esc(item.visibility)}">${esc(item.visibility)}</span>
+                    </div>
+                    <div class="ma-result-meta">${esc(item.owner || 'Unknown owner')} · ${esc(item.track_count || 0)} tracks</div>
+                </div>
+                <button type="button" class="ma-btn ma-btn-primary" data-automate='${esc(JSON.stringify(item))}'>Automate</button>
+            </article>
+        `).join('');
+    };
+
+    const performSearch = async () => {
+        const query = input.value.trim();
+        results.innerHTML = '<p class="ma-muted">Searching…</p>';
+        try {
+            const data = await api('{{ path('music_automations_search') }}?q=' + encodeURIComponent(query) + '&scope=' + encodeURIComponent(scope));
+            renderResults(data);
+        } catch (error) {
+            results.innerHTML = '<p class="ma-muted">' + esc(error.message) + '</p>';
+        }
+    };
+
+    const openRuleDialog = (item = null) => {
+        form.reset();
+        errorBox.hidden = true;
+        document.getElementById('ma-rule-id').value = item && item.rule_id ? item.rule_id : '';
+        document.getElementById('ma-playlist-id').value = item ? (item.id || '') : '';
+        document.getElementById('ma-playlist-url').value = item ? (item.url || '') : '';
+        document.getElementById('ma-visibility').value = item ? (item.visibility || 'public') : 'public';
+        document.getElementById('ma-name').value = item ? (item.name || '') : '';
+        document.getElementById('ma-owner').value = item ? (item.owner || '') : '';
+        frequency.value = item && item.frequency ? item.frequency : 'daily';
+        document.getElementById('ma-run-time').value = item && item.run_time ? item.run_time : '03:00';
+        document.getElementById('ma-weekday').value = item && item.weekday ? String(item.weekday) : '1';
+        document.getElementById('ma-enabled').checked = item && typeof item.enabled !== 'undefined' ? Boolean(item.enabled) : true;
+        toggleScheduleFields();
+        ruleDialog.showModal();
+    };
+
+    document.querySelectorAll('[data-scope]').forEach((tab) => {
+        tab.addEventListener('click', () => {
+            scope = tab.dataset.scope;
+            document.querySelectorAll('[data-scope]').forEach((node) => {
+                node.classList.toggle('is-active', node === tab);
+                node.setAttribute('aria-selected', node === tab ? 'true' : 'false');
+            });
+            performSearch();
+        });
+    });
+
+    input.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(performSearch, 350);
+    });
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            performSearch();
+        }
+    });
+    searchButton.addEventListener('click', performSearch);
+
+    results.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-automate]');
+        if (!button) return;
+        try {
+            openRuleDialog(JSON.parse(button.dataset.automate));
+        } catch (e) {
+            openRuleDialog(null);
+        }
+    });
+
+    frequency.addEventListener('change', toggleScheduleFields);
+
+    document.querySelectorAll('[data-close-dialog]').forEach((button) => button.addEventListener('click', () => ruleDialog.close()));
+    document.querySelectorAll('[data-close-preview]').forEach((button) => button.addEventListener('click', () => previewDialog.close()));
+    ruleDialog.addEventListener('click', (event) => { if (event.target === ruleDialog) ruleDialog.close(); });
+    previewDialog.addEventListener('click', (event) => { if (event.target === previewDialog) previewDialog.close(); });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        errorBox.hidden = true;
+        const button = document.getElementById('ma-save-rule');
+        button.disabled = true;
+        try {
+            const data = await api('{{ path('music_automations_save') }}', {method: 'POST', body: new FormData(form)});
+            if (!data.success) {
+                throw new Error(data.message || 'Could not save the rule.');
+            }
+            window.location.reload();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+            button.disabled = false;
+        }
+    });
+
+    document.querySelectorAll('[data-edit-rule]').forEach((button) => {
+        button.addEventListener('click', () => {
+            try {
+                const rule = JSON.parse(button.dataset.rule);
+                openRuleDialog({
+                    id: rule.playlist_id,
+                    url: rule.playlist_url,
+                    name: rule.name,
+                    owner: rule.owner,
+                    visibility: rule.visibility,
+                    frequency: rule.frequency,
+                    run_time: rule.run_time,
+                    weekday: rule.weekday,
+                    enabled: rule.enabled,
+                    rule_id: rule.id
+                });
+            } catch (e) {
+                errorBox.textContent = 'Could not read the rule.';
+                errorBox.hidden = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-run-rule]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const ruleId = button.dataset.runRule;
+            const mode = button.dataset.mode || 'dry';
+            button.disabled = true;
+            try {
+                const data = await api('{{ path('music_automations_run') }}', {
+                    method: 'POST',
+                    body: new URLSearchParams({rule_id: ruleId, mode})
+                });
+                const summary = data.message || ((data.found || 0) + ' found, ' + (data.new || 0) + ' new, ' + (data.skipped || 0) + ' skipped.');
+                const preview = Array.isArray(data.preview) ? data.preview : [];
+                previewBody.innerHTML = '<p class="ma-preview-summary">' + esc(summary) + '</p>' + preview.map((track) => `
+                    <div class="ma-preview-track"><span>${esc(track.artist)} — ${esc(track.song_name)}</span><span>${esc(track.album || '')}</span></div>
+                `).join('');
+                previewDialog.showModal();
+                if (mode === 'enqueue') {
+                    window.setTimeout(() => window.location.reload(), 1200);
+                }
+            } catch (error) {
+                previewBody.innerHTML = '<p class="ma-muted">' + esc(error.message) + '</p>';
+                previewDialog.showModal();
+            } finally {
+                button.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-delete-rule]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            if (!window.confirm('Delete this music automation rule?')) return;
+            button.disabled = true;
+            try {
+                await api('{{ path('music_automations_delete') }}', {
+                    method: 'POST',
+                    body: new URLSearchParams({rule_id: button.dataset.deleteRule})
+                });
+                window.location.reload();
+            } catch (error) {
+                window.alert(error.message);
+                button.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-toggle-rule]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const card = button.closest('[data-rule-card]');
+            const editButton = card ? card.querySelector('[data-edit-rule]') : null;
+            if (!editButton) return;
+            let rule = null;
+            try { rule = JSON.parse(editButton.dataset.rule); } catch (e) { return; }
+            button.disabled = true;
+            const body = new URLSearchParams({
+                rule_id: String(rule.id),
+                playlist_id: rule.playlist_id,
+                playlist_url: rule.playlist_url,
+                name: rule.name,
+                owner: rule.owner || '',
+                visibility: rule.visibility || 'public',
+                frequency: rule.frequency,
+                run_time: rule.run_time || '03:00',
+                weekday: String(rule.weekday || 1),
+                enabled: rule.enabled ? '0' : '1'
+            });
+            try {
+                await api('{{ path('music_automations_save') }}', {method: 'POST', body});
+                window.location.reload();
+            } catch (error) {
+                window.alert(error.message);
+                button.disabled = false;
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}
