@@ -60,39 +60,7 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 WORKDIR /var/www/html
 
 # ────────────────────────────────────────────────
-# 6. Copie sélective → on n'inclut PAS var/
-# ────────────────────────────────────────────────
-COPY --chown=www-data:www-data .env composer.json composer.lock ./
-COPY --chown=www-data:www-data src/            src/
-COPY --chown=www-data:www-data public/         public/
-COPY --chown=www-data:www-data config/         config/
-COPY --chown=www-data:www-data templates/      templates/
-COPY --chown=www-data:www-data cli/            cli/
-COPY --chown=www-data:www-data bin/            bin/
-
-# Installation des dépendances PHP (sans dev)
-RUN composer install --no-dev --optimize-autoloader --classmap-authoritative --no-interaction
-
-# ────────────────────────────────────────────────
-# 7. Environnement Python
-# ────────────────────────────────────────────────
-RUN python3 -m venv /opt/venv
-RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir -r cli/requirements.txt
-
-# ────────────────────────────────────────────────
-# 8. Compilation de librespot-auth (Rust)
-# ────────────────────────────────────────────────
-RUN mkdir -p /var/www/html/var/librespot-auth \
-    && cd /var/www/html/var/librespot-auth \
-    && git clone https://github.com/Gautardos/librespot-auth.git . \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path \
-    && . "$HOME/.cargo/env" \
-    && cargo build --release \
-    && rm -rf /root/.cargo /root/.rustup   # on nettoie le plus possible
-
-# ────────────────────────────────────────────────
-# 9. Configuration Apache + Symfony
+# 6. Configuration Apache + Symfony
 # ────────────────────────────────────────────────
 RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf \
     && a2enmod rewrite
@@ -102,9 +70,7 @@ RUN sed -i 's/Listen 80/Listen 8000/' /etc/apache2/ports.conf \
     && sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/g' /etc/apache2/sites-available/000-default.conf \
     && sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8000>/g' /etc/apache2/sites-available/default-ssl.conf 2>/dev/null || true
 
-# ────────────────────────────────────────────────
-# 10. Optimisations KeepAlive / sessions Redis
-# ────────────────────────────────────────────────
+# Optimisations KeepAlive / sessions Redis
 RUN { \
     echo 'KeepAlive On'; \
     echo 'KeepAliveTimeout 300'; \
@@ -131,15 +97,62 @@ RUN echo '' >> /etc/apache2/mods-enabled/mpm_prefork.conf \
     && echo '    Timeout 300' >> /etc/apache2/mods-enabled/mpm_prefork.conf
 
 # ────────────────────────────────────────────────
-# 11. Dossiers de runtime (créés vides dans l’image)
+# 7. Compilation de librespot-auth (Rust, version épinglée)
+# ────────────────────────────────────────────────
+ARG LIBRESPOT_AUTH_REF=f16fa8ad7159aff6af4933fd782707c8e876fc8c
+RUN mkdir -p /var/www/html/var/librespot-auth \
+    && cd /var/www/html/var/librespot-auth \
+    && git clone https://github.com/Gautardos/librespot-auth.git . \
+    && git checkout "$LIBRESPOT_AUTH_REF" \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path \
+    && . "$HOME/.cargo/env" \
+    && cargo build --release \
+    && chmod +x target/release/librespot-auth \
+    && rm -rf /root/.cargo /root/.rustup
+
+# ────────────────────────────────────────────────
+# 8. Environnement Python
+# ────────────────────────────────────────────────
+COPY cli/requirements.txt /tmp/requirements.txt
+ARG PYTHON_DEPS_CACHE_BUST=1
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm -f /tmp/requirements.txt
+
+# ────────────────────────────────────────────────
+# 9. Dépendances Composer (vendor seul, sans le source)
+# ────────────────────────────────────────────────
+COPY --chown=www-data:www-data .env composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-plugins --no-autoloader --no-interaction
+
+# ────────────────────────────────────────────────
+# 10. Source applicatif
+# ────────────────────────────────────────────────
+COPY --chown=www-data:www-data src/            src/
+COPY --chown=www-data:www-data public/         public/
+COPY --chown=www-data:www-data config/         config/
+COPY --chown=www-data:www-data templates/      templates/
+COPY --chown=www-data:www-data cli/            cli/
+COPY --chown=www-data:www-data bin/            bin/
+
+# ────────────────────────────────────────────────
+# 11. Composer final + scripts Symfony
+# ────────────────────────────────────────────────
+RUN composer install --no-dev --optimize-autoloader --classmap-authoritative \
+    --no-interaction --no-scripts \
+    && (composer run-script auto-scripts || (php bin/console cache:clear && php bin/console assets:install public)) \
+    && { chown -R www-data:www-data var/cache public/bundles 2>/dev/null || true; }
+
+# ────────────────────────────────────────────────
+# 12. Dossiers de runtime (après le Composer final)
 # ────────────────────────────────────────────────
 RUN mkdir -p var/storage/logs var/sessions var/cache var/log var/composer_home var/db var/home \
     && chown -R www-data:www-data var/storage var/sessions var/cache var/log var/composer_home var/db var/home \
-    && chmod -R 775 var/storage var/sessions var/cache var/log var/composer_home var/db var/home \
-    && find /var/www/html/var/librespot-auth -type f -name "librespot-auth" -exec chmod +x {} +
+    && chmod -R 775 var/storage var/sessions var/cache var/log var/composer_home var/db var/home
 
 # ────────────────────────────────────────────────
-# 12. Fichiers de configuration finale
+# 13. Fichiers de configuration finale
 # ────────────────────────────────────────────────
 COPY supervisord.conf /etc/supervisord.conf
 COPY docker-entrypoint.sh /var/www/html/docker-entrypoint.sh

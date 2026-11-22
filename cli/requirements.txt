@@ -1,4 +1,4 @@
-git+https://github.com/Gautardos/zotify.git
+git+https://github.com/Gautardos/zotify.git@6e45c5ff9b504583d2c5223442baf788bf95be09
 mutagen
 music-tag==0.4.3
 requests
