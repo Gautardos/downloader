@@ -39,7 +39,7 @@
 {% block body %}
 {% embed '_partials/page_header.html.twig' with {
     title: 'File integrity',
-    subtitle: 'Check downloaded video files for missing data, truncation and corrupt responses, then requeue from the original HTTP source.',
+    subtitle: 'Check video files from the download history and the automation library for missing data, truncation and corrupt responses, then requeue when the original HTTP source is known.',
     icon: 'shield',
     badge: summary.total ~ ' checked',
     badge_class: attentionCount > 0 ? 'header-badge--danger' : 'header-badge--success',
@@ -101,7 +101,7 @@
     <div class="integrity-card-head">
         <div>
             <h2 id="integrity-files-title">Checked files</h2>
-            <p>Video files from the download history. Audio, ebooks, archives and images are ignored.</p>
+            <p>Video files from the download history and the automation library. Audio, ebooks, archives and images are ignored.</p>
         </div>
         <form method="get" action="{{ path('video_integrity') }}" class="integrity-search">
             <input type="hidden" name="filter" value="{{ filter }}">
@@ -156,13 +156,20 @@
                     {% set status = check.status %}
                     <tr>
                         <td>
-                            {% if status != 'healthy' %}
+                            {% if status != 'healthy' and check.source_available %}
                                 <input form="integrity-bulk-form" type="checkbox" name="download_ids[]" value="{{ check.check_key }}" aria-label="Select {{ check.filename }}">
                             {% endif %}
                         </td>
                         <td>
                             <div class="integrity-file">{{ check.filename }}</div>
                             <div class="integrity-path" title="{{ check.path }}">{{ check.path }}</div>
+                            {% if check.origin|default('history') == 'library' %}
+                                <span class="integrity-badge integrity-badge--info">Library</span>
+                            {% elseif check.in_library|default(false) %}
+                                <span class="integrity-badge integrity-badge--neutral">History + Library</span>
+                            {% else %}
+                                <span class="integrity-badge integrity-badge--neutral">History</span>
+                            {% endif %}
                             <details class="integrity-details">
                                 <summary>Details</summary>
                                 <div class="integrity-detail-grid">
@@ -208,7 +215,7 @@
                                     <form method="post" action="{{ path('video_integrity_requeue') }}">
                                         <input type="hidden" name="_token" value="{{ csrf_token }}">
                                         <input type="hidden" name="download_id" value="{{ check.check_key }}">
-                                        <button class="btn btn-secondary btn-sm" type="submit" {{ check.attempts >= policy.max_requeue_attempts ? 'disabled' : '' }}>Requeue</button>
+                                        <button class="btn btn-secondary btn-sm" type="submit" {{ (check.attempts >= policy.max_requeue_attempts or not check.source_available) ? 'disabled' : '' }} title="{{ not check.source_available ? 'Source unknown: manual retry required.' : '' }}">Requeue</button>
                                     </form>
                                 {% endif %}
                             </div>

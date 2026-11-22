@@ -3,6 +3,7 @@
 namespace App\Service\Integrity;
 
 use App\Service\Automation\AutomationSettings;
+use App\Service\Automation\AutomationStore;
 use App\Service\JsonStorage;
 use App\Service\MediaTypeHelper;
 use DateTimeImmutable;
@@ -14,6 +15,7 @@ class VideoIntegrityService
     private IntegrityStore $store;
     private IntegritySettings $settings;
     private FileIntegrityChecker $checker;
+    private ?AutomationStore $automationStore;
     private ?AutomationSettings $automationSettings;
     private MediaTypeHelper $mediaTypeHelper;
 
@@ -22,6 +24,7 @@ class VideoIntegrityService
         IntegrityStore $store,
         IntegritySettings $settings,
         FileIntegrityChecker $checker,
+        ?AutomationStore $automationStore = null,
         ?AutomationSettings $automationSettings = null,
         ?MediaTypeHelper $mediaTypeHelper = null
     ) {
@@ -29,6 +32,7 @@ class VideoIntegrityService
         $this->store = $store;
         $this->settings = $settings;
         $this->checker = $checker;
+        $this->automationStore = $automationStore;
         $this->automationSettings = $automationSettings;
         $this->mediaTypeHelper = $mediaTypeHelper ?? new MediaTypeHelper();
     }
@@ -52,7 +56,7 @@ class VideoIntegrityService
         return array_values(array_unique(array_filter($roots, static fn (string $root): bool => trim($root) !== '')));
     }
 
-    public function scan(?int $limit = null, bool $deep = false, bool $persist = true): array
+    public function scan(?int $limit = null, bool $deep = false, bool $persist = true, array $filters = []): array
     {
         $policy = $this->settings->all();
         if ($limit === null || $limit <= 0) {
@@ -60,66 +64,60 @@ class VideoIntegrityService
         }
         $limit = max(1, min(2000, $limit));
 
-        $roots = $this->allowedRoots();
-        $history = $this->storage->get('history', []);
-        if (!is_array($history)) {
-            $history = [];
-        }
+        $includeLibrary = $this->toBool($filters['include_library'] ?? true);
+        $hasTarget = $includeLibrary && $this->hasTargetFilters($filters);
+        $candidates = $this->collectCandidates($filters, $includeLibrary, $hasTarget, $limit);
 
+        $roots = $this->allowedRoots();
         $summary = $this->emptySummary();
         $checks = [];
-        $seen = [];
-        $seenPaths = [];
         $checked = 0;
 
-        foreach (array_reverse($history) as $entry) {
-            if (!is_array($entry)) {
-                continue;
-            }
-
-            $filename = trim((string) ($entry['filename'] ?? ''));
-            if ($filename === '' || $this->mediaTypeHelper->getType($filename) !== MediaTypeHelper::TYPE_VIDEO) {
-                continue;
-            }
-
-            $path = trim((string) ($entry['path'] ?? ''));
-            $fullPath = rtrim($path, '/\\') . DIRECTORY_SEPARATOR . $filename;
-            $downloadId = trim((string) ($entry['download_id'] ?? ''));
-            $checkKey = $downloadId !== '' ? 'download:' . $downloadId : 'path:' . $fullPath;
-
-            if (isset($seen[$checkKey]) || isset($seenPaths[$fullPath])) {
-                continue;
-            }
-            $seen[$checkKey] = true;
-            $seenPaths[$fullPath] = true;
-
+        foreach ($candidates as $candidate) {
             if ($checked >= $limit) {
                 break;
             }
             $checked++;
 
-            $expected = (int) ($entry['actual_size'] ?? 0);
-            if ($expected <= 0) {
-                $expected = (int) ($entry['size'] ?? 0);
+            $fullPath = (string) $candidate['path'];
+            $filename = (string) $candidate['filename'];
+            $downloadId = trim((string) ($candidate['download_id'] ?? ''));
+            $historyEntry = is_array($candidate['history_entry'] ?? null) ? $candidate['history_entry'] : null;
+            $libraryEntry = is_array($candidate['library_entry'] ?? null) ? $candidate['library_entry'] : null;
+            $existing = $this->store->findCheckByPath($fullPath);
+            $checkKey = (string) ($existing['check_key'] ?? ($downloadId !== '' ? 'download:' . $downloadId : 'path:' . $fullPath));
+
+            $expected = max(0, (int) ($candidate['expected_size'] ?? 0));
+            if ($libraryEntry !== null && $historyEntry === null && $existing !== null) {
+                $expected = max($expected, (int) ($existing['expected_size'] ?? 0));
             }
 
-            $source = $entry['source_url'] ?? ($entry['original_url'] ?? null);
+            $source = null;
+            if ($historyEntry !== null) {
+                $source = $historyEntry['source_url'] ?? ($historyEntry['original_url'] ?? null);
+            }
             $source = is_string($source) && trim($source) !== '' ? trim($source) : null;
             $sourceAvailable = $source !== null && preg_match('#^https?://#i', $source) === 1;
+            $origin = $historyEntry !== null ? 'history' : 'library';
 
             $result = $this->checker->check(
                 $fullPath,
                 $roots,
-                max(0, $expected),
+                $expected,
                 $deep,
                 (int) $policy['small_file_threshold']
             );
 
             $extra = array_merge((array) ($result['extra'] ?? []), [
+                'origin' => $origin,
+                'in_library' => $libraryEntry !== null,
                 'source_available' => $sourceAvailable,
                 'source_display' => $sourceAvailable ? self::safeSource($source) : null,
                 'source_kind' => $source === null ? 'unknown' : ($sourceAvailable ? 'http' : 'non_http'),
             ]);
+            if ($libraryEntry !== null) {
+                $extra = array_merge($extra, $this->libraryExtra($libraryEntry));
+            }
 
             $record = [
                 'check_key' => $checkKey,
@@ -127,7 +125,7 @@ class VideoIntegrityService
                 'download_id' => $downloadId,
                 'filename' => $filename,
                 'type' => MediaTypeHelper::TYPE_VIDEO,
-                'expected_size' => max(0, $expected),
+                'expected_size' => $expected,
                 'actual_size' => (int) ($result['actual_size'] ?? 0),
                 'status' => (string) $result['status'],
                 'reason' => (string) ($result['reason'] ?? ''),
@@ -141,8 +139,11 @@ class VideoIntegrityService
 
             $checks[] = array_merge($record, [
                 'extra' => $extra,
+                'origin' => $origin,
+                'in_library' => $libraryEntry !== null,
                 'source_available' => $sourceAvailable,
                 'source_display' => $extra['source_display'],
+                'source_kind' => $extra['source_kind'],
             ]);
 
             if (array_key_exists($result['status'], $summary)) {
@@ -161,9 +162,136 @@ class VideoIntegrityService
             'limit' => $limit,
             'deep' => $deep,
             'persisted' => $persist,
+            'library_included' => $includeLibrary,
             'summary' => $summary,
             'checks' => $checks,
         ];
+    }
+
+    private function collectCandidates(array $filters, bool $includeLibrary, bool $hasTarget, int $limit): array
+    {
+        $history = $this->storage->get('history', []);
+        $history = is_array($history) ? $history : [];
+
+        $candidates = [];
+        foreach (array_reverse($history) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $filename = trim((string) ($entry['filename'] ?? ''));
+            if ($filename === '' || $this->mediaTypeHelper->getType($filename) !== MediaTypeHelper::TYPE_VIDEO) {
+                continue;
+            }
+
+            $path = trim((string) ($entry['path'] ?? ''));
+            $fullPath = rtrim($path, '/\\') . DIRECTORY_SEPARATOR . $filename;
+            if (isset($candidates[$fullPath])) {
+                continue;
+            }
+
+            $expected = (int) ($entry['actual_size'] ?? 0);
+            if ($expected <= 0) {
+                $expected = (int) ($entry['size'] ?? 0);
+            }
+
+            $candidates[$fullPath] = [
+                'path' => $fullPath,
+                'filename' => $filename,
+                'download_id' => trim((string) ($entry['download_id'] ?? '')),
+                'expected_size' => max(0, $expected),
+                'history_entry' => $entry,
+                'library_entry' => null,
+            ];
+        }
+
+        $libraryEntries = [];
+        if ($includeLibrary && $this->automationStore !== null) {
+            $libraryEntries = $this->automationStore->getActiveLibraryEntriesForIntegrity($filters, $limit);
+        }
+
+        if ($hasTarget) {
+            $targetPaths = [];
+            foreach ($libraryEntries as $entry) {
+                $targetPaths[(string) ($entry['path'] ?? '')] = true;
+            }
+            $candidates = array_filter(
+                $candidates,
+                static fn (array $candidate): bool => isset($targetPaths[(string) $candidate['path']])
+            );
+        }
+
+        foreach ($libraryEntries as $entry) {
+            $fullPath = trim((string) ($entry['path'] ?? ''));
+            if ($fullPath === '') {
+                continue;
+            }
+
+            if (isset($candidates[$fullPath])) {
+                $candidates[$fullPath]['library_entry'] = $entry;
+                if ((int) ($candidates[$fullPath]['expected_size'] ?? 0) <= 0) {
+                    $candidates[$fullPath]['expected_size'] = max(0, (int) ($entry['size'] ?? 0));
+                }
+                continue;
+            }
+
+            $filename = trim((string) ($entry['filename'] ?? basename($fullPath)));
+            if ($filename === '' || $this->mediaTypeHelper->getType($filename) !== MediaTypeHelper::TYPE_VIDEO) {
+                continue;
+            }
+
+            $candidates[$fullPath] = [
+                'path' => $fullPath,
+                'filename' => $filename,
+                'download_id' => '',
+                'expected_size' => max(0, (int) ($entry['size'] ?? 0)),
+                'history_entry' => null,
+                'library_entry' => $entry,
+            ];
+        }
+
+        return array_values($candidates);
+    }
+
+    private function libraryExtra(array $entry): array
+    {
+        return [
+            'library_entry_id' => isset($entry['id']) ? (int) $entry['id'] : null,
+            'media_key' => isset($entry['media_key']) ? (string) $entry['media_key'] : null,
+            'root_key' => isset($entry['root_key']) ? (string) $entry['root_key'] : null,
+            'show_folder' => isset($entry['show_folder']) ? (string) $entry['show_folder'] : null,
+            'media_type' => isset($entry['media_type']) ? (string) $entry['media_type'] : null,
+            'tmdb_id' => isset($entry['tmdb_id']) && $entry['tmdb_id'] !== null ? (int) $entry['tmdb_id'] : null,
+            'season' => isset($entry['season']) && $entry['season'] !== null ? (int) $entry['season'] : null,
+            'episode' => isset($entry['episode']) && $entry['episode'] !== null ? (int) $entry['episode'] : null,
+            'library_size' => isset($entry['size']) ? (int) $entry['size'] : 0,
+        ];
+    }
+
+    private function hasTargetFilters(array $filters): bool
+    {
+        foreach (['show_folder', 'path_prefix', 'root_key', 'media_key'] as $key) {
+            if (trim((string) ($filters[$key] ?? '')) !== '') {
+                return true;
+            }
+        }
+        if (isset($filters['tmdb_id']) && is_numeric($filters['tmdb_id']) && (int) $filters['tmdb_id'] > 0) {
+            return true;
+        }
+
+        return in_array(trim((string) ($filters['media_type'] ?? '')), ['movie', 'series', 'anime'], true);
+    }
+
+    private function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 'true', 'on', 'yes'], true);
+        }
+
+        return (bool) $value;
     }
 
     public function listChecks(array $filters = [], ?int $limit = null): array
@@ -179,6 +307,10 @@ class VideoIntegrityService
             $check['source_available'] = (bool) ($extra['source_available'] ?? false);
             $check['source_display'] = $extra['source_display'] ?? null;
             $check['source_kind'] = $extra['source_kind'] ?? 'unknown';
+            $check['origin'] = (string) ($extra['origin'] ?? 'history');
+            $check['in_library'] = (bool) ($extra['in_library'] ?? false);
+            $check['media_key'] = $extra['media_key'] ?? null;
+            $check['show_folder'] = $extra['show_folder'] ?? null;
 
             return $check;
         }, $checks);

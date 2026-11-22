@@ -137,6 +137,15 @@ class IntegrityStore
                 : 'path:' . (string) ($data['path'] ?? '');
         }
 
+        $path = trim((string) ($data['path'] ?? ''));
+        $existing = $path !== '' ? $this->findCheckByPath($path) : null;
+        if ($existing === null) {
+            $existing = $this->findCheck($checkKey);
+        }
+        if ($existing !== null) {
+            $checkKey = (string) $existing['check_key'];
+        }
+
         $extra = $data['extra'] ?? [];
         $extraJson = is_string($extra) ? $extra : json_encode($extra, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
@@ -223,6 +232,22 @@ class IntegrityStore
             'SELECT * FROM integrity_checks WHERE download_id = :download_id ORDER BY last_checked_at DESC, id DESC LIMIT 1'
         );
         $stmt->execute([':download_id' => $identifier]);
+
+        return $this->hydrate($stmt->fetch() ?: null);
+    }
+
+    public function findCheckByPath(string $path): ?array
+    {
+        $this->initialize();
+        $path = trim($path);
+        if ($path === '') {
+            return null;
+        }
+
+        $stmt = $this->getPdo()->prepare(
+            'SELECT * FROM integrity_checks WHERE path = :path ORDER BY last_checked_at DESC, id DESC LIMIT 1'
+        );
+        $stmt->execute([':path' => $path]);
 
         return $this->hydrate($stmt->fetch() ?: null);
     }

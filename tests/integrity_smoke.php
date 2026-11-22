@@ -396,6 +396,141 @@ try {
         eq(4, $preview['checked'], 'dry scan still evaluates files');
         eq(0, $previewStore->countChecks(), 'dry scan does not persist checks');
 
+        echo "Library integrity scan\n";
+        $libraryProject = projectDir('integrity-library');
+        $libraryRoot = $sandbox . '/library-root';
+        mkdir($libraryRoot, 0700, true);
+        $libraryHealthy = $libraryRoot . '/Library Show (2026)/Season 01/Library Show (2026) - S01E01.mkv';
+        $libraryTruncated = $libraryRoot . '/Library Show (2026)/Season 01/Library Show (2026) - S01E02.mkv';
+        $libraryOther = $libraryRoot . '/Other Show (2025)/Season 01/Other Show (2025) - S01E01.mkv';
+        writeFile($libraryHealthy, 2 * 1024 * 1024);
+        writeFile($libraryTruncated, 1024 * 1024);
+        writeFile($libraryOther, 2 * 1024 * 1024);
+
+        $libraryAutomation = new AutomationStore($libraryProject);
+        $libraryAutomation->upsertLibraryEntry([
+            'root_key' => 'series',
+            'path' => $libraryHealthy,
+            'relative_path' => 'Library Show (2026)/Season 01/Library Show (2026) - S01E01.mkv',
+            'filename' => 'Library Show (2026) - S01E01.mkv',
+            'extension' => 'mkv',
+            'media_type' => 'series',
+            'title' => 'Library Show',
+            'title_normalized' => 'library show',
+            'year' => 2026,
+            'season' => 1,
+            'episode' => 1,
+            'size' => filesize($libraryHealthy),
+            'mtime' => filemtime($libraryHealthy),
+            'tmdb_id' => 999001,
+            'media_key' => 'series:tmdb:999001:s01e01',
+            'confidence' => 0.99,
+            'parse_source' => 'filename',
+            'parser_version' => 3,
+            'scan_id' => 1,
+            'show_folder' => 'Library Show (2026)',
+        ]);
+        $libraryAutomation->upsertLibraryEntry([
+            'root_key' => 'series',
+            'path' => $libraryTruncated,
+            'relative_path' => 'Library Show (2026)/Season 01/Library Show (2026) - S01E02.mkv',
+            'filename' => 'Library Show (2026) - S01E02.mkv',
+            'extension' => 'mkv',
+            'media_type' => 'series',
+            'title' => 'Library Show',
+            'title_normalized' => 'library show',
+            'year' => 2026,
+            'season' => 1,
+            'episode' => 2,
+            'size' => 4 * 1024 * 1024,
+            'mtime' => filemtime($libraryTruncated),
+            'tmdb_id' => 999001,
+            'media_key' => 'series:tmdb:999001:s01e02',
+            'confidence' => 0.99,
+            'parse_source' => 'filename',
+            'parser_version' => 3,
+            'scan_id' => 1,
+            'show_folder' => 'Library Show (2026)',
+        ]);
+        $libraryAutomation->upsertLibraryEntry([
+            'root_key' => 'series',
+            'path' => $libraryOther,
+            'relative_path' => 'Other Show (2025)/Season 01/Other Show (2025) - S01E01.mkv',
+            'filename' => 'Other Show (2025) - S01E01.mkv',
+            'extension' => 'mkv',
+            'media_type' => 'series',
+            'title' => 'Other Show',
+            'title_normalized' => 'other show',
+            'year' => 2025,
+            'season' => 1,
+            'episode' => 1,
+            'size' => filesize($libraryOther),
+            'mtime' => filemtime($libraryOther),
+            'tmdb_id' => 999002,
+            'media_key' => 'series:tmdb:999002:s01e01',
+            'confidence' => 0.99,
+            'parse_source' => 'filename',
+            'parser_version' => 3,
+            'scan_id' => 1,
+            'show_folder' => 'Other Show (2025)',
+        ]);
+
+        $libraryStorage = storageAt($libraryProject . '/var/storage', ['default_path' => $libraryRoot]);
+        $libraryStorage->set('history', []);
+        $libraryIntegrityStore = new IntegrityStore($libraryProject);
+        $libraryIntegritySettings = new IntegritySettings($libraryIntegrityStore);
+        $libraryService = new VideoIntegrityService(
+            $libraryStorage,
+            $libraryIntegrityStore,
+            $libraryIntegritySettings,
+            makeChecker(),
+            $libraryAutomation
+        );
+        $libraryScan = $libraryService->scan(10, false, true);
+        eq(3, $libraryScan['checked'], 'library scan checks active library files without history');
+        eq(2, $libraryScan['summary']['healthy'], 'library scan counts healthy files');
+        eq(1, $libraryScan['summary']['incomplete'], 'library scan compares against the indexed size');
+        $libraryCheck = $libraryIntegrityStore->findCheckByPath($libraryHealthy);
+        check($libraryCheck !== null, 'library file is persisted by path');
+        eq('library', $libraryCheck['extra']['origin'] ?? null, 'library-only checks are labelled library');
+        eq(false, $libraryCheck['extra']['source_available'] ?? null, 'library-only checks have no source');
+        eq('Library Show (2026)', $libraryCheck['extra']['show_folder'] ?? null, 'library metadata is stored on the check');
+
+        $libraryRequeueService = new IntegrityRequeueService(
+            $libraryIntegrityStore,
+            $libraryIntegritySettings,
+            $libraryStorage,
+            new FakeQueueManager(),
+            new FakeAlldebrid()
+        );
+        $libraryUnknown = $libraryRequeueService->requeueCheck($libraryIntegrityStore->findCheckByPath($libraryTruncated));
+        eq(false, $libraryUnknown['success'], 'library-only file requeue is refused');
+        check(str_contains($libraryUnknown['message'], 'manual retry'), 'library-only requeue explains the missing source', $libraryUnknown['message']);
+
+        $targetedLibrary = $libraryService->scan(10, false, true, ['show_folder' => 'Library Show (2026)']);
+        eq(2, $targetedLibrary['checked'], 'targeted library scan only checks the requested show');
+        eq(true, $targetedLibrary['library_included'], 'targeted library scan reports the library inclusion');
+        eq(3, $libraryIntegrityStore->countChecks(), 'targeted scan updates existing rows without duplicates');
+
+        $historyOnlyLibrary = $libraryService->scan(10, false, true, ['include_library' => false]);
+        eq(0, $historyOnlyLibrary['checked'], 'history-only mode ignores library entries');
+
+        $libraryStorage->set('history', [[
+            'download_id' => 'lib1',
+            'filename' => 'Library Show (2026) - S01E01.mkv',
+            'path' => dirname($libraryHealthy),
+            'type' => 'video',
+            'actual_size' => 2 * 1024 * 1024,
+            'source_url' => 'https://library.example.test/file?token=secret',
+        ]]);
+        $libraryService->scan(10, false, true, ['show_folder' => 'Library Show (2026)']);
+        $mergedLibraryCheck = $libraryIntegrityStore->findCheckByPath($libraryHealthy);
+        eq($libraryCheck['id'], $mergedLibraryCheck['id'], 'history and library checks share the same row');
+        eq('history', $mergedLibraryCheck['extra']['origin'] ?? null, 'history takes priority for source-backed checks');
+        eq(true, $mergedLibraryCheck['extra']['in_library'] ?? null, 'history check keeps its library metadata');
+        eq(true, $mergedLibraryCheck['extra']['source_available'] ?? null, 'history source is available for requeue');
+        eq(3, $libraryIntegrityStore->countChecks(), 'merging history and library does not duplicate checks');
+
         echo "Requeue\n";
         $requeueProject = projectDir('integrity-requeue');
         $requeueRoot = $sandbox . '/requeue-root';

@@ -1082,7 +1082,7 @@ Les cas MP3 taggé et `--tags`/`--update-tags` sont ignorés proprement si
 venv, import zotify épinglé, `--verify`, `spotify_user --help`) et reste hors de
 `composer test:all` car il exige Docker :
 ```bash
-tests/docker_music_runtime_smoke.sh gautardos/downloader-app:2.8.2
+tests/docker_music_runtime_smoke.sh gautardos/downloader-app:2.8.4
 ```
 
 Le dossier `tests/` n'est pas bind-mounté dans le conteneur `downloader-dev`
@@ -2098,17 +2098,30 @@ par le CSRF global, et tests smoke standalone.
   `FileIntegrityChecker`, `VideoIntegrityService`, `IntegrityRequeueService`.
 - Statuts : `healthy`, `incomplete`, `corrupted`, `missing`, `outside_root`,
   `unsupported`. Les seuils/politique sont dans `IntegritySettings`.
+- Le scan couvre l'historique de téléchargement **et** les fichiers vidéo
+  actifs de l'index Automation (`library_entries`). Les fichiers déjà présents
+  sur le NAS sont donc détectés même sans entrée d'historique. Le dédoublonnage
+  se fait par chemin : une ligne d'historique et une ligne bibliothèque
+  partagent le même check, et l'historique fournit alors `download_id` et
+  source.
 - `FileIntegrityChecker` vérifie taille attendue vs réelle, en-têtes de
   contenu (HTML/JSON téléchargé à la place d'une vidéo), préfixes de fichiers et
   éventuellement `ffprobe` (`--deep`). Sans `ffprobe`, le scan reste valide et
-  signale un avertissement.
+  signale un avertissement. Pour un fichier bibliothèque seul, la taille
+  attendue vient de `library_entries.size` ; si une taille de check précédente
+  est plus grande, elle sert de référence pour détecter une troncature.
 - `IntegrityRequeueService` ne réenqueue que des sources sûres (`http(s)` ou
   `magnet`), avec plafond de tentatives, limite de lot, déduplication avec la
-  file existante et mode `dry_run`.
+  file existante et mode `dry_run`. Un fichier bibliothèque sans entrée
+  d'historique source est marqué `source_available=false` et le requeue est
+  refusé avec « source inconnue ».
 - Pour les anciennes entrées d'historique, la source est lue via
   `source_url ?? original_url ?? null` : l'absence de `source_url` est gérée.
+- La page Integrity propose des contrôles ciblés depuis Connected Lists
+  (`Check integrity`) et la fiche Discovery de Library Browser, avec les filtres
+  `show_folder`, `tmdb_id`, `root_key`, `path_prefix` et `include_library`.
 - `app:integrity-check` accepte `--limit`, `--deep`, `--requeue`, `--dry-run`,
-  `--json`.
+  `--json`, `--history-only`, `--show` et `--tmdb`.
 
 ### 21.5 Automatisations musicales
 

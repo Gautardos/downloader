@@ -720,6 +720,14 @@
                             </td>
                             <td class="right">
                                 {% set ignored = item.ignored_at is not empty %}
+                                {% if item.match_status == 'present' %}
+                                    <button class="btn btn-ghost btn-sm" type="button"
+                                            data-list-integrity="{{ item.id }}"
+                                            data-list-integrity-title="{{ item.title|e('html_attr') }}"
+                                            data-list-integrity-show="{{ item.media_type == 'series' ? item.matched_folder|default('')|e('html_attr') : '' }}"
+                                            data-list-integrity-tmdb="{{ item.tmdb_id|default('') }}"
+                                            data-list-integrity-type="{{ item.media_type }}">Check integrity</button>
+                                {% endif %}
                                 <button class="btn btn-ghost btn-sm" type="button" data-list-ignore="{{ item.id }}" data-list-ignored="{{ ignored ? '1' : '0' }}">{{ ignored ? 'Restore' : 'Ignore' }}</button>
                             </td>
                         </tr>
@@ -750,6 +758,7 @@
     const listNumberingRoute = "{{ path('automation_lists_numbering') }}";
     const listStatusRoute = "{{ path('automation_lists_status') }}";
     const listIgnoreRoute = "{{ path('automation_lists_ignore') }}";
+    const listIntegrityRoute = "{{ path('video_integrity_check') }}";
     const listTestRoute = "{{ path('automation_lists_test') }}";
     const listCsrfToken = "{{ csrf_token|e('js') }}";
     let listSyncRequestedAt = 0;
@@ -897,6 +906,46 @@
         }
     }
 
+    async function checkListIntegrity(button) {
+        const showFolder = button.getAttribute('data-list-integrity-show') || '';
+        const tmdbId = button.getAttribute('data-list-integrity-tmdb') || '';
+        const title = button.getAttribute('data-list-integrity-title') || '';
+        if (!showFolder && !tmdbId) {
+            if (window.notify) window.notify('warning', 'No library identity is available for this item.');
+            return;
+        }
+
+        button.disabled = true;
+        try {
+            const body = new URLSearchParams({ _token: listCsrfToken, search: title });
+            if (showFolder) {
+                body.set('show_folder', showFolder);
+            } else if (tmdbId) {
+                body.set('tmdb_id', tmdbId);
+            }
+            const response = await fetch(listIntegrityRoute, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'X-CSRF-Token': listCsrfToken },
+                body
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Integrity check failed.');
+            }
+            if (window.notify) {
+                window.notify('success', 'Checked ' + Number(data.checked || 0) + ' file(s).');
+            }
+            if (data.redirect) {
+                window.location.href = data.redirect;
+            } else {
+                button.disabled = false;
+            }
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            button.disabled = false;
+        }
+    }
+
     async function listNumberingAction(id, payload) {
         const response = await fetch(listNumberingRoute, {
             method: 'POST',
@@ -1020,6 +1069,12 @@
     }
 
     document.addEventListener('click', async function (event) {
+        const integrityButton = event.target.closest('[data-list-integrity]');
+        if (integrityButton) {
+            await checkListIntegrity(integrityButton);
+            return;
+        }
+
         const button = event.target.closest('[data-list-ignore]');
         if (!button) return;
         const ignored = button.getAttribute('data-list-ignored') === '1';

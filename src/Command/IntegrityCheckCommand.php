@@ -13,7 +13,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
     name: 'app:integrity-check',
-    description: 'Runs a quick or deep integrity check on downloaded video files.',
+    description: 'Runs a quick or deep integrity check on downloaded and library video files.',
 )]
 class IntegrityCheckCommand extends Command
 {
@@ -34,6 +34,9 @@ class IntegrityCheckCommand extends Command
         $this->addOption('requeue', null, InputOption::VALUE_NONE, 'Requeue incomplete, corrupted or missing files with a known HTTP source.');
         $this->addOption('dry-run', null, InputOption::VALUE_NONE, 'Report what would be checked or requeued without changing anything.');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Print a JSON payload on stdout.');
+        $this->addOption('history-only', null, InputOption::VALUE_NONE, 'Only check video files from the download history.');
+        $this->addOption('show', null, InputOption::VALUE_REQUIRED, 'Only check library files for this show folder.');
+        $this->addOption('tmdb', null, InputOption::VALUE_REQUIRED, 'Only check library files for this TMDB ID.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -45,13 +48,24 @@ class IntegrityCheckCommand extends Command
         $requeue = (bool) $input->getOption('requeue');
         $json = (bool) $input->getOption('json');
 
-        $result = $this->integrity->scan($limit, $deep, !$dryRun);
+        $filters = ['include_library' => !$input->getOption('history-only')];
+        $show = trim((string) $input->getOption('show'));
+        if ($show !== '') {
+            $filters['show_folder'] = $show;
+        }
+        $tmdb = $input->getOption('tmdb');
+        if (is_numeric($tmdb) && (int) $tmdb > 0) {
+            $filters['tmdb_id'] = (int) $tmdb;
+        }
+
+        $result = $this->integrity->scan($limit, $deep, !$dryRun, $filters);
         $payload = [
             'success' => true,
             'dry_run' => $dryRun,
             'checked' => (int) ($result['checked'] ?? 0),
             'limit' => (int) ($result['limit'] ?? $limit),
             'deep' => $deep,
+            'library_included' => (bool) ($result['library_included'] ?? false),
             'summary' => $result['summary'] ?? [],
         ];
 

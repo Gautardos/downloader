@@ -1335,6 +1335,60 @@ class AutomationStore
         });
     }
 
+    public function getActiveLibraryEntriesForIntegrity(array $filters = [], int $limit = 2000): array
+    {
+        $this->initialize();
+        $conditions = ["status = 'active'"];
+        $params = [];
+
+        $rootKey = trim((string) ($filters['root_key'] ?? ''));
+        if ($rootKey !== '') {
+            $conditions[] = 'root_key = :root_key';
+            $params[':root_key'] = $rootKey;
+        }
+
+        $mediaType = trim((string) ($filters['media_type'] ?? ''));
+        if (in_array($mediaType, ['movie', 'series', 'anime'], true)) {
+            $conditions[] = 'media_type = :media_type';
+            $params[':media_type'] = $mediaType;
+        }
+
+        if (isset($filters['tmdb_id']) && is_numeric($filters['tmdb_id']) && (int) $filters['tmdb_id'] > 0) {
+            $conditions[] = 'tmdb_id = :tmdb_id';
+            $params[':tmdb_id'] = (int) $filters['tmdb_id'];
+        }
+
+        $showFolder = trim((string) ($filters['show_folder'] ?? ''));
+        if ($showFolder !== '') {
+            $conditions[] = 'show_folder = :show_folder';
+            $params[':show_folder'] = $showFolder;
+        }
+
+        $pathPrefix = trim((string) ($filters['path_prefix'] ?? ''));
+        if ($pathPrefix !== '') {
+            $conditions[] = 'substr(path, 1, length(:path_prefix)) = :path_prefix';
+            $params[':path_prefix'] = $pathPrefix;
+        }
+
+        $mediaKey = trim((string) ($filters['media_key'] ?? ''));
+        if ($mediaKey !== '') {
+            $conditions[] = 'media_key = :media_key';
+            $params[':media_key'] = $mediaKey;
+        }
+
+        $stmt = $this->getPdo()->prepare(
+            'SELECT * FROM library_entries WHERE ' . implode(' AND ', $conditions) . '
+             ORDER BY last_seen_at DESC, id DESC LIMIT :limit'
+        );
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit', max(1, min(5000, $limit)), PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+
     public function getLibraryEntriesForFolderTree(array $filters = []): array
     {
         $this->initialize();

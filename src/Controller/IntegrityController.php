@@ -44,17 +44,25 @@ class IntegrityController extends AbstractController
         $policy = $integrity->policy();
         $limit = (int) $request->request->get('limit', $policy['scan_limit']);
         $deep = $request->request->getBoolean('deep');
+        $filters = $this->scanFilters($request);
 
-        $result = $integrity->scan($limit, $deep, true);
+        $result = $integrity->scan($limit, $deep, true, $filters);
 
         if ($this->wantsJson($request)) {
-            return $this->json([
+            $search = $this->searchLabel($request);
+            $payload = [
                 'success' => true,
                 'message' => 'Integrity check completed.',
                 'checked' => $result['checked'],
                 'summary' => $result['summary'],
                 'deep' => $result['deep'],
-            ]);
+                'library_included' => $result['library_included'] ?? true,
+            ];
+            if ($search !== '') {
+                $payload['redirect'] = $this->generateUrl('video_integrity', ['q' => $search]);
+            }
+
+            return $this->json($payload);
         }
 
         $this->addFlash('success', sprintf(
@@ -156,6 +164,10 @@ class IntegrityController extends AbstractController
                 'last_requeued_at' => $check['last_requeued_at'] ?? null,
                 'source_available' => (bool) ($check['source_available'] ?? false),
                 'source_display' => $check['source_display'] ?? null,
+                'origin' => (string) ($check['origin'] ?? 'history'),
+                'in_library' => (bool) ($check['in_library'] ?? false),
+                'media_key' => $check['media_key'] ?? null,
+                'show_folder' => $check['show_folder'] ?? null,
             ], $checks),
         ]);
     }
@@ -188,6 +200,49 @@ class IntegrityController extends AbstractController
         }
 
         return $filters;
+    }
+
+    private function scanFilters(Request $request): array
+    {
+        $filters = ['include_library' => true];
+
+        $showFolder = trim((string) ($request->request->get('show_folder') ?? $request->query->get('show_folder', '')));
+        if ($showFolder !== '') {
+            $filters['show_folder'] = $showFolder;
+        }
+
+        $mediaType = trim((string) ($request->request->get('media_type') ?? $request->query->get('media_type', '')));
+        if (in_array($mediaType, ['movie', 'series', 'anime'], true)) {
+            $filters['media_type'] = $mediaType;
+        }
+
+        $tmdb = $request->request->get('tmdb_id') ?? $request->query->get('tmdb_id');
+        if ($tmdb !== null && is_numeric($tmdb) && (int) $tmdb > 0) {
+            $filters['tmdb_id'] = (int) $tmdb;
+        }
+
+        $rootKey = trim((string) ($request->request->get('root_key') ?? $request->query->get('root_key', '')));
+        if ($rootKey !== '') {
+            $filters['root_key'] = $rootKey;
+        }
+
+        $pathPrefix = trim((string) ($request->request->get('path_prefix') ?? $request->query->get('path_prefix', '')));
+        if ($pathPrefix !== '') {
+            $filters['path_prefix'] = $pathPrefix;
+        }
+
+        if ($request->request->has('history_only') || $request->query->has('history_only')) {
+            $filters['include_library'] = !$request->request->getBoolean('history_only') && !$request->query->getBoolean('history_only');
+        } elseif ($request->request->has('include_library') || $request->query->has('include_library')) {
+            $filters['include_library'] = $request->request->getBoolean('include_library') || $request->query->getBoolean('include_library');
+        }
+
+        return $filters;
+    }
+
+    private function searchLabel(Request $request): string
+    {
+        return trim((string) ($request->request->get('search') ?? $request->query->get('search', '')));
     }
 
     private function wantsJson(Request $request): bool

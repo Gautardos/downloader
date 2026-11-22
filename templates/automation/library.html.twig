@@ -1201,6 +1201,7 @@
     const titleRefreshRoute = "{{ path('automation_library_title_refresh') }}";
     const titleRefreshStatusRoute = "{{ path('automation_library_title_refresh_status') }}";
     const pruneEmptyDirsRoute = "{{ path('automation_library_prune_empty_dirs') }}";
+    const libraryIntegrityRoute = "{{ path('video_integrity_check') }}";
     const libraryCsrfToken = "{{ csrf_token|e('js') }}";
     const initialTitleRefreshActive = {{ title_refresh.status in ['requested', 'running'] ? 'true' : 'false' }};
     let titleRefreshWasActive = initialTitleRefreshActive;
@@ -1585,6 +1586,46 @@
         }
     }
 
+    async function checkLibraryIntegrity(button) {
+        const showFolder = button.getAttribute('data-integrity-show') || '';
+        const tmdbId = button.getAttribute('data-integrity-tmdb') || '';
+        const title = button.getAttribute('data-integrity-title') || '';
+        if (!showFolder && !tmdbId) {
+            if (window.notify) window.notify('warning', 'No library identity is available for this element.');
+            return;
+        }
+
+        button.disabled = true;
+        try {
+            const body = new URLSearchParams({ _token: libraryCsrfToken, search: title });
+            if (showFolder) {
+                body.set('show_folder', showFolder);
+            } else if (tmdbId) {
+                body.set('tmdb_id', tmdbId);
+            }
+            const response = await fetch(libraryIntegrityRoute, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'X-CSRF-Token': libraryCsrfToken },
+                body
+            });
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || 'Integrity check failed.');
+            }
+            if (window.notify) {
+                window.notify('success', 'Checked ' + Number(data.checked || 0) + ' file(s).');
+            }
+            if (data.redirect) {
+                window.location.href = data.redirect;
+            } else {
+                button.disabled = false;
+            }
+        } catch (error) {
+            if (window.notify) window.notify('error', error.message);
+            button.disabled = false;
+        }
+    }
+
     async function matchRequest(url, payload) {
         const response = await fetch(url, {
             method: 'POST',
@@ -1870,6 +1911,7 @@
                     '<span class="badge badge-neutral">' + files + ' file' + (files === 1 ? '' : 's') + '</span>' +
                     (tmdbId ? '<span class="badge badge-success">TMDB ' + escapeLibraryHtml(tmdbId) + '</span>' : '<span class="badge badge-warning">Unmatched</span>') +
                     '<button class="btn btn-secondary btn-sm" type="button" data-match-action="open" data-match-group="' + escapeLibraryHtml(matchGroup) + '" data-match-type="' + escapeLibraryHtml(button.getAttribute('data-discovery-type') || 'series') + '" data-match-id="' + escapeLibraryHtml(tmdbId || '') + '" data-match-title="' + escapeLibraryHtml(title) + '">' + (tmdbId ? 'Fix match' : 'Match') + '</button>' +
+                    '<button class="btn btn-secondary btn-sm" type="button" data-integrity-check data-integrity-show="' + escapeLibraryHtml(group.show_folder || '') + '" data-integrity-tmdb="' + escapeLibraryHtml(tmdbId || '') + '" data-integrity-title="' + escapeLibraryHtml(title) + '">Check integrity</button>' +
                 '</div>' +
             '</div>' +
         '</div>';
@@ -2170,6 +2212,12 @@
         const removeButton = event.target.closest('[data-remove-entry]');
         if (removeButton) {
             removeMissingEntry(removeButton.getAttribute('data-remove-entry'));
+            return;
+        }
+
+        const integrityButton = event.target.closest('[data-integrity-check]');
+        if (integrityButton) {
+            checkLibraryIntegrity(integrityButton);
             return;
         }
 
