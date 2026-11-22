@@ -341,7 +341,7 @@ Le moteur de téléchargement a besoin d'une session Spotify valide stockée dan
 
 1. Allez dans **Settings**.
 2. Cliquez sur le bouton **⚡ Auth** à côté de **JSON Credentials Path**.
-3. Ouvrez Spotify sur votre téléphone/PC et sélectionnez l'appareil nommé `Speaker <timestamp>` comme sortie (les deux appareils doivent être sur le même réseau).
+3. Ouvrez Spotify sur votre téléphone/PC et sélectionnez l'appareil nommé `Speaker <timestamp>` comme sortie (les deux appareils doivent être sur le même réseau). La classe d'appareil est `Computer` par défaut, ce qui fonctionne avec un compte Free ; la classe `Speaker` exige Premium.
 4. Le fichier de credentials est généré, transformé et stocké automatiquement.
 
 > [!NOTE]
@@ -353,7 +353,7 @@ Le moteur de téléchargement a besoin d'une session Spotify valide stockée dan
 docker exec -it downloader-container bash
 export HOME='/var/www/html/var'
 cd /var/www/html/var
-/var/www/html/var/librespot-auth/target/release/librespot-auth --name "Speaker Manual"
+/var/www/html/var/librespot-auth/target/release/librespot-auth --name "Speaker Manual" --class=computer
 # → Sélectionnez "Speaker Manual" dans Spotify
 # → credentials.json est créé dans /var/www/html/var/
 ```
@@ -378,6 +378,7 @@ Spotify applique la qualité audio côté serveur ; le client ne peut pas déblo
 - **Normal** = 96 kbps, **High** = 160 kbps, **Very High** = 320 kbps.
 - Le format de sortie (MP3/FLAC/M4A/Opus) n'augmente pas la qualité source : une source lossy reste lossy, et FLAC ne fait que grossir le fichier.
 - Utilisez les credentials du même compte Spotify que celui avec lequel vous téléchargez.
+- Si l'appareil `Speaker` est grisé avec « premium requis » dans Spotify, utilisez la classe `Computer` (réglage **Librespot Auth Device Class** ou `--class=computer`).
 
 ---
 
@@ -551,4 +552,4 @@ docker compose up -d
 
 - **Application :** https://github.com/Gautardos/downloader
 - **Déploiement conteneurisé (Compose, guide Windows, compose de release) :** https://github.com/Gautardos/docker-downloader
-- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md) · [RELEASE_NOTES_2.8.4.md](RELEASE_NOTES_2.8.4.md)
+- **Release notes :** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md) · [RELEASE_NOTES_2.8.5.md](RELEASE_NOTES_2.8.5.md)

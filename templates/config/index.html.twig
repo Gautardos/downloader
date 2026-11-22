@@ -162,6 +162,18 @@
                 </div>
 
                 <div style="margin-bottom: 1rem;">
+                    <label for="music_librespot_auth_class">Librespot Auth Device Class</label>
+                    <select id="music_librespot_auth_class" name="music_librespot_auth_class" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
+                        {% for class in librespot_device_classes|default(['computer', 'speaker']) %}
+                            <option value="{{ class }}" {{ config.music_librespot_auth_class|default(librespot_default_class|default('computer')) == class ? 'selected' : '' }}>
+                                {{ class|capitalize }}{% if class == 'computer' %} — recommended (Free + Premium){% elseif class == 'speaker' %} — Premium required{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <small style="color: var(--text-secondary);">Device class used by Spotify Connect. <strong>Computer</strong> works with Free accounts; <strong>Speaker</strong> requires Premium.</small>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
                     <label for="music_root_path">Music Download Root</label>
                     <input type="text" id="music_root_path" name="music_root_path" value="{{ config.music_root_path|default('') }}">
                     <small style="color: var(--text-secondary);">Base directory for music files.</small>
@@ -213,7 +225,7 @@
                            <span id="auth-btn-spinner" style="display: none;">⏳...</span>
                         </button>
                     </div>
-                    <small style="color: var(--text-secondary);">Path to your music provider credentials file. Use the same Spotify account you want to download with (Free or Premium).</small>
+                    <small style="color: var(--text-secondary);">Path to your music provider credentials file. Use the same Spotify account you want to download with. If the device is greyed out with “Premium required”, select the <strong>Computer</strong> device class above.</small>
                     <div id="auth-status" style="margin-top: 0.5rem; font-size: 0.85rem; display: none;"></div>
                 </div>
 
@@ -775,12 +787,13 @@ document.getElementById('btn-generate-auth').addEventListener('click', async fun
     
     // Generate a temporary device name to show while loading (matches PHP logic)
     const tempName = "Speaker xxx";
+    const deviceClass = document.getElementById('music_librespot_auth_class')?.value || 'computer';
     statusDiv.innerHTML = `
         <div style="background: rgba(23, 162, 184, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid #17a2b8; margin-bottom: 1rem;">
             <p style="margin: 0 0 0.5rem 0; font-weight: bold; color: #17a2b8;">🎧 Action Required: Spotify Connect Login</p>
             <p style="margin: 0; font-size: 0.9rem;">
                 Please open your Spotify app on your phone or computer (on the same network).<br>
-                Select the device named <strong>"${tempName}"</strong> from the available devices list to complete the authentication.
+                Select the device named <strong>"${tempName}"</strong> (type: <strong>${deviceClass}</strong>) from the available devices list to complete the authentication.
             </p>
         </div>
         <p style="text-align: center; color: var(--text-secondary); font-size: 0.8rem;">⌛ Waiting for connection from Spotify...</p>

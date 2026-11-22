@@ -405,6 +405,7 @@ valeurs par défaut).
 | `grok_renaming_prompt` | — | Prompt personnalisé de renommage |
 | `allow_xxx_search` | `false` | Autorise les catégories XXX dans la recherche |
 | `music_librespot_auth_binary` | `/var/www/html/var/librespot-auth/target/release/librespot-auth` | Binaire d'auth Spotify |
+| `music_librespot_auth_class` | `computer` | Classe Spotify Connect de `librespot-auth` (`computer` fonctionne avec Free, `speaker` exige Premium) |
 | `music_automation_timezone` | `UTC` | Fuseau des règles musicales (lu dans `config.json`, pas encore exposé dans `/config`) |
 | `music_automation_max_per_run` | `50` | Plafond de pistes ajoutées par règle/exécution |
 | `music_automation_queue_guard` | `20` | Garde-fou : suspend le run si la file dépasse ce seuil |
@@ -1082,7 +1083,7 @@ Les cas MP3 taggé et `--tags`/`--update-tags` sont ignorés proprement si
 venv, import zotify épinglé, `--verify`, `spotify_user --help`) et reste hors de
 `composer test:all` car il exige Docker :
 ```bash
-tests/docker_music_runtime_smoke.sh gautardos/downloader-app:2.8.4
+tests/docker_music_runtime_smoke.sh gautardos/downloader-app:2.8.5
 ```
 
 Le dossier `tests/` n'est pas bind-mounté dans le conteneur `downloader-dev`

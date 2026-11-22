@@ -105,6 +105,7 @@ check($result['success'] === true, 'successful generation returns success');
 eq('Spotify credentials generated and stored successfully!', $result['message'] ?? null, 'success message');
 eq($target, $result['path'] ?? null, 'target path reported');
 eq('Speaker 42', $result['deviceName'] ?? null, 'device name reported');
+eq('computer', $result['deviceClass'] ?? null, 'default device class is computer');
 check(is_file($target), 'target credentials file is written');
 
 $data = json_decode((string) file_get_contents($target), true);
@@ -116,10 +117,20 @@ check(!array_key_exists('auth_data', $data), 'auth_data key removed');
 eq('listener', $data['username'] ?? null, 'other credential fields are preserved');
 
 $argv = json_decode((string) file_get_contents($home . '/fake-argv.json'), true);
-eq(['--name', 'Speaker 42'], $argv['args'] ?? null, 'binary receives --name with the device name');
+eq(['--name', 'Speaker 42', '--class', 'computer'], $argv['args'] ?? null, 'binary receives --name and the default computer class');
 eq(realpath($home), realpath((string) ($argv['cwd'] ?? '')), 'binary runs with HOME as working directory');
 eq(realpath($home), realpath((string) ($argv['home'] ?? '')), 'binary receives HOME environment variable');
 
+echo "Device class\n";
+$home = tempDir('librespot-class');
+$binary = makeFakeBinary($home, 'ok');
+$classResult = (new LibrespotAuthService(5.0))->generate($binary, $home, $home . '/out.json', 'Speaker class', 'speaker');
+eq(true, $classResult['success'] ?? null, 'explicit device class is accepted');
+eq('speaker', $classResult['deviceClass'] ?? null, 'explicit device class is reported');
+$classArgv = json_decode((string) file_get_contents($home . '/fake-argv.json'), true);
+eq(['--name', 'Speaker class', '--class', 'speaker'], $classArgv['args'] ?? null, 'explicit device class is forwarded');
+$fallbackResult = (new LibrespotAuthService(5.0))->generate($binary, $home, $home . '/out.json', 'Speaker fallback', 'bogus');
+eq('computer', $fallbackResult['deviceClass'] ?? null, 'invalid device class falls back to computer');
 removeTree($home);
 removeTree(dirname(dirname($target)));
 
@@ -170,7 +181,7 @@ $payload = 'Speaker "x"; touch ' . $marker . '; echo \'$(id)\' `whoami`';
 $result = (new LibrespotAuthService(5.0))->generate($binary, $home, $home . '/out.json', $payload);
 check($result['success'] === true, 'quoted device name is accepted');
 $argv = json_decode((string) file_get_contents($home . '/fake-argv.json'), true);
-eq(['--name', $payload], $argv['args'] ?? null, 'quoted device name is passed as a single argument');
+eq(['--name', $payload, '--class', 'computer'], $argv['args'] ?? null, 'quoted device name is passed as a single argument');
 check(!file_exists($marker), 'shell metacharacters in device name are not executed');
 removeTree($home);
 

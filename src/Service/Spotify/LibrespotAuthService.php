@@ -6,12 +6,41 @@ use Symfony\Component\Process\Process;
 
 class LibrespotAuthService
 {
+    public const DEVICE_CLASSES = [
+        'computer',
+        'speaker',
+        'smartphone',
+        'tablet',
+        'tv',
+        'avr',
+        'stb',
+        'audiodongle',
+        'gameconsole',
+        'castaudio',
+        'castvideo',
+        'automobile',
+        'smartwatch',
+        'chromebook',
+        'carthing',
+        'homething',
+    ];
+
+    public const DEFAULT_DEVICE_CLASS = 'computer';
+
     public function __construct(private float $timeout = 60.0)
     {
     }
 
-    public function generate(string $binary, string $homeDir, string $targetPath, string $deviceName): array
+    public static function normalizeDeviceClass(?string $deviceClass): string
     {
+        $deviceClass = strtolower(trim((string) $deviceClass));
+
+        return in_array($deviceClass, self::DEVICE_CLASSES, true) ? $deviceClass : self::DEFAULT_DEVICE_CLASS;
+    }
+
+    public function generate(string $binary, string $homeDir, string $targetPath, string $deviceName, ?string $deviceClass = null): array
+    {
+        $deviceClass = self::normalizeDeviceClass($deviceClass);
         $homeDir = rtrim($homeDir, DIRECTORY_SEPARATOR);
         $targetDir = dirname($targetPath);
         if (!is_dir($targetDir)) {
@@ -24,13 +53,14 @@ class LibrespotAuthService
             @unlink($generatedFile);
         }
 
-        $command = [$binary, '--name', $deviceName];
+        $command = [$binary, '--name', $deviceName, '--class', $deviceClass];
         $debug = [
             'user' => $this->currentUser(),
             'php_cwd' => getcwd() ?: '',
             'home_writable' => is_writable($homeDir) ? 'Yes' : 'No',
             'binary_executable' => is_executable($binary) ? 'Yes' : 'No',
             'target_dir' => $homeDir,
+            'device_class' => $deviceClass,
             'binary_path' => $binary,
             'expected_file' => $generatedFile,
         ];
@@ -98,6 +128,7 @@ class LibrespotAuthService
             'message' => 'Spotify credentials generated and stored successfully!',
             'path' => $targetPath,
             'deviceName' => $deviceName,
+            'deviceClass' => $deviceClass,
         ];
     }
 

@@ -341,7 +341,7 @@ The download engine needs a valid Spotify session stored as a `credentials.json`
 
 1. Go to **Settings**.
 2. Click the **⚡ Auth** button next to **JSON Credentials Path**.
-3. Open Spotify on your phone/desktop and select the device named `Speaker <timestamp>` as output (both devices must be on the same network).
+3. Open Spotify on your phone/desktop and select the device named `Speaker <timestamp>` as output (both devices must be on the same network). The device class defaults to `Computer`, which works with a Free account; the `Speaker` class requires Premium.
 4. The credentials file is generated, transformed and stored automatically.
 
 > [!NOTE]
@@ -353,7 +353,7 @@ The download engine needs a valid Spotify session stored as a `credentials.json`
 docker exec -it downloader-container bash
 export HOME='/var/www/html/var'
 cd /var/www/html/var
-/var/www/html/var/librespot-auth/target/release/librespot-auth --name "Speaker Manual"
+/var/www/html/var/librespot-auth/target/release/librespot-auth --name "Speaker Manual" --class=computer
 # → Select "Speaker Manual" in Spotify
 # → credentials.json is created in /var/www/html/var/
 ```
@@ -378,6 +378,7 @@ Spotify enforces audio quality on its servers; the client cannot unlock more tha
 - **Normal** = 96 kbps, **High** = 160 kbps, **Very High** = 320 kbps.
 - The output format (MP3/FLAC/M4A/Opus) cannot increase the source quality: a lossy source stays lossy, and FLAC only makes the file larger.
 - Use credentials from the same Spotify account you want to download with.
+- If the `Speaker` device is greyed out with “premium required” in Spotify, use the `Computer` class (**Librespot Auth Device Class** or `--class=computer`).
 
 ---
 
@@ -551,4 +552,4 @@ docker compose up -d
 
 - **Application:** https://github.com/Gautardos/downloader
 - **Containerized deployment (Compose, Windows guide, release compose):** https://github.com/Gautardos/docker-downloader
-- **Release notes:** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md) · [RELEASE_NOTES_2.8.4.md](RELEASE_NOTES_2.8.4.md)
+- **Release notes:** [RELEASE_NOTES_2.6.md](RELEASE_NOTES_2.6.md) · [RELEASE_NOTES_2.7.md](RELEASE_NOTES_2.7.md) · [RELEASE_NOTES_2.7.1.md](RELEASE_NOTES_2.7.1.md) · [RELEASE_NOTES_2.7.2.md](RELEASE_NOTES_2.7.2.md) · [RELEASE_NOTES_2.8.5.md](RELEASE_NOTES_2.8.5.md)

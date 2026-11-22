@@ -124,7 +124,8 @@ class ConfigController extends AbstractController
                 'history_retention_limit' => (int) $request->request->get('history_retention_limit', 500),
                 'grok_renaming_prompt' => $request->request->get('grok_renaming_prompt', ''),
                 'allow_xxx_search' => $request->request->get('allow_xxx_search') === '1',
-                'music_librespot_auth_binary' => $request->request->get('music_librespot_auth_binary', '/var/www/html/var/librespot-auth/target/release/librespot-auth')
+                'music_librespot_auth_binary' => $request->request->get('music_librespot_auth_binary', '/var/www/html/var/librespot-auth/target/release/librespot-auth'),
+                'music_librespot_auth_class' => LibrespotAuthService::normalizeDeviceClass($request->request->get('music_librespot_auth_class', LibrespotAuthService::DEFAULT_DEVICE_CLASS))
             ]);
 
             $this->addFlash('success', 'Configuration saved.');
@@ -137,6 +138,8 @@ class ConfigController extends AbstractController
         return $this->render('config/index.html.twig', [
             'config' => $currentConfig,
             'creds_exists' => $credsExists,
+            'librespot_device_classes' => LibrespotAuthService::DEVICE_CLASSES,
+            'librespot_default_class' => LibrespotAuthService::DEFAULT_DEVICE_CLASS,
         ]);
     }
 
@@ -189,10 +192,11 @@ class ConfigController extends AbstractController
         $binary = $config['music_librespot_auth_binary'] ?? '/var/www/html/var/librespot-auth/target/release/librespot-auth';
 
         $name = 'Speaker ' . time();
+        $deviceClass = LibrespotAuthService::normalizeDeviceClass($config['music_librespot_auth_class'] ?? LibrespotAuthService::DEFAULT_DEVICE_CLASS);
         $homeDir = '/var/www/html/var';
         $targetPath = '/var/www/html/var/home/.local/credentials.json';
 
-        return $this->json($auth->generate($binary, $homeDir, $targetPath, $name));
+        return $this->json($auth->generate($binary, $homeDir, $targetPath, $name, $deviceClass));
     }
 
     #[Route('/config/update-hash-db', name: 'config_update_hash_db', methods: ['POST'])]
