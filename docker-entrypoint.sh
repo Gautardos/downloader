@@ -4,13 +4,21 @@ set -e
 echo "[Entrypoint] Checking and fixing permissions..."
 
 # 1. Fix app-specific folders (internal to container)
-# We ensure var and vendor are owned by www-data only if owned by root
+# We ensure var and vendor are owned by www-data only if owned by root.
+# Docker volumes are bind mounts that can share the same device as $dir, so
+# -xdev alone does not stop the walk. Mount points under $dir are pruned
+# explicitly to avoid changing the group of host-managed data volumes.
 for dir in /var/www/html/var /var/www/html/vendor; do
     if [ -d "$dir" ]; then
         owner=$(stat -c '%U' "$dir")
         if [ "$owner" = "root" ]; then
             echo "[Entrypoint] Fixing permissions for $dir (currently owned by root)"
-            chown -R www-data:www-data "$dir" || echo "[Entrypoint] WARNING: could not chown $dir, continuing"
+            prune=()
+            while IFS= read -r mount_point; do
+                [ -n "$mount_point" ] || continue
+                prune+=(-path "$mount_point" -prune -o)
+            done < <(awk -v root="$dir/" 'index($2, root) == 1 {print $2}' /proc/mounts)
+            find "$dir" -xdev "${prune[@]}" -exec chown www-data:www-data {} + || echo "[Entrypoint] WARNING: could not chown $dir, continuing"
         fi
     fi
 done
@@ -74,10 +82,10 @@ if [ -d "$storage_dir" ]; then
         done < <(find "$storage_dir" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null)
         if [ -d "$storage_dir/logs" ] && [ "$(stat -c '%U' "$storage_dir/logs")" = "www-data" ]; then
             chmod 2750 "$storage_dir/logs" 2>/dev/null || true
-            touch "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
-            chown www-data "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
-            chgrp --reference="$storage_dir/logs" "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
-            chmod 640 "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" 2>/dev/null || true
+            touch "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" "$storage_dir/logs/music_automations_worker_error.log" "$storage_dir/logs/maintenance_error.log" 2>/dev/null || true
+            chown www-data "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" "$storage_dir/logs/music_automations_worker_error.log" "$storage_dir/logs/maintenance_error.log" 2>/dev/null || true
+            chgrp --reference="$storage_dir/logs" "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" "$storage_dir/logs/music_automations_worker_error.log" "$storage_dir/logs/maintenance_error.log" 2>/dev/null || true
+            chmod 640 "$storage_dir/logs/worker_error.log" "$storage_dir/logs/automation_worker_error.log" "$storage_dir/logs/music_automations_worker_error.log" "$storage_dir/logs/maintenance_error.log" 2>/dev/null || true
         fi
         while IFS= read -r -d '' file; do
             if [ "$(stat -c '%U' "$file")" = "www-data" ]; then

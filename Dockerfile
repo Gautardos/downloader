@@ -148,6 +148,7 @@ RUN composer install --no-dev --optimize-autoloader --classmap-authoritative \
 # 12. Dossiers de runtime (après le Composer final)
 # ────────────────────────────────────────────────
 RUN mkdir -p var/storage/logs var/sessions var/cache var/log var/composer_home var/db var/home \
+    && chown www-data:www-data /var/www/html/var /var/www/html/vendor \
     && chown -R www-data:www-data var/storage var/sessions var/cache var/log var/composer_home var/db var/home \
     && chmod -R 775 var/storage var/sessions var/cache var/log var/composer_home var/db var/home
 
