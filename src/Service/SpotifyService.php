@@ -141,7 +141,7 @@ class SpotifyService
     private function authMode(array $config): string
     {
         $mode = strtolower(trim((string) ($config['spotify_auth_mode'] ?? 'auto')));
-        return in_array($mode, ['auto', 'client_credentials', 'librespot'], true) ? $mode : 'auto';
+        return in_array($mode, ['auto', 'client_credentials'], true) ? $mode : 'auto';
     }
 
     private function makeClient(string $token): Client

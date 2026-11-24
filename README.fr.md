@@ -32,8 +32,8 @@ Une plateforme self-hosted de gestion de médias, développée avec Symfony & Py
 - **Affiches et métadonnées TMDB** exposées à la passerelle Jellyfin.
 
 ### 🎵 Musique
-- **Recherche Spotify** de titres, albums et playlists, y compris les playlists privées via le token librespot.
-- **Téléchargements haute qualité** propulsés par Zotify. **Auto** (défaut) utilise la meilleure qualité autorisée par votre compte Spotify : **320 kbps avec Premium**, **160 kbps avec un compte gratuit**. 320 kbps nécessite Premium.
+- **Recherche Spotify** de titres, albums et playlists, y compris les playlists privées (via librespot, *best-effort* : Spotify peut limiter ce token en HTTP 429).
+- **Téléchargements haute qualité** propulsés par Zotify. **Auto** (défaut) utilise la meilleure qualité autorisée par votre compte Spotify : **320 kbps avec Premium**, **160 kbps avec un compte gratuit**. 320 kbps nécessite Premium. ⚠️ **Un compte gratuit est *best-effort* et non fiable** (downloads pouvant échouer sur `audio key` / `429`) ; un usage stable nécessite Premium.
 - **Music Library unifiée** — parcourez les racines `Downloads` (`music_root_path`) et `Library` (`music_library_path`) dans un seul arbre de dossiers.
 - **Éditeur de tags complet** — titre, artiste, album, album artist, année, genre, numéros de piste/disque, commentaire et lyrics embarquées, à l'unité ou en masse.
 - **Lyrics** — LRCLIB (recherche synchronisée et scorée), Genius et fallback lyrics.ovh, récupération par piste ou par lot.
@@ -368,13 +368,14 @@ cp /var/www/html/var/credentials.json /var/www/html/var/home/.local/credentials.
 
 Spotify applique la qualité audio côté serveur ; le client ne peut pas débloquer plus que ce que votre compte autorise.
 
-| Compte | Qualité maximale | Réglage recommandé |
-| ------ | ---------------- | ------------------ |
-| Gratuit | 160 kbps | `auto` ou `high` |
-| Premium | 320 kbps | `auto` |
+| Compte | Qualité maximale | Fiabilité du téléchargement |
+| ------ | ---------------- | --------------------------- |
+| Gratuit | 160 kbps | **Best-effort, non fiable** (`audio key`, `429`) |
+| Premium | 320 kbps | Fiable |
 
 - **Auto** (défaut) sélectionne 320 kbps avec Premium et 160 kbps avec un compte gratuit.
 - **Very High** (320 kbps) nécessite Premium. Avec un compte gratuit, le téléchargement échoue avec `Audio key error` / `Failed fetching audio key` ; la tâche est réessayée avant d'échouer.
+- **Compte gratuit** : considérez le téléchargement comme **expérimental**. Il peut fonctionner à 160 kbps mais échouer fréquemment (limites Spotify, `audio key`, `429`). Pour un usage fiable, utilisez **Premium**.
 - **Normal** = 96 kbps, **High** = 160 kbps, **Very High** = 320 kbps.
 - Le format de sortie (MP3/FLAC/M4A/Opus) n'augmente pas la qualité source : une source lossy reste lossy, et FLAC ne fait que grossir le fichier.
 - Utilisez les credentials du même compte Spotify que celui avec lequel vous téléchargez.
@@ -539,7 +540,7 @@ docker compose up -d
 - Le binaire `librespot-auth` est compilé lors du build de l'image et n'a pas besoin d'être installé séparément.
 - Les Automations ne suppriment jamais de fichiers du NAS : les fichiers absents sont marqués `missing`, et seules les actions explicites (renommage, nettoyage des dossiers vides) déplacent les choses.
 - La passerelle Jellyfin est **direct-play uniquement** (sans transcodage) et expose uniquement la vidéo.
-- La qualité audio Spotify dépend du compte : les comptes gratuits sont limités à 160 kbps ; 320 kbps nécessite Premium. Utilisez **Auto** pour éviter les erreurs `Audio key error` avec un compte gratuit.
+- La qualité audio Spotify dépend du compte : les comptes gratuits sont limités à 160 kbps et le téléchargement est **best-effort / non fiable** (`audio key`, `429`) ; 320 kbps et un download stable nécessitent **Premium**.
 - La récupération des lyrics prend en charge MP3 et M4A ; l'audit est en lecture seule et synchrone.
 - Les chemins configurés dans l'UI sont internes au conteneur. Gardez la disposition des montages hôte stable entre les mises à jour.
 - At startup the entrypoint enforces permissions on its data: `var/storage` 710, `var/storage/logs` 2750 (setgid), `*.log` 640, other files 600, `var/db` 700/600. To let an external log shipper read the logs, give `var/storage` and `var/storage/logs` a group it belongs to. Mounted media folders are never changed recursively: only their top level is adjusted when owned by root, and a refused change (network share) does not block startup.

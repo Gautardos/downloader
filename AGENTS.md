@@ -372,14 +372,15 @@ valeurs par défaut).
 | `grok_api_key` | — | Clé API xAI (fallback legacy) |
 | `grok_model` | `grok-4-fast-non-reasoning` | Modèle xAI renommage (fallback) |
 | `default_path` | — | Répertoire de dl vidéo par défaut |
-| `spotify_client_id` | — | Client ID Spotify |
+| `spotify_client_id` | — | Client ID Spotify (app Developer) |
 | `spotify_client_secret` | — | Client Secret Spotify |
+| `spotify_auth_mode` | `auto` | `auto` (app-first, librespot en secours) ou `client_credentials` (app seul). Le mode `librespot` est déprécié et retombe sur `auto`. |
 | `music_output` | `{artist} - {album} - {song_name}.{ext}` | Template de nom Zotify |
 | `music_format` | `mp3` | Format audio (`mp3`, `flac`, `m4a`, `opus`) |
 | `music_root_path` | — | Répertoire de dl musique (interne conteneur) |
 | `music_creds` | `/var/www/html/var/home/.local/credentials.json` | Credentials Spotify |
 | `music_archive` | `/var/www/html/var/home/log/archive.txt` | Archive Zotify (skip) |
-| `music_quality` | `auto` | Qualité Zotify (`auto`, `normal`, `high`, `very_high`) ; `very_high` = 320 kbps Premium uniquement |
+| `music_quality` | `auto` | Qualité Zotify (`auto`, `normal`, `high`, `very_high`) ; `very_high` = 320 kbps Premium uniquement ; compte Free = best-effort (160 kbps, échecs `audio key`/`429` possibles) |
 | `music_skip_existing` | `false` | Skip déjà téléchargés |
 | `music_lyrics` | `true` | Télécharger les paroles via Zotify |
 | `music_progress` | `false` | Progression Zotify |
@@ -690,17 +691,25 @@ renommage média.
 
 ### SpotifyService
 
-- `Client Credentials` sur `accounts.spotify.com/api/token`.
-- Token mis en cache en mémoire (buffer 60 s).
+- **App-first** : token `client_credentials` sur `accounts.spotify.com/api/token`
+  (cache en mémoire, buffer 60 s). `spotify_auth_mode=client_credentials` force l'app seule.
+- Sur `401/403/429` de l'app, tente **une fois** le token utilisateur librespot via
+  `App\Service\Spotify\LibrespotTokenProvider` (cache token, respecte un cooldown
+  partagé `var/cache/spotify_librespot_cooldown.json`). Le mode `librespot` est
+  déprécié (retombe sur `auto`).
+- **Pas de retry sur 4xx** ; respecte `429 Retry-After` (cooldown librespot écrit
+  par PHP et par `cli/spotify_user.py`).
+- En-têtes `Authorization`, `Accept`, `app-platform: WebPlayer`.
+- **Cache recherche** 45 s (`var/cache/spotify_search_*.json`) sur requêtes identiques.
 - `parseUrl()` accepte `/track/`, `/album/`, `/playlist/` avec segments de
   locale (`/intl-fr/`, `/fr-fr/`) et query `?si=`.
 - `getMetadata(url)` retourne `['name' => ..., 'tracks' => [['artist','album','song_name'], ...]]`.
-- `search(query, type, limit)` interroge `/v1/search` en Client Credentials
-  (`track`, `album`, `playlist`) et retourne des résultats normalisés
+- `search(query, type, limit)` interroge `/v1/search` et retourne des résultats normalisés
   (`id`, `type`, `badge`, `name`, `subtitle`, `meta`, `image`, `url`).
-- `getLogs()` expose un journal horodaté utilisé pour écrire
-  `history_<id>.log` à l'enqueue.
-- `testCredentials()` vérifie l'obtention d'un token.
+- `isConfigured()` = app **ou** `music_creds` existant ; `testCredentials()` vérifie un token.
+- **Politique Spotify 2024** : un app en dev exige un **owner Premium** (sinon `403`
+  « owner of the app »). Un compte **Free** sans app fiable est **best-effort** uniquement
+  (le token librespot partagé peut être throttlé en `429`).
 
 ### SpotifyUserService
 
@@ -716,6 +725,12 @@ renommage média.
 - `getPlaylistMetadata()` récupère le nom et les pistes d'une playlist via
   `/v1/playlists/{id}/tracks` (utilisé par `musicAdd` pour les playlists
   privées, en fallback des Client Credentials).
+- `var/cache/spotify_librespot_cooldown.json` est partagé avec PHP : après un
+  `429` librespot, le helper ne sollicite plus ce token avant expiration et
+  retombe sur le token app (playlists publiques).
+- Compte **Free** : `spotify_user.py` retombe sur `client_credentials` pour les
+  playlists publiques ; les privées dépendent du token librespot (**best-effort**,
+  `429` possible). Aucun support fiable du téléchargement Free.
 
 ### TorrentDbService
 

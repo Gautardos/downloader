@@ -34,7 +34,7 @@ class SpotifyApiError(RuntimeError):
 
 
 COOLDOWN_FILE = os.path.join(BASE_DIR, 'var', 'cache', 'spotify_librespot_cooldown.json')
-AUTH_MODES = ('auto', 'client_credentials', 'librespot')
+AUTH_MODES = ('auto', 'client_credentials')
 DEFAULT_COOLDOWN_SECONDS = 86400
 
 

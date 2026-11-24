@@ -79,7 +79,7 @@ class ConfigController extends AbstractController
             }
 
             $spotifyAuthMode = strtolower(trim((string) $request->request->get('spotify_auth_mode', 'auto')));
-            if (!in_array($spotifyAuthMode, ['auto', 'client_credentials', 'librespot'], true)) {
+            if (!in_array($spotifyAuthMode, ['auto', 'client_credentials'], true)) {
                 $spotifyAuthMode = 'auto';
             }
 

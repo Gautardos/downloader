@@ -102,13 +102,13 @@
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label for="spotify_auth_mode">Spotify Auth Mode</label>
-                    {% set spotifyAuthMode = config.spotify_auth_mode|default('auto') %}
+                    {% set rawSpotifyAuthMode = config.spotify_auth_mode|default('auto') %}
+                    {% set spotifyAuthMode = rawSpotifyAuthMode == 'client_credentials' ? 'client_credentials' : 'auto' %}
                     <select id="spotify_auth_mode" name="spotify_auth_mode" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
-                        <option value="auto" {{ spotifyAuthMode == 'auto' ? 'selected' : '' }}>Auto — app first, librespot fallback (recommended)</option>
+                        <option value="auto" {{ spotifyAuthMode == 'auto' ? 'selected' : '' }}>Auto — app first (recommended)</option>
                         <option value="client_credentials" {{ spotifyAuthMode == 'client_credentials' ? 'selected' : '' }}>App only (Client ID/Secret)</option>
-                        <option value="librespot" {{ spotifyAuthMode == 'librespot' ? 'selected' : '' }}>Librespot user token only (private playlists)</option>
                     </select>
-                    <small style="color: var(--text-secondary);">Auto uses your Spotify app when available and falls back to the Zotify/librespot user token. Spotify can rate-limit (HTTP 429) that token for up to 24h; the app then backs off automatically.</small>
+                    <small style="color: var(--text-secondary);">Reliable metadata requires a valid Spotify Developer app (Client Credentials). The librespot user token is only a best-effort fallback and Spotify may rate-limit it (HTTP 429, up to 24h). Free accounts are best-effort only.</small>
                 </div>
 
                 <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">App Security 🔐</h3>
@@ -219,7 +219,7 @@
                 <div style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border-left: 4px solid var(--accent);">
                     <div style="font-weight: 600; color: var(--accent); margin-bottom: 0.35rem;">Spotify account limits</div>
                     <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
-                        Free accounts are capped at <strong>160 kbps</strong>; <strong>320 kbps requires Premium</strong>. Select <strong>Auto</strong> to always use the best quality your account allows.
+                        Free accounts cap at <strong>160 kbps</strong> and downloads are <strong>best-effort / unreliable</strong> (<code>audio key</code>, <code>429</code>). A stable download requires <strong>Premium</strong> (up to 320 kbps). Select <strong>Auto</strong> to use the best quality your account allows.
                     </div>
                     <div id="music-quality-note" aria-live="polite" style="margin-top: 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);"></div>
                 </div>

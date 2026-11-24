@@ -13,20 +13,23 @@
     } %}{% endembed %}
 
     {% set musicQuality = config.music_quality|default('auto') %}
+    {% set showFreeWarning = config.spotify_client_id is empty %}
     {% set musicQualityLabels = {
-        'auto': 'Auto — 320 kbps Premium / 160 kbps Free',
+        'auto': 'Auto — 320 kbps Premium / 160 kbps Free (best-effort)',
         'very_high': 'Very High — 320 kbps (Premium only)',
         'high': 'High — 160 kbps',
         'normal': 'Normal — 96 kbps'
     } %}
     {% set musicQualityLabel = musicQualityLabels[musicQuality]|default(musicQualityLabels['auto']) %}
 
-    <div class="music-quality-strip{{ musicQuality == 'very_high' ? ' is-warning' : '' }}">
+    <div class="music-quality-strip{{ (musicQuality == 'very_high' or showFreeWarning) ? ' is-warning' : '' }}">
         <span class="music-quality-eyebrow">Qualité audio</span>
         <span class="music-quality-value">{{ musicQualityLabel }}</span>
         <a class="music-quality-link" href="{{ path('config') }}">Modifier</a>
         {% if musicQuality == 'very_high' %}
             <span class="music-quality-warning">Premium requis — un compte Free échouera avec « Audio key error ».</span>
+        {% elseif showFreeWarning %}
+            <span class="music-quality-warning">Mode sans app : best-effort. Download Free non fiable (160 kbps max, erreurs « audio key » / 429).</span>
         {% endif %}
     </div>
 
