@@ -195,12 +195,11 @@ class DashboardController extends AbstractController
 
         if (!$storage->hasSpotify()) {
             return $this->render('dashboard/locked.html.twig', [
-                'title' => 'Spotify Credentials Required',
-                'message' => 'The music search screen requires Spotify API credentials and a valid credentials file path.',
+                'title' => 'Spotify Configuration Required',
+                'message' => 'The music screen requires a valid Spotify credentials file or a Spotify app (Client ID/Secret).',
                 'requirements' => [
-                    'Spotify Client ID',
-                    'Spotify Client Secret',
-                    'Music Credentials Path (existing file)'
+                    'Spotify app (Client ID / Secret)',
+                    'OR a Music Credentials Path (existing file)'
                 ]
             ]);
         }
@@ -464,13 +463,6 @@ class DashboardController extends AbstractController
             return $this->json([
                 'success' => false,
                 'message' => 'Spotify credentials or credentials file missing. Please check your settings.'
-            ]);
-        }
-
-        if (!$spotify->testCredentials()) {
-            return $this->json([
-                'success' => false,
-                'message' => 'Spotify authentication failed. Please check your Client ID and Client Secret in Settings.'
             ]);
         }
 

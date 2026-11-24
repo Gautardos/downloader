@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from urllib.parse import quote
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -30,6 +31,76 @@ class SpotifyApiError(RuntimeError):
         super().__init__(message)
         self.status = status
         self.retry_after = retry_after
+
+
+COOLDOWN_FILE = os.path.join(BASE_DIR, 'var', 'cache', 'spotify_librespot_cooldown.json')
+AUTH_MODES = ('auto', 'client_credentials', 'librespot')
+DEFAULT_COOLDOWN_SECONDS = 86400
+
+
+def get_auth_mode(config):
+    mode = str((config or {}).get('spotify_auth_mode') or 'auto').strip().lower()
+    return mode if mode in AUTH_MODES else 'auto'
+
+
+def has_app_credentials(config):
+    config = config or {}
+    return bool(
+        str(config.get('spotify_client_id') or '').strip()
+        and str(config.get('spotify_client_secret') or '').strip()
+    )
+
+
+def read_cooldown():
+    try:
+        with open(COOLDOWN_FILE, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def cooldown_until():
+    try:
+        until = int(read_cooldown().get('until') or 0)
+    except (TypeError, ValueError):
+        until = 0
+    return until if until > time.time() else 0
+
+
+def set_cooldown(retry_after, status=None, reason=''):
+    try:
+        seconds = int(retry_after) if retry_after is not None else DEFAULT_COOLDOWN_SECONDS
+    except (TypeError, ValueError):
+        seconds = DEFAULT_COOLDOWN_SECONDS
+    seconds = max(60, seconds)
+    now = int(time.time())
+    payload = {
+        'until': now + seconds,
+        'retry_after': seconds,
+        'status': status,
+        'reason': str(reason)[:200],
+        'updated_at': now,
+    }
+    try:
+        os.makedirs(os.path.dirname(COOLDOWN_FILE), exist_ok=True)
+        with open(COOLDOWN_FILE, 'w', encoding='utf-8') as handle:
+            json.dump(payload, handle)
+    except Exception:
+        pass
+    return payload['until']
+
+
+def record_cooldown(exc):
+    retry_after = getattr(exc, 'retry_after', None)
+    if retry_after is None:
+        return 0
+    try:
+        if int(retry_after) <= 0:
+            return 0
+    except (TypeError, ValueError):
+        return 0
+    return set_cooldown(retry_after, getattr(exc, 'status', None), str(exc))
 
 
 def load_config(path=None):
@@ -56,8 +127,12 @@ def create_session(credentials_path):
     return Session.Builder(configuration).stored_file(credentials_path).create()
 
 
+def get_user_token_object(session):
+    return session.tokens().get_token(*SPOTIFY_SCOPES)
+
+
 def get_user_token(session):
-    return session.tokens().get_token(*SPOTIFY_SCOPES).access_token
+    return get_user_token_object(session).access_token
 
 
 def get_client_token(config):
@@ -170,6 +245,14 @@ def fetch_playlists(token, path):
 
 
 def list_playlists(config, credentials_path):
+    mode = get_auth_mode(config)
+
+    if mode == 'client_credentials':
+        return _list_public_playlists(config, credentials_path)
+
+    if cooldown_until():
+        return _list_public_playlists(config, credentials_path)
+
     try:
         session = create_session(credentials_path)
         token = get_user_token(session)
@@ -178,28 +261,50 @@ def list_playlists(config, credentials_path):
         if isinstance(exc, SpotifyApiError) and exc.status not in (401, 403, 429):
             raise
 
-        username = get_username(credentials_path)
-        if not username:
-            raise
+        record_cooldown(exc)
 
         try:
-            client_token = get_client_token(config)
-            result = fetch_playlists(client_token, f'/users/{quote(username, safe="")}/playlists')
+            result = _list_public_playlists(config, credentials_path)
         except Exception:
             raise exc
 
-        result['partial'] = True
-        result['warning'] = 'Spotify limite temporairement l’accès aux playlists privées. Liste publique affichée.'
         return result
 
 
+def _list_public_playlists(config, credentials_path):
+    username = get_username(credentials_path)
+    if not username:
+        raise RuntimeError('Spotify username is missing from the credentials file.')
+
+    result = fetch_playlists(get_client_token(config), f'/users/{quote(username, safe="")}/playlists')
+    result['partial'] = True
+    result['warning'] = 'Spotify limite temporairement l’accès aux playlists privées. Liste publique affichée.'
+    return result
+
+
 def get_playlist_metadata_fallback(config, credentials_path, playlist_id):
+    mode = get_auth_mode(config)
+
+    if mode == 'client_credentials':
+        result = get_playlist_metadata(get_client_token(config), playlist_id)
+        result['partial'] = True
+        result['warning'] = 'Métadonnées récupérées avec un accès public uniquement.'
+        return result
+
+    if cooldown_until():
+        result = get_playlist_metadata(get_client_token(config), playlist_id)
+        result['partial'] = True
+        result['warning'] = 'Métadonnées récupérées avec un accès public uniquement.'
+        return result
+
     try:
         session = create_session(credentials_path)
         return get_playlist_metadata(get_user_token(session), playlist_id)
     except Exception as exc:
         if isinstance(exc, SpotifyApiError) and exc.status not in (401, 403, 429):
             raise
+
+        record_cooldown(exc)
 
         try:
             result = get_playlist_metadata(get_client_token(config), playlist_id)
@@ -209,6 +314,27 @@ def get_playlist_metadata_fallback(config, credentials_path, playlist_id):
         result['partial'] = True
         result['warning'] = 'Métadonnées récupérées avec un accès public uniquement.'
         return result
+
+
+def get_access_token_payload(config, credentials_path):
+    until = cooldown_until()
+    if until:
+        return {
+            'success': False,
+            'error': 'Spotify librespot token is cooling down.',
+            'status': 429,
+            'cooldown': True,
+            'retry_after': max(0, until - int(time.time())),
+        }
+
+    session = create_session(credentials_path)
+    token = get_user_token_object(session)
+    expires_in = getattr(token, 'expires_in', None)
+    return {
+        'success': True,
+        'access_token': token.access_token,
+        'expires_in': int(expires_in) if expires_in else 3300,
+    }
 
 
 def map_playlist_track(track, owner=''):
@@ -288,6 +414,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description='Spotify user playlists helper')
     parser.add_argument('--list-playlists', action='store_true', help='List the user playlists')
     parser.add_argument('--playlist', metavar='ID', help='Get a playlist metadata and tracks')
+    parser.add_argument('--token', action='store_true', help='Print a librespot user access token as JSON')
     parser.add_argument('--config', metavar='PATH', help='Path to config.json')
     return parser
 
@@ -296,14 +423,16 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    if not args.list_playlists and not args.playlist:
-        parser.error('one of --list-playlists or --playlist is required')
+    if not args.list_playlists and not args.playlist and not args.token:
+        parser.error('one of --list-playlists, --playlist or --token is required')
 
     try:
         config = load_config(args.config)
         credentials_path = get_credentials_path(config)
 
-        if args.list_playlists:
+        if args.token:
+            result = get_access_token_payload(config, credentials_path)
+        elif args.list_playlists:
             result = list_playlists(config, credentials_path)
         else:
             result = get_playlist_metadata_fallback(config, credentials_path, str(args.playlist))
@@ -311,11 +440,13 @@ def main():
         sys.stdout.write(json.dumps(result, ensure_ascii=False))
         return 0
     except SpotifyApiError as exc:
+        record_cooldown(exc)
         error = {
             'success': False,
             'error': str(exc),
             'status': exc.status,
             'retry_after': exc.retry_after,
+            'cooldown': bool(cooldown_until()),
         }
         sys.stdout.write(json.dumps(error, ensure_ascii=False))
         print(str(exc), file=sys.stderr)

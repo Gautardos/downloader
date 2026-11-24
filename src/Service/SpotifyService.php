@@ -2,17 +2,26 @@
 
 namespace App\Service;
 
+use App\Service\Spotify\LibrespotTokenProvider;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
 
 class SpotifyService
 {
+    private const SEARCH_CACHE_TTL = 45;
+    private const LIBRESPOT_TOKEN_TTL = 300;
+
     private ?string $accessToken = null;
+    private ?string $tokenSource = null;
     private ?int $tokenExpiresAt = null;
+    private ?string $appToken = null;
+    private ?int $appTokenExpiresAt = null;
     private array $logs = [];
     private ?string $lastError = null;
 
     public function __construct(
-        private JsonStorage $storage
+        private JsonStorage $storage,
+        private LibrespotTokenProvider $librespot
     ) {
     }
 
@@ -38,20 +47,63 @@ class SpotifyService
 
     private function getAccessToken(): ?string
     {
-        if ($this->accessToken && time() < $this->tokenExpiresAt) {
+        if ($this->accessToken && $this->tokenExpiresAt !== null && time() < $this->tokenExpiresAt) {
             return $this->accessToken;
         }
 
         $config = $this->storage->get('config', []);
-        $clientId = $config['spotify_client_id'] ?? null;
-        $clientSecret = $config['spotify_client_secret'] ?? null;
+        $mode = $this->authMode($config);
 
-        if (!$clientId || !$clientSecret) {
-            $this->addLog("Missing Spotify API credentials in settings.");
+        if ($mode === 'client_credentials') {
+            $appToken = $this->getAppToken($config);
+            if ($appToken) {
+                $this->rememberToken($appToken, 'app');
+                return $appToken;
+            }
+            $this->addLog('App-only mode: no Spotify app credentials available.');
             return null;
         }
 
-        $this->addLog("Authenticating with Spotify...");
+        if ($mode === 'librespot') {
+            $token = $this->librespot->getToken();
+            if ($token) {
+                $this->rememberToken($token, 'librespot');
+                $this->addLog('Using Spotify user token (librespot).');
+                return $token;
+            }
+        }
+
+        $appToken = $this->getAppToken($config);
+        if ($appToken) {
+            $this->rememberToken($appToken, 'app');
+            return $appToken;
+        }
+
+        $token = $this->librespot->getToken();
+        if ($token) {
+            $this->rememberToken($token, 'librespot');
+            $this->addLog('Using Spotify user token (librespot).');
+            return $token;
+        }
+
+        $this->addLog('No Spotify access token available (app or librespot).');
+        return null;
+    }
+
+    private function getAppToken(array $config): ?string
+    {
+        if ($this->appToken && $this->appTokenExpiresAt !== null && time() < $this->appTokenExpiresAt) {
+            return $this->appToken;
+        }
+
+        $clientId = trim((string) ($config['spotify_client_id'] ?? ''));
+        $clientSecret = trim((string) ($config['spotify_client_secret'] ?? ''));
+
+        if ($clientId === '' || $clientSecret === '') {
+            return null;
+        }
+
+        $this->addLog('Authenticating with Spotify app (client credentials)...');
 
         $client = new Client();
         try {
@@ -65,14 +117,78 @@ class SpotifyService
             ]);
 
             $data = json_decode($response->getBody()->getContents(), true);
-            $this->accessToken = $data['access_token'];
-            $this->tokenExpiresAt = time() + $data['expires_in'] - 60; // 1 minute buffer
+            $token = (string) ($data['access_token'] ?? '');
+            if ($token === '') {
+                return null;
+            }
+            $this->appToken = $token;
+            $this->appTokenExpiresAt = time() + ((int) ($data['expires_in'] ?? 0)) - 60;
 
-            return $this->accessToken;
+            return $this->appToken;
         } catch (\Exception $e) {
-            $this->addLog("Authentication failed: " . $e->getMessage());
+            $this->addLog("App authentication failed: " . $e->getMessage());
             return null;
         }
+    }
+
+    private function rememberToken(string $token, string $source): void
+    {
+        $this->accessToken = $token;
+        $this->tokenSource = $source;
+        $this->tokenExpiresAt = time() + self::LIBRESPOT_TOKEN_TTL;
+    }
+
+    private function authMode(array $config): string
+    {
+        $mode = strtolower(trim((string) ($config['spotify_auth_mode'] ?? 'auto')));
+        return in_array($mode, ['auto', 'client_credentials', 'librespot'], true) ? $mode : 'auto';
+    }
+
+    private function makeClient(string $token): Client
+    {
+        return new Client([
+            'headers' => [
+                'Authorization' => 'Bearer ' . $token,
+                'Accept' => 'application/json',
+                'app-platform' => 'WebPlayer',
+            ],
+        ]);
+    }
+
+    /**
+     * Inspects a failed request. On a 401/403/429 with the app token it swaps to
+     * the librespot user token and returns a new client to retry once. Returns
+     * null when no retry should be attempted.
+     */
+    private function retryClientAfterFailure(\Exception $error, ?string $failedToken): ?Client
+    {
+        $status = null;
+        $retryAfter = null;
+        if ($error instanceof RequestException && $error->hasResponse()) {
+            $response = $error->getResponse();
+            $status = $response->getStatusCode();
+            $header = trim($response->getHeaderLine('Retry-After'));
+            $retryAfter = $header !== '' ? (int) $header : null;
+        }
+
+        if ($this->tokenSource === 'librespot') {
+            if ($status === 429) {
+                $this->librespot->recordCooldown($retryAfter, $status, $error->getMessage());
+                $this->addLog('Librespot token rate limited; cooldown recorded.');
+            }
+            return null;
+        }
+
+        if (in_array($status, [401, 403, 429], true)) {
+            $fallback = $this->librespot->getToken();
+            if ($fallback !== null && $fallback !== $failedToken) {
+                $this->rememberToken($fallback, 'librespot');
+                $this->addLog('App token failed (HTTP ' . $status . '); retrying with librespot token.');
+                return $this->makeClient($fallback);
+            }
+        }
+
+        return null;
     }
 
     public function getMetadata(string $url): ?array
@@ -93,30 +209,49 @@ class SpotifyService
             return null;
         }
 
-        $client = new Client(['headers' => ['Authorization' => 'Bearer ' . $token]]);
-
         try {
-            switch ($parsed['type']) {
-                case 'track':
-                    return $this->getTrackMetadata($client, $parsed['id']);
-                case 'album':
-                    return $this->getAlbumMetadata($client, $parsed['id']);
-                case 'playlist':
-                    return $this->getPlaylistMetadata($client, $parsed['id']);
-            }
+            return $this->dispatchMetadata($this->makeClient($token), $parsed);
         } catch (\Exception $e) {
+            $retryClient = $this->retryClientAfterFailure($e, $token);
+            if ($retryClient !== null) {
+                try {
+                    return $this->dispatchMetadata($retryClient, $parsed);
+                } catch (\Exception $retryError) {
+                    $this->retryClientAfterFailure($retryError, $this->accessToken);
+                    $this->addLog("API call failed: " . $retryError->getMessage());
+                    return null;
+                }
+            }
             $this->addLog("API call failed: " . $e->getMessage());
         }
 
         return null;
     }
 
+    private function dispatchMetadata(Client $client, array $parsed): array
+    {
+        switch ($parsed['type']) {
+            case 'track':
+                return $this->getTrackMetadata($client, $parsed['id']);
+            case 'album':
+                return $this->getAlbumMetadata($client, $parsed['id']);
+            case 'playlist':
+                return $this->getPlaylistMetadata($client, $parsed['id']);
+        }
+
+        throw new \InvalidArgumentException('Unsupported Spotify type: ' . ($parsed['type'] ?? 'unknown'));
+    }
+
     public function isConfigured(): bool
     {
         $config = $this->storage->get('config', []);
 
-        return trim((string) ($config['spotify_client_id'] ?? '')) !== ''
+        $hasApp = trim((string) ($config['spotify_client_id'] ?? '')) !== ''
             && trim((string) ($config['spotify_client_secret'] ?? '')) !== '';
+
+        $creds = (string) ($config['music_creds'] ?? '');
+
+        return $hasApp || ($creds !== '' && file_exists($creds));
     }
 
     public function search(string $query, string $type = 'all', int $limit = 15): ?array
@@ -146,6 +281,13 @@ class SpotifyService
         $types = in_array($type, $validTypes, true) ? [$type] : $validTypes;
         $limit = max(1, min($limit, 50));
 
+        $cacheFile = $this->searchCacheFile($query, $type, $limit);
+        $cached = $this->readSearchCache($cacheFile);
+        if ($cached !== null) {
+            $this->addLog('Search cache hit: ' . $query);
+            return $cached;
+        }
+
         $token = $this->getAccessToken();
         if (!$token) {
             $this->lastError = 'Failed to get Spotify access token.';
@@ -153,30 +295,79 @@ class SpotifyService
         }
 
         $this->addLog('Searching Spotify for: ' . $query);
-        $client = new Client(['headers' => ['Authorization' => 'Bearer ' . $token]]);
 
         try {
-            $response = $client->get('https://api.spotify.com/v1/search', [
-                'query' => [
-                    'q' => $query,
-                    'type' => implode(',', $types),
-                    'limit' => $limit,
-                ],
-                'timeout' => $timeout,
-                'connect_timeout' => min(2, max(1, $timeout)),
-            ]);
-
-            $data = json_decode($response->getBody()->getContents(), true);
-            if (!is_array($data)) {
-                throw new \Exception('Invalid Spotify search response.');
-            }
-
-            return $this->mapSearchResults($data, $types);
+            $results = $this->runSearch($this->makeClient($token), $query, $types, $limit, $timeout);
         } catch (\Exception $e) {
-            $this->lastError = $e->getMessage();
-            $this->addLog('Search failed: ' . $e->getMessage());
+            $retryClient = $this->retryClientAfterFailure($e, $token);
+            if ($retryClient !== null) {
+                try {
+                    $results = $this->runSearch($retryClient, $query, $types, $limit, $timeout);
+                } catch (\Exception $retryError) {
+                    $this->retryClientAfterFailure($retryError, $this->accessToken);
+                    $this->lastError = $retryError->getMessage();
+                    $this->addLog('Search failed: ' . $retryError->getMessage());
+                    return null;
+                }
+            } else {
+                $this->lastError = $e->getMessage();
+                $this->addLog('Search failed: ' . $e->getMessage());
+                return null;
+            }
+        }
+
+        $this->writeSearchCache($cacheFile, $results);
+        return $results;
+    }
+
+    private function runSearch(Client $client, string $query, array $types, int $limit, int $timeout): array
+    {
+        $response = $client->get('https://api.spotify.com/v1/search', [
+            'query' => [
+                'q' => $query,
+                'type' => implode(',', $types),
+                'limit' => $limit,
+            ],
+            'timeout' => $timeout,
+            'connect_timeout' => min(2, max(1, $timeout)),
+        ]);
+
+        $data = json_decode($response->getBody()->getContents(), true);
+        if (!is_array($data)) {
+            throw new \Exception('Invalid Spotify search response.');
+        }
+
+        return $this->mapSearchResults($data, $types);
+    }
+
+    private function searchCacheDir(): string
+    {
+        return dirname($this->storage->getStorageDir()) . '/cache';
+    }
+
+    private function searchCacheFile(string $query, string $type, int $limit): string
+    {
+        return $this->searchCacheDir() . '/spotify_search_' . sha1($query . '|' . $type . '|' . $limit) . '.json';
+    }
+
+    private function readSearchCache(string $file): ?array
+    {
+        if (!is_file($file) || time() - (int) @filemtime($file) > self::SEARCH_CACHE_TTL) {
             return null;
         }
+
+        $data = json_decode((string) @file_get_contents($file), true);
+        return is_array($data) ? $data : null;
+    }
+
+    private function writeSearchCache(string $file, array $results): void
+    {
+        $dir = dirname($file);
+        if (!is_dir($dir) && !@mkdir($dir, 0777, true) && !is_dir($dir)) {
+            return;
+        }
+
+        @file_put_contents($file, json_encode($results), LOCK_EX);
     }
 
     private function mapSearchResults(array $data, array $types): array

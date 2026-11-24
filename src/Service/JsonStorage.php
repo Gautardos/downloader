@@ -100,10 +100,10 @@ class JsonStorage
     public function hasSpotify(): bool
     {
         $config = $this->get('config', []);
-        $creds = $config['music_creds'] ?? '';
-        return !empty($config['spotify_client_id']) &&
-            !empty($config['spotify_client_secret']) &&
-            !empty($creds) &&
-            file_exists($creds);
+        $hasApp = !empty($config['spotify_client_id']) && !empty($config['spotify_client_secret']);
+        $creds = (string) ($config['music_creds'] ?? '');
+        $hasCreds = $creds !== '' && file_exists($creds);
+
+        return $hasApp || $hasCreds;
     }
 }

@@ -16,6 +16,27 @@ def load_config():
     return {}
 
 NUMERIC_TAGS = {'year', 'tracknumber', 'discnumber', 'totaltracks', 'totaldiscs'}
+SECRET_FLAGS = {'--client-secret', '--password', '--secret'}
+
+
+def redact_command(command):
+    redacted = []
+    hide_next = False
+    for item in command:
+        if hide_next:
+            redacted.append('***')
+            hide_next = False
+            continue
+        if item in SECRET_FLAGS:
+            redacted.append(item)
+            hide_next = True
+            continue
+        if any(item.startswith(flag + '=') for flag in SECRET_FLAGS):
+            name = item.split('=', 1)[0]
+            redacted.append(name + '=***')
+            continue
+        redacted.append(item)
+    return ' '.join(redacted)
 
 
 def lyrics_are_synced(lyrics):
@@ -175,7 +196,7 @@ def main():
     command = [music_binary] + args
     
     print(f"--- Music Wrapper ---")
-    print(f"Executing: {' '.join(command)}")
+    print(f"Executing: {redact_command(command)}")
     print(f"----------------------")
     sys.stdout.flush()
 
