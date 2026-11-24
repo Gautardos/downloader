@@ -78,11 +78,6 @@ class ConfigController extends AbstractController
                 $musicQuality = 'auto';
             }
 
-            $spotifyAuthMode = strtolower(trim((string) $request->request->get('spotify_auth_mode', 'auto')));
-            if (!in_array($spotifyAuthMode, ['auto', 'client_credentials'], true)) {
-                $spotifyAuthMode = 'auto';
-            }
-
             $storage->set('config', [
                 'api_key' => $apiKey,
                 'tmdb_api_key' => $tmdbApiKey,
@@ -97,7 +92,6 @@ class ConfigController extends AbstractController
                 'default_path' => $defaultPath,
                 'spotify_client_id' => $request->request->get('spotify_client_id', ''),
                 'spotify_client_secret' => $spotifySecret,
-                'spotify_auth_mode' => $spotifyAuthMode,
                 'music_output' => $request->request->get('music_output', '{artist} - {album} - {song_name}.{ext}'),
                 'music_format' => $request->request->get('music_format', 'mp3'),
                 'music_root_path' => $request->request->get('music_root_path', ''),

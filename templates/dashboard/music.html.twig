@@ -15,7 +15,7 @@
     {% set musicQuality = config.music_quality|default('auto') %}
     {% set showFreeWarning = config.spotify_client_id is empty %}
     {% set musicQualityLabels = {
-        'auto': 'Auto — 320 kbps Premium / 160 kbps Free (best-effort)',
+        'auto': 'Auto — best quality (Premium)',
         'very_high': 'Very High — 320 kbps (Premium only)',
         'high': 'High — 160 kbps',
         'normal': 'Normal — 96 kbps'
@@ -29,7 +29,7 @@
         {% if musicQuality == 'very_high' %}
             <span class="music-quality-warning">Premium requis — un compte Free échouera avec « Audio key error ».</span>
         {% elseif showFreeWarning %}
-            <span class="music-quality-warning">Mode sans app : best-effort. Download Free non fiable (160 kbps max, erreurs « audio key » / 429).</span>
+            <span class="music-quality-warning">Téléchargement : Premium + app Spotify requis. Compte Free non supporté (audio bloqué par Spotify).</span>
         {% endif %}
     </div>
 

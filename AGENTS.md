@@ -374,13 +374,13 @@ valeurs par défaut).
 | `default_path` | — | Répertoire de dl vidéo par défaut |
 | `spotify_client_id` | — | Client ID Spotify (app Developer) |
 | `spotify_client_secret` | — | Client Secret Spotify |
-| `spotify_auth_mode` | `auto` | `auto` (app-first, librespot en secours) ou `client_credentials` (app seul). Le mode `librespot` est déprécié et retombe sur `auto`. |
+| ~~`spotify_auth_mode`~~ | — | **Supprimé** : authentification **app-first** en dur (`client_credentials`) ; ancienne clé ignorée (défaut `auto`). |
 | `music_output` | `{artist} - {album} - {song_name}.{ext}` | Template de nom Zotify |
 | `music_format` | `mp3` | Format audio (`mp3`, `flac`, `m4a`, `opus`) |
 | `music_root_path` | — | Répertoire de dl musique (interne conteneur) |
 | `music_creds` | `/var/www/html/var/home/.local/credentials.json` | Credentials Spotify |
 | `music_archive` | `/var/www/html/var/home/log/archive.txt` | Archive Zotify (skip) |
-| `music_quality` | `auto` | Qualité Zotify (`auto`, `normal`, `high`, `very_high`) ; `very_high` = 320 kbps Premium uniquement ; compte Free = best-effort (160 kbps, échecs `audio key`/`429` possibles) |
+| `music_quality` | `auto` | Qualité Zotify (`auto`, `normal`, `high`, `very_high`) ; `very_high` = 320 kbps Premium uniquement ; **compte Free = non supporté** (Spotify refuse la clé audio, à toute qualité) |
 | `music_skip_existing` | `false` | Skip déjà téléchargés |
 | `music_lyrics` | `true` | Télécharger les paroles via Zotify |
 | `music_progress` | `false` | Progression Zotify |
@@ -708,8 +708,9 @@ renommage média.
   (`id`, `type`, `badge`, `name`, `subtitle`, `meta`, `image`, `url`).
 - `isConfigured()` = app **ou** `music_creds` existant ; `testCredentials()` vérifie un token.
 - **Politique Spotify 2024** : un app en dev exige un **owner Premium** (sinon `403`
-  « owner of the app »). Un compte **Free** sans app fiable est **best-effort** uniquement
-  (le token librespot partagé peut être throttlé en `429`).
+  « owner of the app »). Un compte **Free** ne peut **pas télécharger** : Spotify refuse
+  la clé audio (`Audio key error`) à toute qualité (160 comme 96). Le token librespot
+  partagé peut en plus être throttlé (`429`) pour le Web API.
 
 ### SpotifyUserService
 
@@ -728,9 +729,10 @@ renommage média.
 - `var/cache/spotify_librespot_cooldown.json` est partagé avec PHP : après un
   `429` librespot, le helper ne sollicite plus ce token avant expiration et
   retombe sur le token app (playlists publiques).
-- Compte **Free** : `spotify_user.py` retombe sur `client_credentials` pour les
-  playlists publiques ; les privées dépendent du token librespot (**best-effort**,
-  `429` possible). Aucun support fiable du téléchargement Free.
+- Compte **Free** : métadonnées possibles via le canal interne spclient
+  (`session.api().get_playlist` / `get_metadata_4_*`, pas le Web API), mais **aucun
+  téléchargement** (clé audio refusée par Spotify). Les playlists publiques via
+  `client_credentials` restent utilisables si une app est configurée.
 
 ### TorrentDbService
 

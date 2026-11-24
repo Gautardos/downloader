@@ -100,15 +100,11 @@
                     <small style="color: var(--text-secondary);">Required for real-time track metadata extraction.</small>
                     {{ _self.clearSecret('spotify_client_secret') }}
                 </div>
-                <div style="margin-bottom: 1rem;">
-                    <label for="spotify_auth_mode">Spotify Auth Mode</label>
-                    {% set rawSpotifyAuthMode = config.spotify_auth_mode|default('auto') %}
-                    {% set spotifyAuthMode = rawSpotifyAuthMode == 'client_credentials' ? 'client_credentials' : 'auto' %}
-                    <select id="spotify_auth_mode" name="spotify_auth_mode" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
-                        <option value="auto" {{ spotifyAuthMode == 'auto' ? 'selected' : '' }}>Auto — app first (recommended)</option>
-                        <option value="client_credentials" {{ spotifyAuthMode == 'client_credentials' ? 'selected' : '' }}>App only (Client ID/Secret)</option>
-                    </select>
-                    <small style="color: var(--text-secondary);">Reliable metadata requires a valid Spotify Developer app (Client Credentials). The librespot user token is only a best-effort fallback and Spotify may rate-limit it (HTTP 429, up to 24h). Free accounts are best-effort only.</small>
+                <div style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border-left: 4px solid var(--accent);">
+                    <div style="font-weight: 600; color: var(--accent); margin-bottom: 0.35rem;">Premium + Spotify app required</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
+                        Downloads require a <strong>Premium</strong> Spotify account and a <strong>Spotify Developer app</strong> (Client ID/Secret) owned by a Premium account. The app uses these credentials first (Client Credentials). A <strong>Free account cannot download</strong> — Spotify refuses the audio key (<code>audio key error</code>), at any quality. Metadata falls back to the librespot token, which Spotify may rate-limit (HTTP 429).
+                    </div>
                 </div>
 
                 <h3 style="color: var(--accent); margin: 2rem 0 1rem 0;">App Security 🔐</h3>
@@ -208,10 +204,10 @@
                     <div>
                         <label for="music_quality">Quality</label>
                         <select id="music_quality" name="music_quality" style="width:100%; padding:0.75rem; background:var(--bg-primary); border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; color:white;">
-                            <option value="auto" {{ config.music_quality|default('auto') == 'auto' ? 'selected' : '' }}>Auto — best allowed by your account (recommended)</option>
+                            <option value="auto" {{ config.music_quality|default('auto') == 'auto' ? 'selected' : '' }}>Auto — best allowed (Premium) (recommended)</option>
                             <option value="very_high" {{ config.music_quality|default('auto') == 'very_high' ? 'selected' : '' }}>Very High — 320 kbps (Premium only)</option>
-                            <option value="high" {{ config.music_quality|default('auto') == 'high' ? 'selected' : '' }}>High — 160 kbps (works with Free)</option>
-                            <option value="normal" {{ config.music_quality|default('auto') == 'normal' ? 'selected' : '' }}>Normal — 96 kbps</option>
+                            <option value="high" {{ config.music_quality|default('auto') == 'high' ? 'selected' : '' }}>High — 160 kbps (Premium)</option>
+                            <option value="normal" {{ config.music_quality|default('auto') == 'normal' ? 'selected' : '' }}>Normal — 96 kbps (Premium)</option>
                         </select>
                     </div>
                 </div>
@@ -219,7 +215,7 @@
                 <div style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border-left: 4px solid var(--accent);">
                     <div style="font-weight: 600; color: var(--accent); margin-bottom: 0.35rem;">Spotify account limits</div>
                     <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
-                        Free accounts cap at <strong>160 kbps</strong> and downloads are <strong>best-effort / unreliable</strong> (<code>audio key</code>, <code>429</code>). A stable download requires <strong>Premium</strong> (up to 320 kbps). Select <strong>Auto</strong> to use the best quality your account allows.
+                        Downloads require a <strong>Premium</strong> Spotify account and a <strong>Spotify Developer app</strong>. A <strong>Free account cannot download</strong> — Spotify refuses the audio key (<code>audio key error</code>) at any quality. Select <strong>Auto</strong> to use the best quality your account allows (up to 320 kbps on Premium).
                     </div>
                     <div id="music-quality-note" aria-live="polite" style="margin-top: 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);"></div>
                 </div>
@@ -974,10 +970,10 @@ function updateMusicQualityNote() {
     if (!select || !note) return;
 
     const notes = {
-        auto: { text: 'Auto: 320 kbps with Premium, 160 kbps with a Free account.', color: 'var(--success)' },
-        high: { text: 'High: 160 kbps — works with Free and Premium accounts.', color: 'var(--success)' },
-        normal: { text: 'Normal: 96 kbps — works with Free and Premium accounts.', color: 'var(--text-secondary)' },
-        very_high: { text: 'Very High: 320 kbps — Premium only. A Free account will fail with "Audio key error".', color: 'var(--warning)' }
+        auto: { text: 'Auto: best allowed (320 kbps on Premium).', color: 'var(--success)' },
+        high: { text: 'High: 160 kbps (Premium).', color: 'var(--success)' },
+        normal: { text: 'Normal: 96 kbps (Premium).', color: 'var(--text-secondary)' },
+        very_high: { text: 'Very High: 320 kbps (Premium only).', color: 'var(--warning)' }
     };
 
     const info = notes[select.value] || notes.auto;

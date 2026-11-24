@@ -33,7 +33,7 @@ A self-hosted media management platform built with Symfony & Python and shipped 
 
 ### 🎵 Music
 - **Spotify search** for tracks, albums and playlists, including private playlists through the librespot token.
-- **High-quality downloads** powered by Zotify. **Auto** (default) uses the best quality your Spotify account allows: **320 kbps on Premium**, **160 kbps on Free**. 320 kbps requires Premium.
+- **High-quality downloads** powered by Zotify. Downloads require a **Premium** Spotify account and a **Spotify Developer app** (Client ID/Secret). **Auto** (default) uses the best quality allowed (320 kbps on Premium). **Free accounts cannot download** — Spotify refuses the audio key.
 - **Unified Music Library** — browse `Downloads` (`music_root_path`) and `Library` (`music_library_path`) roots in a single folder tree.
 - **Full tag editor** — title, artist, album, album artist, year, genre, track/disc numbers, comment and embedded lyrics, single or bulk.
 - **Lyrics** — LRCLIB (synced + scored search), Genius and lyrics.ovh fallback, per-track or batch fetch.
@@ -280,7 +280,7 @@ Settings are managed through the web UI at **Settings** (`/config`), except TMDB
 | ------- | ------- | ----------- |
 | **Output Template** | `{artist} - {album} - {song_name}.{ext}` | File naming template |
 | **Format** | `mp3` | Output format (`mp3`, `flac`, `m4a`, `opus`) |
-| **Quality** | `auto` | `auto` = best allowed (320 Premium / 160 Free); `normal` = 96 kbps; `high` = 160 kbps; `very_high` = 320 kbps (Premium only) |
+| **Quality** | `auto` | `auto` = best allowed (320 kbps on Premium); `normal` = 96 kbps; `high` = 160 kbps; `very_high` = 320 kbps (Premium only). Free accounts cannot download. |
 | **Skip Existing** | Off | Skip tracks already in the archive |
 | **Download Lyrics** | On | Fetch and embed lyrics with Zotify |
 | **Retry Attempts** | `3` | Network retries |
@@ -368,13 +368,14 @@ cp /var/www/html/var/credentials.json /var/www/html/var/home/.local/credentials.
 
 Spotify enforces audio quality on its servers; the client cannot unlock more than your account allows.
 
-| Account | Maximum quality | Recommended setting |
-| ------- | --------------- | ------------------- |
-| Free | 160 kbps | `auto` or `high` |
-| Premium | 320 kbps | `auto` |
+| Account | Maximum quality | Download support |
+| ------- | --------------- | ---------------- |
+| Free | — | **Not supported** (`audio key` refused by Spotify) |
+| Premium | 320 kbps | Supported |
 
-- **Auto** (default) selects 320 kbps on Premium and 160 kbps on Free.
-- **Very High** (320 kbps) requires Premium. On a Free account it fails with `Audio key error` / `Failed fetching audio key`; the job is retried before failing.
+- **Auto** (default) selects the best quality allowed (320 kbps on Premium).
+- Downloads require a **Premium** account and a **Spotify Developer app**; a Free account cannot download at any quality (`Audio key error`).
+- **Very High** (320 kbps) requires Premium.
 - **Normal** = 96 kbps, **High** = 160 kbps, **Very High** = 320 kbps.
 - The output format (MP3/FLAC/M4A/Opus) cannot increase the source quality: a lossy source stays lossy, and FLAC only makes the file larger.
 - Use credentials from the same Spotify account you want to download with.
@@ -539,7 +540,7 @@ docker compose up -d
 - The `librespot-auth` binary is compiled during the image build and does not need to be installed separately.
 - Automations never delete NAS files: missing files are marked `missing`, and only explicit actions (rename, prune empty folders) move things.
 - The Jellyfin bridge is **direct play only** (no transcoding) and exposes video only.
-- Spotify audio quality is account-bound: Free accounts are capped at 160 kbps; 320 kbps requires Premium. Use **Auto** to avoid `Audio key error` on Free accounts.
+- Spotify downloads are **Premium-only**: Free accounts cannot fetch the audio key (`Audio key error`) at any quality. Use a Premium account with a Spotify Developer app.
 - Lyrics fetching supports MP3 and M4A; the audit is read-only and synchronous.
 - Paths configured in the UI are container-internal. Keep the host mount layout stable across upgrades.
 - At startup the entrypoint enforces permissions on its data: `var/storage` 710, `var/storage/logs` 2750 (setgid), `*.log` 640, other files 600, `var/db` 700/600. To let an external log shipper read the logs, give `var/storage` and `var/storage/logs` a group it belongs to. Mounted media folders are never changed recursively: only their top level is adjusted when owned by root, and a refused change (network share) does not block startup.
